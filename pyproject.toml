@@ -62,6 +62,9 @@ select = ["B", "E", "F", "I", "N", "RUF", "SIM", "UP"]
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.ty.analysis]
+allowed-unresolved-imports = ["torch", "torch.**", "wtpsplit"]
+
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
 markers = [

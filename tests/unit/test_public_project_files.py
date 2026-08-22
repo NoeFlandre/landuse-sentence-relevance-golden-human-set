@@ -38,3 +38,10 @@ def test_public_attribution_files_use_apache_code_license() -> None:
 
     assert "license: Apache-2.0" in citation
     assert "Apache License" in license_text
+
+
+def test_local_model_cache_rule_does_not_hide_source_model_adapters() -> None:
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "\n/models/\n" in gitignore
+    assert "\nmodels/\n" not in gitignore
