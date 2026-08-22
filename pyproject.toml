@@ -49,6 +49,7 @@ packages = ["src/landuse_sentence_relevance"]
 
 [tool.uv]
 default-groups = ["dev"]
+required-version = "0.11.16"
 
 [tool.ruff]
 line-length = 110
@@ -61,13 +62,16 @@ select = ["B", "E", "F", "I", "N", "RUF", "SIM", "UP"]
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.ty.analysis]
+allowed-unresolved-imports = ["torch", "torch.**", "wtpsplit"]
+
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
 markers = [
     "acceptance: browser-level Gherkin acceptance tests",
 ]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [tool.coverage.run]
 branch = true

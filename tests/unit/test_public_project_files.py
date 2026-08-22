@@ -24,6 +24,12 @@ def test_pages_workflow_builds_strictly_and_deploys_with_least_privilege() -> No
     assert "id-token: write" in workflow
 
 
+def test_qa_workflow_installs_the_browser_used_by_acceptance_tests() -> None:
+    workflow = (ROOT / ".github/workflows/qa.yml").read_text(encoding="utf-8")
+
+    assert "uv run playwright install --with-deps chromium" in workflow
+
+
 def test_docker_image_uses_locked_uv_dependencies_without_source_data() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
@@ -38,3 +44,18 @@ def test_public_attribution_files_use_apache_code_license() -> None:
 
     assert "license: Apache-2.0" in citation
     assert "Apache License" in license_text
+
+
+def test_local_model_cache_rule_does_not_hide_source_model_adapters() -> None:
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "\n/models/\n" in gitignore
+    assert "\nmodels/\n" not in gitignore
+
+
+def test_test_helpers_resolve_from_this_repository() -> None:
+    assert (ROOT / "tests/__init__.py").is_file()
+    assert (ROOT / "tests/unit/__init__.py").is_file()
+
+    pytest_configuration = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'pythonpath = ["src", "."]' in pytest_configuration

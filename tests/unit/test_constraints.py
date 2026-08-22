@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-from tests.unit.test_models import make_candidate
 
 from landuse_sentence_relevance.domain.constraints import (
     DatasetQuotas,
@@ -10,6 +9,7 @@ from landuse_sentence_relevance.domain.constraints import (
     validate_final_dataset,
 )
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
+from tests.unit.test_models import make_candidate
 
 
 def make_annotations() -> list[Annotation]:

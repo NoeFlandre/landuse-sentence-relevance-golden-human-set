@@ -8,6 +8,6 @@ coverage.json
 htmlcov/
 mutants/
 state/
-models/
+/models/
 .env
 .DS_Store

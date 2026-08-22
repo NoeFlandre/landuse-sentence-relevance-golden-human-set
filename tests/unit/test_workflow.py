@@ -1,5 +1,3 @@
-from tests.unit.test_constraints import make_annotations
-
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher
@@ -9,6 +7,7 @@ from landuse_sentence_relevance.workflow import (
     UnknownCandidateError,
     WorkflowCompleteError,
 )
+from tests.unit.test_constraints import make_annotations
 
 
 def test_workflow_records_a_label_and_exposes_progress(tmp_path) -> None:

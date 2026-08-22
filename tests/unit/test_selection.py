@@ -1,7 +1,5 @@
 from dataclasses import replace
 
-from tests.unit.test_constraints import make_annotations
-
 from landuse_sentence_relevance.domain.constraints import DatasetQuotas
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
 from landuse_sentence_relevance.domain.selection import (
@@ -9,6 +7,7 @@ from landuse_sentence_relevance.domain.selection import (
     _label_rows,
     select_final_annotations,
 )
+from tests.unit.test_constraints import make_annotations
 
 
 def test_selection_finds_a_balanced_subset_from_extra_annotations() -> None:
