@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.ty/
+.coverage
+coverage.json
+htmlcov/
+mutants/
+state/
+models/
+.env
+.DS_Store

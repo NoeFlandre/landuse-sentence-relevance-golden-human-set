@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it."
+type: software
+title: "Land-use sentence relevance golden human set"
+version: 0.1.0
+date-released: 2026-08-22
+authors:
+  - family-names: Flandre
+    given-names: Noe
+license: Apache-2.0
+repository-code: "https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set"
+url: "https://huggingface.co/datasets/NoeFlandre/landuse-sentence-relevance-golden-human-set"
