@@ -49,6 +49,7 @@ packages = ["src/landuse_sentence_relevance"]
 
 [tool.uv]
 default-groups = ["dev"]
+required-version = "0.11.16"
 
 [tool.ruff]
 line-length = 110
