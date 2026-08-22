@@ -50,3 +50,6 @@ def test_local_model_cache_rule_does_not_hide_source_model_adapters() -> None:
 def test_test_helpers_resolve_from_this_repository() -> None:
     assert (ROOT / "tests/__init__.py").is_file()
     assert (ROOT / "tests/unit/__init__.py").is_file()
+
+    pytest_configuration = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'pythonpath = ["src", "."]' in pytest_configuration

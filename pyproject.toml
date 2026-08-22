@@ -71,7 +71,7 @@ markers = [
     "acceptance: browser-level Gherkin acceptance tests",
 ]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [tool.coverage.run]
 branch = true
