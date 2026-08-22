@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sentence relevance annotation</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; }
+      body { margin: 0 auto; max-width: 760px; padding: 2rem 1rem; color: #17202a; }
+      .progress, .metadata { color: #52616b; font-size: .95rem; }
+      .sentence { font-size: 1.35rem; line-height: 1.55; margin: 2.5rem 0; }
+      .actions { display: flex; gap: .75rem; }
+      button { border: 0; border-radius: .4rem; cursor: pointer; font-size: 1rem; padding: .75rem 1.25rem; }
+      button[value="yes"] { background: #16794f; color: white; }
+      button[value="no"] { background: #b42318; color: white; }
+      a { color: #175cd3; }
+    </style>
+  </head>
+  <body>
+    <h1>Sentence relevance</h1>
+    <p class="progress">
+      {{ state.labeled_count }} labeled · {{ state.yes_count }} Yes · {{ state.no_count }} No
+    </p>
+
+    {% if state.published %}
+      <h2>Dataset complete</h2>
+      <p>The balanced 100-sentence dataset was uploaded.</p>
+    {% elif candidate %}
+      <p class="sentence">{{ candidate.sentence }}</p>
+      <dl class="metadata">
+        <dt>Source</dt><dd>{{ candidate.source.value|capitalize }}</dd>
+        {% if candidate.place_name %}<dt>Place</dt><dd>{{ candidate.place_name }}</dd>{% endif %}
+        {% if candidate.region %}<dt>Region</dt><dd>{{ candidate.region }}</dd>{% endif %}
+        <dt>Coordinates</dt><dd>{{ "%.4f"|format(candidate.latitude) }}, {{ "%.4f"|format(candidate.longitude) }}</dd>
+        <dt>H3 cell</dt><dd>{{ candidate.h3_cell }}</dd>
+        {% if candidate.source_url %}<dt>Link</dt><dd><a href="{{ candidate.source_url }}" target="_blank" rel="noreferrer">Open source</a></dd>{% endif %}
+      </dl>
+      <form class="actions" method="post" action="/annotate">
+        <input type="hidden" name="candidate_id" value="{{ candidate.candidate_id }}">
+        <button type="submit" name="label" value="yes">Yes — relevant</button>
+        <button type="submit" name="label" value="no">No — not relevant</button>
+      </form>
+    {% else %}
+      <h2>No candidate is available</h2>
+      <p>The streamed candidate pool needs more eligible shared H3 cells.</p>
+    {% endif %}
+  </body>
+</html>

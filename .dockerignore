@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.ty_cache
+.coverage
+coverage.json
+mutants
+state
+models
+site
+.DS_Store
+tests
