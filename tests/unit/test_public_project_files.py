@@ -24,6 +24,12 @@ def test_pages_workflow_builds_strictly_and_deploys_with_least_privilege() -> No
     assert "id-token: write" in workflow
 
 
+def test_qa_workflow_installs_the_browser_used_by_acceptance_tests() -> None:
+    workflow = (ROOT / ".github/workflows/qa.yml").read_text(encoding="utf-8")
+
+    assert "uv run playwright install --with-deps chromium" in workflow
+
+
 def test_docker_image_uses_locked_uv_dependencies_without_source_data() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
