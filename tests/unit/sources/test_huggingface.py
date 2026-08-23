@@ -1,9 +1,16 @@
-from typing import Any
+from typing import Any, get_type_hints
 
 from landuse_sentence_relevance.sources.huggingface import (
+    HuggingFaceDatasetLoader,
     HuggingFaceDatasetRows,
     HuggingFaceRowConfig,
 )
+
+
+def test_rows_use_explicit_loader_contract() -> None:
+    annotations = get_type_hints(HuggingFaceDatasetRows.__init__)
+
+    assert annotations["loader"] == HuggingFaceDatasetLoader | None
 
 
 def test_rows_are_loaded_in_streaming_mode_at_an_immutable_revision() -> None:

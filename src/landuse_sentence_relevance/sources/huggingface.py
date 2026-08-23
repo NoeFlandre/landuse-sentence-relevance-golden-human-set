@@ -1,8 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, Protocol
+
+
+class HuggingFaceDatasetLoader(Protocol):
+    """Load one immutable Hugging Face split in streaming mode."""
+
+    def __call__(
+        self,
+        *,
+        path: str,
+        name: str,
+        split: str,
+        streaming: Literal[True],
+        revision: str,
+    ) -> Iterable[Mapping[str, Any]]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,20 +33,37 @@ class HuggingFaceDatasetRows:
     def __init__(
         self,
         config: HuggingFaceRowConfig,
-        loader: Callable[..., Iterable[Mapping[str, Any]]] | None = None,
+        loader: HuggingFaceDatasetLoader | None = None,
     ) -> None:
         self._config = config
         self._loader = loader or self._default_loader()
 
     @staticmethod
-    def _default_loader() -> Callable[..., Iterable[Mapping[str, Any]]]:
+    def _default_loader() -> HuggingFaceDatasetLoader:
         try:
             from datasets import load_dataset
         except ImportError as error:  # pragma: no cover - exercised only in a missing extra environment
             raise RuntimeError(
                 "Install the project dependencies with `uv sync` to stream Hugging Face data"
             ) from error
-        return load_dataset
+
+        def stream_dataset(
+            *,
+            path: str,
+            name: str,
+            split: str,
+            streaming: Literal[True],
+            revision: str,
+        ) -> Iterable[Mapping[str, Any]]:
+            return load_dataset(
+                path=path,
+                name=name,
+                split=split,
+                streaming=streaming,
+                revision=revision,
+            )
+
+        return stream_dataset
 
     def __call__(self) -> Iterable[Mapping[str, Any]]:
         config = self._config
