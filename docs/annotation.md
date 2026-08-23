@@ -16,6 +16,6 @@ The final public dataset is accepted only when it has:
 | Geography | 25 shared H3 resolution-3 cells |
 | Cell/source quota | 2 Wikipedia and 2 website rows per cell |
 
-Both source halves use the same cells. The annotator may label more than 100 candidates; deterministic selection chooses the first quota-satisfying subset by candidate ID. Once the subset satisfies every constraint, it is uploaded publicly to [the project dataset](https://huggingface.co/datasets/NoeFlandre/landuse-sentence-relevance-golden-human-set) without an extra confirmation step.
+Both source halves use the same cells. The annotator may label more than 100 candidates; deterministic selection chooses the first quota-satisfying subset by candidate ID. The JSONL session and runtime cache make quitting resumable. Once the subset satisfies every constraint, it is uploaded publicly to [the project dataset](https://huggingface.co/datasets/NoeFlandre/landuse-sentence-relevance-golden-human-set) without an extra confirmation step, and the runtime cache is deleted.
 
 The local session contains labeled rows only at `state/annotations.jsonl`, which is ignored by Git. Raw streamed rows are not written locally.

@@ -9,7 +9,7 @@ All source rows are read with Hugging Face streaming. The source revisions are p
 - [OSM polygon website tag](https://huggingface.co/datasets/NoeFlandre/osm-polygon-website-tag), revision `2c68154460f0bee314b887217ba54b23e3a2e181`.
   The pipeline uses both `website_text` and `contact_website_text`, with their matching URL fields. CommonLingua filters the resulting sentences to English.
 
-The source rows are not cached locally. A model cache is allowed because sentence splitting and language detection require model weights; it contains no raw dataset rows.
+Source rows are streamed. Hugging Face metadata, streamed artifacts, and model weights use one application-owned runtime cache; it is kept for resume and upload retries, then deleted after a successful final upload.
 
 ## Models
 

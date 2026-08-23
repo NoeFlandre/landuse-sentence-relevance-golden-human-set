@@ -1,7 +1,10 @@
 import json
+from dataclasses import replace
+from pathlib import Path
 
 from tests.unit.test_constraints import make_annotations
 
+import landuse_sentence_relevance.storage.session as session_module
 from landuse_sentence_relevance.storage.session import AnnotationStore
 
 
@@ -33,3 +36,63 @@ def test_annotation_store_replaces_duplicate_candidate_records(tmp_path) -> None
         first.candidate.candidate_id: first,
         second.candidate.candidate_id: second,
     }
+
+
+def test_annotation_store_creates_missing_parent_directories(tmp_path) -> None:
+    path = tmp_path / "nested" / "state" / "annotations.jsonl"
+
+    AnnotationStore(path).record(make_annotations()[0])
+
+    assert path.is_file()
+
+
+def test_annotation_store_writes_utf8_and_sorted_json(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "annotations.jsonl"
+    first = make_annotations()[0]
+    annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
+    encodings = []
+    original_open = Path.open
+
+    def spy_open(self, *args, **kwargs):
+        encodings.append(kwargs.get("encoding"))
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", spy_open)
+    AnnotationStore(path).record(annotation)
+
+    line = path.read_bytes().decode("utf-8").strip()
+    assert encodings[0] == "utf-8"
+    assert '"Héllö — hills"' in line
+    assert list(json.loads(line)) == sorted(json.loads(line))
+
+
+def test_annotation_store_passes_explicit_json_options(tmp_path, monkeypatch) -> None:
+    options = {}
+    original_dumps = session_module.json.dumps
+
+    def spy_dumps(*args, **kwargs):
+        options.update(kwargs)
+        return original_dumps(*args, **kwargs)
+
+    monkeypatch.setattr(session_module.json, "dumps", spy_dumps)
+    AnnotationStore(tmp_path / "annotations.jsonl").record(make_annotations()[0])
+
+    assert options == {"ensure_ascii": False, "sort_keys": True}
+
+
+def test_annotation_store_loads_using_utf8(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "annotations.jsonl"
+    first = make_annotations()[0]
+    annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
+    AnnotationStore(path).record(annotation)
+    encodings = []
+    original_read_text = Path.read_text
+
+    def spy_read_text(self, *args, **kwargs):
+        encodings.append(kwargs.get("encoding"))
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+    assert AnnotationStore(path).load() == {annotation.candidate.candidate_id: annotation}
+    assert encodings == ["utf-8"]

@@ -10,6 +10,7 @@ from landuse_sentence_relevance.models.sentence_splitter import SaTSentenceSplit
 from landuse_sentence_relevance.sources.huggingface import HuggingFaceDatasetRows, HuggingFaceRowConfig
 from landuse_sentence_relevance.sources.website import WebsiteCandidateSource
 from landuse_sentence_relevance.sources.wikipedia import WikipediaCandidateSource
+from landuse_sentence_relevance.storage.cache import ManagedCache
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
 from landuse_sentence_relevance.workflow import AnnotationWorkflow
@@ -18,6 +19,8 @@ from landuse_sentence_relevance.workflow import AnnotationWorkflow
 def build_workflow(  # pragma: no cover - full startup needs remote datasets and model weights
     settings: Settings,
 ) -> AnnotationWorkflow:
+    cache = ManagedCache(settings.model_cache_dir)
+    cache.prepare()
     try:
         from h3 import cell_to_latlng, latlng_to_cell
     except ImportError as error:  # pragma: no cover - dependency installation boundary
@@ -91,5 +94,9 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
     return AnnotationWorkflow(
         pool=finalized_pool,
         store=AnnotationStore(settings.session_path),
-        publisher=DatasetPublisher(settings.output_dataset_id, token=settings.hf_token),
+        publisher=DatasetPublisher(
+            settings.output_dataset_id,
+            token=settings.hf_token,
+            cleanup=cache.cleanup,
+        ),
     )

@@ -71,7 +71,7 @@ markers = [
     "acceptance: browser-level Gherkin acceptance tests",
 ]
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["."]
 
 [tool.coverage.run]
 branch = true
@@ -86,8 +86,12 @@ fail_under = 95
 show_missing = true
 
 [tool.mutmut]
-source_paths = ["src/landuse_sentence_relevance/domain"]
-also_copy = ["src/landuse_sentence_relevance"]
+source_paths = [
+    "src/landuse_sentence_relevance/domain",
+    "src/landuse_sentence_relevance/storage",
+]
+also_copy = ["src/landuse_sentence_relevance", "scripts"]
+on_dependency_change = "rerun"
 pytest_add_cli_args = [
     "--ignore=tests/acceptance",
     "--ignore=tests/unit/test_public_project_files.py",

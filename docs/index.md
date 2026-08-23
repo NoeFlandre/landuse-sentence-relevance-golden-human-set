@@ -11,6 +11,8 @@ uv sync --extra models
 uv run landuse-annotate
 ```
 
-Open <http://127.0.0.1:8000>. The source datasets are never downloaded as local files. Only the labeled JSONL session is kept locally until the final public dataset is ready.
+Open <http://127.0.0.1:8000>. The source datasets are streamed. Hugging Face metadata, streamed artifacts, and model weights use an application-owned cache that remains available for resume and upload retries.
+
+After the public final upload succeeds, that exact cache is deleted automatically.
 
 The final upload is automatic once all quotas are satisfied. See [annotation](annotation.md) for the contract and [QA](qa.md) for the deterministic checks.

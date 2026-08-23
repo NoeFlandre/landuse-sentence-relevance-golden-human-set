@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
@@ -53,9 +54,40 @@ def test_local_model_cache_rule_does_not_hide_source_model_adapters() -> None:
     assert "\nmodels/\n" not in gitignore
 
 
+def test_mutation_gate_includes_storage_modules() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    source_paths = configuration["tool"]["mutmut"]["source_paths"]
+
+    assert "src/landuse_sentence_relevance/domain" in source_paths
+    assert "src/landuse_sentence_relevance/storage" in source_paths
+
+
+def test_pytest_pythonpath_leaves_mutmut_source_precedence_intact() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    assert configuration["tool"]["pytest"]["ini_options"]["pythonpath"] == ["."]
+
+
+def test_mutation_gate_rebuilds_results_when_project_dependencies_change() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    assert configuration["tool"]["mutmut"]["on_dependency_change"] == "rerun"
+
+
+def test_mutation_gate_copies_qa_helpers_into_isolated_test_tree() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    assert "scripts" in configuration["tool"]["mutmut"]["also_copy"]
+
+
 def test_test_helpers_resolve_from_this_repository() -> None:
     assert (ROOT / "tests/__init__.py").is_file()
     assert (ROOT / "tests/unit/__init__.py").is_file()
 
     pytest_configuration = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'pythonpath = ["src", "."]' in pytest_configuration
+    assert 'pythonpath = ["."]' in pytest_configuration

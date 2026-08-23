@@ -16,10 +16,12 @@ class DatasetPublisher:
         dataset_id: str,
         token: str | None = None,
         uploader: Callable[..., Any] | None = None,
+        cleanup: Callable[[], None] | None = None,
     ) -> None:
         self._dataset_id = dataset_id
         self._token = token
         self._uploader = uploader or self._upload_to_hub
+        self._cleanup = cleanup
 
     def publish_if_ready(self, annotations: Iterable[Annotation]) -> bool:
         selected = select_final_annotations(annotations)
@@ -32,6 +34,8 @@ class DatasetPublisher:
             token=self._token,
             private=False,
         )
+        if self._cleanup is not None:
+            self._cleanup()
         return True
 
     def _upload_to_hub(
