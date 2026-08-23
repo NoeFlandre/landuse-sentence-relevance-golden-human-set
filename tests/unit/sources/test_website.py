@@ -14,6 +14,13 @@ class FakeLanguageIdentifier:
         return not text.startswith("NONEN")
 
 
+def test_website_source_declares_text_and_url_fields_as_pairs() -> None:
+    assert WebsiteCandidateSource._FIELD_SPECS == (
+        ("website_text", "website"),
+        ("contact_website_text", "contact_website"),
+    )
+
+
 def test_website_source_uses_both_website_text_fields() -> None:
     rows = [
         {

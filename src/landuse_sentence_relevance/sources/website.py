@@ -7,12 +7,16 @@ from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.sources.protocols import LanguageIdentifier, SentenceSplitter
 
 Location = tuple[str, float, float]
+FieldSpec = tuple[str, str]
 
 
 class WebsiteCandidateSource:
     """Stream both OSM website text fields and retain only English sentences."""
 
-    _TEXT_FIELDS = ("website_text", "contact_website_text")
+    _FIELD_SPECS: tuple[FieldSpec, ...] = (
+        ("website_text", "website"),
+        ("contact_website_text", "contact_website"),
+    )
 
     def __init__(
         self,
@@ -33,8 +37,16 @@ class WebsiteCandidateSource:
                 continue
             polygon_id, latitude, longitude = location
             cell = self._cell_for_location(latitude, longitude)
-            for field in self._TEXT_FIELDS:
-                yield from self._field_candidates(row, polygon_id, latitude, longitude, cell, field)
+            for text_field, url_field in self._FIELD_SPECS:
+                yield from self._field_candidates(
+                    row,
+                    polygon_id,
+                    latitude,
+                    longitude,
+                    cell,
+                    text_field,
+                    url_field,
+                )
 
     def _field_candidates(
         self,
@@ -43,12 +55,13 @@ class WebsiteCandidateSource:
         latitude: float,
         longitude: float,
         cell: str,
-        field: str,
+        text_field: str,
+        url_field: str,
     ) -> Iterable[Candidate]:
-        text = _field_text(row, field)
+        text = _field_text(row, text_field)
         if text is None:
             return
-        website_url = _field_url(row, field)
+        website_url = _field_url(row, url_field)
         for sentence_index, sentence in enumerate(self._splitter.split(text)):
             candidate = self._candidate_for_sentence(
                 sentence,
@@ -57,7 +70,7 @@ class WebsiteCandidateSource:
                 latitude,
                 longitude,
                 cell,
-                field,
+                text_field,
                 website_url,
                 row,
             )
@@ -111,5 +124,5 @@ def _field_text(row: Mapping[str, Any], field: str) -> str | None:
 
 
 def _field_url(row: Mapping[str, Any], field: str) -> str | None:
-    url = row.get("website" if field == "website_text" else "contact_website")
+    url = row.get(field)
     return url if isinstance(url, str) else None
