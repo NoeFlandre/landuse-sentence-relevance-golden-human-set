@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, Protocol
 
 from landuse_sentence_relevance.domain.constraints import validate_final_dataset
 from landuse_sentence_relevance.domain.models import Annotation
 from landuse_sentence_relevance.domain.selection import select_final_annotations
+
+
+class DatasetUploader(Protocol):
+    """Upload a prepared public dataset to the configured Hub repository."""
+
+    def __call__(
+        self,
+        *,
+        dataset_id: str,
+        records: list[dict[str, Any]],
+        token: str | None,
+        private: bool,
+    ) -> None: ...
 
 
 class DatasetPublisher:
@@ -15,7 +28,7 @@ class DatasetPublisher:
         self,
         dataset_id: str,
         token: str | None = None,
-        uploader: Callable[..., Any] | None = None,
+        uploader: DatasetUploader | None = None,
         cleanup: Callable[[], None] | None = None,
     ) -> None:
         self._dataset_id = dataset_id

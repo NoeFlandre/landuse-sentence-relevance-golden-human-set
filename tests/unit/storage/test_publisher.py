@@ -2,7 +2,15 @@ import pytest
 from tests.unit.test_constraints import make_annotations
 
 from landuse_sentence_relevance.storage.cache import ManagedCache
-from landuse_sentence_relevance.storage.publisher import DatasetPublisher
+from landuse_sentence_relevance.storage.publisher import DatasetPublisher, DatasetUploader
+
+
+def test_dataset_publisher_uses_explicit_uploader_contract() -> None:
+    from typing import get_type_hints
+
+    annotations = get_type_hints(DatasetPublisher.__init__)
+
+    assert annotations["uploader"] == DatasetUploader | None
 
 
 @pytest.fixture
