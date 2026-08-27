@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from threading import RLock
@@ -86,19 +87,22 @@ class AnnotationWorkflow:
         return state
 
     def change_label(self, candidate_id: str, label: Label) -> WorkflowState:
-        with self._lock:
+        def edit(annotations: dict[str, Annotation]) -> None:
             annotation = self._saved_annotation(candidate_id)
-            self._annotations[candidate_id] = replace(annotation, label=Label(label))
-            self._store.save(self._annotations.values())
-            self._published = False
-        if not self._defer_publish:
-            self.publish_if_ready()
-        return self.state()
+            annotations[candidate_id] = replace(annotation, label=Label(label))
+
+        return self._commit_review_edit(edit)
 
     def remove_annotation(self, candidate_id: str) -> WorkflowState:
-        with self._lock:
+        def edit(annotations: dict[str, Annotation]) -> None:
             self._saved_annotation(candidate_id)
-            del self._annotations[candidate_id]
+            del annotations[candidate_id]
+
+        return self._commit_review_edit(edit)
+
+    def _commit_review_edit(self, edit: Callable[[dict[str, Annotation]], None]) -> WorkflowState:
+        with self._lock:
+            edit(self._annotations)
             self._store.save(self._annotations.values())
             self._published = False
         if not self._defer_publish:

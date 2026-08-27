@@ -67,6 +67,34 @@ def test_workflow_changes_a_saved_label_and_updates_metrics(tmp_path) -> None:
     assert state.annotations[0].label is Label.NO
 
 
+def test_review_edits_share_one_commit_path(tmp_path, monkeypatch) -> None:
+    rows = make_annotations()[:2]
+    workflow = AnnotationWorkflow(
+        pool=FinalizedCandidatePool(
+            tuple(row.candidate for row in rows),
+            tuple(row.candidate.h3_cell for row in rows),
+        ),
+        store=AnnotationStore(tmp_path / "annotations.jsonl"),
+        publisher=DatasetPublisher("dataset", uploader=lambda **kwargs: None),
+    )
+    workflow.annotate(rows[0].candidate.candidate_id, Label.YES)
+
+    commit_calls = 0
+    original_commit = workflow._commit_review_edit
+
+    def observe_commit(edit) -> object:
+        nonlocal commit_calls
+        commit_calls += 1
+        return original_commit(edit)
+
+    monkeypatch.setattr(workflow, "_commit_review_edit", observe_commit)
+
+    workflow.change_label(rows[0].candidate.candidate_id, Label.NO)
+    workflow.remove_annotation(rows[0].candidate.candidate_id)
+
+    assert commit_calls == 2
+
+
 def test_deferred_workflow_persists_before_publication(tmp_path) -> None:
     rows = make_annotations()[:2]
     store = AnnotationStore(tmp_path / "annotations.jsonl")
