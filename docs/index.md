@@ -2,7 +2,7 @@
 
 This project builds a 100-sentence human golden set through a small local UI.
 
-The app streams two public Hugging Face datasets, keeps English sentences only, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels.
+The app streams two public Hugging Face datasets, keeps English sentences only, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The authoritative benchmark is `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set/annotations.csv`, the human-annotated file used for benchmark evaluations.
 
 ## Run locally
 
