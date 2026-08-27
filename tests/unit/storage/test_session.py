@@ -39,6 +39,37 @@ def test_annotation_store_replaces_duplicate_candidate_records(tmp_path) -> None
     }
 
 
+def test_annotation_store_uses_one_record_writer_for_append_and_replace(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "annotations.jsonl"
+    store = AnnotationStore(path)
+    first, second = make_annotations()[:2]
+    second = replace(second, candidate=replace(second.candidate, sentence="Héllö — hills"))
+
+    write_calls = 0
+    original_writer = store._write_annotation
+
+    def observe_writer(handle, annotation) -> None:
+        nonlocal write_calls
+        write_calls += 1
+        original_writer(handle, annotation)
+
+    monkeypatch.setattr(store, "_write_annotation", observe_writer)
+
+    store.record(first)
+    assert (
+        path.read_text(encoding="utf-8")
+        == json.dumps(first.to_dict(), ensure_ascii=False, sort_keys=True) + "\n"
+    )
+
+    store.save((second,))
+
+    assert write_calls == 2
+    assert (
+        path.read_text(encoding="utf-8")
+        == json.dumps(second.to_dict(), ensure_ascii=False, sort_keys=True) + "\n"
+    )
+
+
 def test_annotation_store_saves_revised_annotations_without_stale_records(tmp_path) -> None:
     path = tmp_path / "nested" / "deeper" / "annotations.jsonl"
     store = AnnotationStore(path)
