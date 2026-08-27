@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+from landuse_sentence_relevance.domain.cell_quota import CellQuota
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.stratification import select_spread_cells
 from landuse_sentence_relevance.observability import log_stream_progress
@@ -51,10 +52,13 @@ class WebsiteCandidateSource:
         self._seed = seed
         self._candidate_cells: frozenset[str] | None = None
         self._allowed_cells = None if allowed_cells is None else frozenset(allowed_cells)
-        self._max_candidates_per_cell = max_candidates_per_cell
         self._minimum_candidate_cells = minimum_candidate_cells
-        self._minimum_candidates_per_cell = minimum_candidates_per_cell
-        self._max_rows_per_cell = max_rows_per_cell
+        self._candidate_quota = (
+            None
+            if max_candidates_per_cell is None
+            else CellQuota(max_candidates_per_cell, minimum_candidates_per_cell)
+        )
+        self._row_quota = None if max_rows_per_cell is None else CellQuota(max_rows_per_cell)
 
     def iter_candidates(self) -> Iterable[Candidate]:
         self._discover_candidate_cells()
@@ -67,11 +71,10 @@ class WebsiteCandidateSource:
             _budgeted_rows(
                 self._row_loader,
                 candidate_counts,
-                self._max_candidates_per_cell,
+                self._candidate_quota,
                 self._minimum_candidate_cells,
-                self._minimum_candidates_per_cell,
                 row_counts,
-                self._max_rows_per_cell,
+                self._row_quota,
             ),
             start=1,
         ):
@@ -81,11 +84,10 @@ class WebsiteCandidateSource:
                 yield candidate
         if _source_budget_filled(
             candidate_counts,
-            self._max_candidates_per_cell,
+            self._candidate_quota,
             self._minimum_candidate_cells,
-            self._minimum_candidates_per_cell,
             row_counts,
-            self._max_rows_per_cell,
+            self._row_quota,
         ):
             logger.info("Website source: candidate cell budget filled; stopping row scan")
         logger.info(
@@ -144,13 +146,13 @@ class WebsiteCandidateSource:
         cell = self._eligible_cell(row)
         if cell is None or not _has_website_text(row):
             return
-        if _cell_is_full(row_counts, cell, self._max_rows_per_cell):
+        if self._row_quota is not None and self._row_quota.is_full(cell, row_counts):
             return
         row_counts[cell] = row_counts.get(cell, 0) + 1
         yield from _bounded_candidates(
             self._row_candidates(row, cell),
             candidate_counts,
-            self._max_candidates_per_cell,
+            self._candidate_quota,
         )
 
     def _eligible_cell(self, row: Mapping[str, Any]) -> str | None:
@@ -285,47 +287,21 @@ def _validate_candidate_cell_settings(
         raise ValueError("center_of_cell is required when candidate_cell_count is set")
 
 
-def _candidate_budget_filled(
-    candidate_counts: Mapping[str, int],
-    max_candidates_per_cell: int | None,
-    minimum_candidate_cells: int | None,
-    minimum_candidates_per_cell: int | None,
-) -> bool:
-    if max_candidates_per_cell is None or minimum_candidate_cells is None:
-        return False
-    threshold = (
-        max_candidates_per_cell if minimum_candidates_per_cell is None else minimum_candidates_per_cell
-    )
-    return sum(count >= threshold for count in candidate_counts.values()) >= minimum_candidate_cells
-
-
-def _row_budget_filled(
-    row_counts: Mapping[str, int],
-    max_rows_per_cell: int | None,
-    minimum_candidate_cells: int | None,
-) -> bool:
-    if max_rows_per_cell is None or minimum_candidate_cells is None:
-        return False
-    return sum(count >= max_rows_per_cell for count in row_counts.values()) >= minimum_candidate_cells
-
-
 def _budgeted_rows(
     row_loader: Callable[[], Iterable[Mapping[str, Any]]],
     candidate_counts: Mapping[str, int],
-    max_candidates_per_cell: int | None,
+    candidate_quota: CellQuota | None,
     minimum_candidate_cells: int | None,
-    minimum_candidates_per_cell: int | None,
     row_counts: Mapping[str, int],
-    max_rows_per_cell: int | None,
+    row_quota: CellQuota | None,
 ) -> Iterable[Mapping[str, Any]]:
     rows = iter(row_loader())
     while not _source_budget_filled(
         candidate_counts,
-        max_candidates_per_cell,
+        candidate_quota,
         minimum_candidate_cells,
-        minimum_candidates_per_cell,
         row_counts,
-        max_rows_per_cell,
+        row_quota,
     ):
         try:
             yield next(rows)
@@ -335,35 +311,37 @@ def _budgeted_rows(
 
 def _source_budget_filled(
     candidate_counts: Mapping[str, int],
-    max_candidates_per_cell: int | None,
+    candidate_quota: CellQuota | None,
     minimum_candidate_cells: int | None,
-    minimum_candidates_per_cell: int | None,
     row_counts: Mapping[str, int],
-    max_rows_per_cell: int | None,
+    row_quota: CellQuota | None,
 ) -> bool:
-    return _candidate_budget_filled(
+    return _budget_reached(
+        candidate_quota,
         candidate_counts,
-        max_candidates_per_cell,
         minimum_candidate_cells,
-        minimum_candidates_per_cell,
-    ) or _row_budget_filled(row_counts, max_rows_per_cell, minimum_candidate_cells)
+    ) or _budget_reached(row_quota, row_counts, minimum_candidate_cells)
+
+
+def _budget_reached(
+    quota: CellQuota | None,
+    counts: Mapping[str, int],
+    target_cells: int | None,
+) -> bool:
+    return (
+        quota is not None
+        and target_cells is not None
+        and quota.is_reached(counts, counts, target_cells=target_cells)
+    )
 
 
 def _bounded_candidates(
     candidates: Iterable[Candidate],
     candidate_counts: dict[str, int],
-    max_candidates_per_cell: int | None,
+    candidate_quota: CellQuota | None,
 ) -> Iterable[Candidate]:
     for candidate in candidates:
-        if _cell_is_full(candidate_counts, candidate.h3_cell, max_candidates_per_cell):
+        if candidate_quota is not None and candidate_quota.is_full(candidate.h3_cell, candidate_counts):
             continue
         candidate_counts[candidate.h3_cell] = candidate_counts.get(candidate.h3_cell, 0) + 1
         yield candidate
-
-
-def _cell_is_full(
-    candidate_counts: Mapping[str, int],
-    cell: str,
-    max_candidates_per_cell: int | None,
-) -> bool:
-    return max_candidates_per_cell is not None and candidate_counts.get(cell, 0) >= max_candidates_per_cell

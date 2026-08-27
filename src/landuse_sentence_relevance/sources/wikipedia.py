@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+from landuse_sentence_relevance.domain.cell_quota import CellQuota
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.stratification import select_spread_cells
 from landuse_sentence_relevance.observability import log_stream_progress
@@ -68,6 +69,7 @@ class WikipediaCandidateSource:
         self._center_of_cell = center_of_cell
         self._minimum_candidate_cells = minimum_candidate_cells
         self._seed = seed
+        self._candidate_quota = CellQuota(max_candidates_per_cell)
         self._selected_cells: frozenset[str] = frozenset()
         self._candidate_cells: frozenset[str] = frozenset()
 
@@ -121,12 +123,16 @@ class WikipediaCandidateSource:
         candidates_seen = 0
         candidate_counts: dict[str, int] = {}
         candidate_cells: set[str] = set()
+        target_cells = (
+            len(self._selected_cells)
+            if self._minimum_candidate_cells is None
+            else self._minimum_candidate_cells
+        )
         for section in self._row_loader("wikipedia_sections"):
-            if _candidate_budget_filled(
+            if self._candidate_quota.is_reached(
                 self._selected_cells,
                 candidate_counts,
-                self._max_candidates_per_cell,
-                self._minimum_candidate_cells,
+                target_cells=target_cells,
             ):
                 logger.info("Wikipedia source: candidate cell budget filled; stopping section scan")
                 break
@@ -203,7 +209,7 @@ class WikipediaCandidateSource:
         if location is None:
             return
         cell = location[3]
-        if _cell_is_full(cell, candidate_counts, self._max_candidates_per_cell):
+        if self._candidate_quota.is_full(cell, candidate_counts):
             return
         yield from self._bounded_polygon_candidates(
             polygon,
@@ -232,7 +238,7 @@ class WikipediaCandidateSource:
             section_id,
             source_url,
         ):
-            if _cell_is_full(cell, candidate_counts, self._max_candidates_per_cell):
+            if self._candidate_quota.is_full(cell, candidate_counts):
                 break
             candidate_counts[cell] = candidate_counts.get(cell, 0) + 1
             yield candidate
@@ -340,29 +346,6 @@ def _section_text(section: Mapping[str, Any]) -> str | None:
 def _section_url(section: Mapping[str, Any]) -> str | None:
     page_id = section.get("page_id")
     return f"https://en.wikipedia.org/?curid={page_id}" if page_id is not None else None
-
-
-def _cell_is_full(cell: str, counts: Mapping[str, int], capacity: int) -> bool:
-    return counts.get(cell, 0) >= capacity
-
-
-def _all_cells_full(cells: Iterable[str], counts: Mapping[str, int], capacity: int) -> bool:
-    return all(_cell_is_full(cell, counts, capacity) for cell in cells)
-
-
-def _candidate_budget_filled(
-    cells: Iterable[str],
-    counts: Mapping[str, int],
-    capacity: int,
-    minimum_cells: int | None,
-) -> bool:
-    if minimum_cells is None:
-        return _all_cells_full(cells, counts, capacity)
-    return _filled_cell_count(cells, counts, capacity) >= minimum_cells
-
-
-def _filled_cell_count(cells: Iterable[str], counts: Mapping[str, int], capacity: int) -> int:
-    return sum(_cell_is_full(cell, counts, capacity) for cell in cells)
 
 
 def _select_candidate_cells(
