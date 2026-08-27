@@ -9,6 +9,10 @@ from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.stratification import select_spread_cells
 from landuse_sentence_relevance.observability import log_stream_progress
 from landuse_sentence_relevance.sources.protocols import LanguageIdentifier, SentenceSplitter
+from landuse_sentence_relevance.sources.validation import (
+    validate_candidate_cell_settings as _validate_candidate_cell_settings,
+)
+from landuse_sentence_relevance.sources.validation import validate_optional_limit as _validate_optional_limit
 
 Location = tuple[str, float, float]
 FieldSpec = tuple[str, str]
@@ -269,22 +273,6 @@ def _field_url(row: Mapping[str, Any], field: str) -> str | None:
 
 def _has_website_text(row: Mapping[str, Any]) -> bool:
     return any(_field_text(row, field) is not None for field, _ in WebsiteCandidateSource._FIELD_SPECS)
-
-
-def _validate_optional_limit(value: int | None, name: str) -> None:
-    if value is not None and value < 1:
-        raise ValueError(f"{name} must be positive")
-
-
-def _validate_candidate_cell_settings(
-    count: int | None,
-    center_of_cell: Callable[[str], tuple[float, float]] | None,
-) -> None:
-    if count is None:
-        return
-    _validate_optional_limit(count, "candidate_cell_count")
-    if center_of_cell is None:
-        raise ValueError("center_of_cell is required when candidate_cell_count is set")
 
 
 def _budgeted_rows(

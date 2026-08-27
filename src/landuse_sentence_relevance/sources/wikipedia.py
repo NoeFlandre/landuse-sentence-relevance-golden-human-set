@@ -11,6 +11,11 @@ from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.stratification import select_spread_cells
 from landuse_sentence_relevance.observability import log_stream_progress
 from landuse_sentence_relevance.sources.protocols import SentenceSplitter
+from landuse_sentence_relevance.sources.validation import (
+    validate_candidate_cell_settings as _validate_candidate_cell_settings,
+)
+from landuse_sentence_relevance.sources.validation import validate_optional_limit as _validate_optional_limit
+from landuse_sentence_relevance.sources.validation import validate_positive_limit as _validate_positive_limit
 
 PolygonLocation = tuple[str, float, float, str]
 logger = logging.getLogger(__name__)
@@ -18,27 +23,6 @@ logger = logging.getLogger(__name__)
 
 def _rank(seed: str, row_id: str) -> str:
     return hashlib.sha256(f"{seed}:{row_id}".encode()).hexdigest()
-
-
-def _validate_positive_limit(value: int, name: str) -> None:
-    if value < 1:
-        raise ValueError(f"{name} must be positive")
-
-
-def _validate_optional_limit(value: int | None, name: str) -> None:
-    if value is not None:
-        _validate_positive_limit(value, name)
-
-
-def _validate_candidate_cell_settings(
-    count: int | None,
-    center_of_cell: Callable[[str], tuple[float, float]] | None,
-) -> None:
-    if count is None:
-        return
-    _validate_positive_limit(count, "candidate_cell_count")
-    if center_of_cell is None:
-        raise ValueError("center_of_cell is required when candidate_cell_count is set")
 
 
 class WikipediaCandidateSource:

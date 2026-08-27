@@ -89,6 +89,7 @@ show_missing = true
 source_paths = [
     "src/landuse_sentence_relevance/domain",
     "src/landuse_sentence_relevance/storage",
+    "src/landuse_sentence_relevance/sources/validation.py",
 ]
 also_copy = ["src/landuse_sentence_relevance", "scripts"]
 on_dependency_change = "rerun"
