@@ -1,3 +1,4 @@
+import logging
 from typing import Any, get_type_hints
 
 from landuse_sentence_relevance.sources.huggingface import (
@@ -13,7 +14,7 @@ def test_rows_use_explicit_loader_contract() -> None:
     assert annotations["loader"] == HuggingFaceDatasetLoader | None
 
 
-def test_rows_are_loaded_in_streaming_mode_at_an_immutable_revision() -> None:
+def test_rows_are_loaded_in_streaming_mode_at_an_immutable_revision(caplog) -> None:
     calls: list[dict[str, Any]] = []
 
     def fake_load_dataset(**kwargs: Any):
@@ -30,6 +31,8 @@ def test_rows_are_loaded_in_streaming_mode_at_an_immutable_revision() -> None:
         loader=fake_load_dataset,
     )
 
+    caplog.set_level(logging.INFO)
+
     assert list(rows()) == [{"id": 1}]
     assert calls == [
         {
@@ -40,6 +43,7 @@ def test_rows_are_loaded_in_streaming_mode_at_an_immutable_revision() -> None:
             "revision": "revision-sha",
         }
     ]
+    assert "Opening Hugging Face stream: owner/dataset" in caplog.text
 
 
 def test_default_loader_is_used_when_no_loader_is_injected(monkeypatch) -> None:
@@ -58,3 +62,4 @@ def test_default_loader_is_used_when_no_loader_is_injected(monkeypatch) -> None:
 
     assert list(rows()) == [{"id": 1}]
     assert calls[0]["streaming"] is True
+    assert calls[0]["on_bad_files"] == "warn"

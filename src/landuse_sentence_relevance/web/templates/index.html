@@ -3,46 +3,482 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sentence relevance annotation</title>
+    <title>Sentence relevance</title>
     <style>
-      :root { color-scheme: light; font-family: system-ui, sans-serif; }
-      body { margin: 0 auto; max-width: 760px; padding: 2rem 1rem; color: #17202a; }
-      .progress, .metadata { color: #52616b; font-size: .95rem; }
-      .sentence { font-size: 1.35rem; line-height: 1.55; margin: 2.5rem 0; }
-      .actions { display: flex; gap: .75rem; }
-      button { border: 0; border-radius: .4rem; cursor: pointer; font-size: 1rem; padding: .75rem 1.25rem; }
-      button[value="yes"] { background: #16794f; color: white; }
-      button[value="no"] { background: #b42318; color: white; }
-      a { color: #175cd3; }
+      :root {
+        color-scheme: light;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #eef2f5;
+        color: #17212b;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: clamp(1rem, 4vw, 3rem);
+        background: #eef2f5;
+      }
+
+      .annotation-shell {
+        width: min(100%, 960px);
+        margin: auto;
+      }
+
+      .page-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: #697684;
+        font-size: .7rem;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      p { margin-top: 0; }
+
+      h1 {
+        margin-bottom: 0;
+        color: #17212b;
+        font-size: clamp(1.8rem, 4vw, 2.7rem);
+        letter-spacing: -.05em;
+        line-height: 1;
+      }
+
+      h2 {
+        margin-bottom: 0;
+        font-size: 1.15rem;
+        letter-spacing: -.02em;
+      }
+
+      .status-chip,
+      .section-count {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2rem;
+        padding: .35rem .7rem;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #52616b;
+        font-size: .8rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .75rem;
+        margin-bottom: 1rem;
+      }
+
+      .metric {
+        padding: 1rem 1.1rem;
+        border: 1px solid #dfe6eb;
+        border-radius: .9rem;
+        background: #ffffff;
+      }
+
+      .metric-label {
+        display: block;
+        color: #7a8793;
+        font-size: .7rem;
+        font-weight: 800;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+
+      .metric-value {
+        display: block;
+        margin-top: .25rem;
+        color: #17212b;
+        font-size: 1.7rem;
+        font-weight: 750;
+        letter-spacing: -.04em;
+      }
+
+      .metric-yes .metric-value { color: #16794f; }
+      .metric-no .metric-value { color: #b42318; }
+
+      .annotation-card,
+      .review-card,
+      .empty-state {
+        border: 1px solid #dfe6eb;
+        border-radius: 1rem;
+        background: #ffffff;
+        box-shadow: 0 .75rem 2rem rgb(23 33 43 / 5%);
+      }
+
+      .review-card { overflow: hidden; }
+
+      .section-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.25rem 1.35rem;
+        border-bottom: 1px solid #edf0f2;
+      }
+
+      .annotation-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .annotation-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 1.25rem;
+        padding: 1.15rem 1.35rem;
+        border-bottom: 1px solid #edf0f2;
+      }
+
+      .annotation-row:last-child { border-bottom: 0; }
+
+      .annotation-topline {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        margin-bottom: .5rem;
+      }
+
+      .label-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 1.6rem;
+        padding: .2rem .55rem;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .03em;
+      }
+
+      .label-yes { background: #e7f5ee; color: #16794f; }
+      .label-no { background: #fdebea; color: #b42318; }
+
+      .annotation-source {
+        color: #7a8793;
+        font-size: .78rem;
+        font-weight: 700;
+        text-transform: capitalize;
+      }
+
+      .annotation-sentence {
+        margin-bottom: .55rem;
+        color: #17212b;
+        font-size: 1.02rem;
+        line-height: 1.45;
+      }
+
+      .annotation-meta {
+        margin-bottom: 0;
+        color: #7a8793;
+        font-size: .78rem;
+        line-height: 1.4;
+      }
+
+      .annotation-meta a,
+      a {
+        color: #175cd3;
+        font-weight: 700;
+      }
+
+      .annotation-actions {
+        display: flex;
+        align-items: flex-start;
+        gap: .4rem;
+      }
+
+      .annotation-actions form { margin: 0; }
+
+      button {
+        min-height: 2.25rem;
+        border: 0;
+        border-radius: .55rem;
+        cursor: pointer;
+        font: inherit;
+        font-size: .8rem;
+        font-weight: 800;
+        padding: .5rem .7rem;
+        transition: filter .15s ease, transform .15s ease;
+      }
+
+      button:hover { filter: brightness(.96); }
+      button:active { transform: translateY(1px); }
+      button:focus-visible { outline: 3px solid #84adff; outline-offset: 3px; }
+
+      .label-action {
+        border: 1px solid #dfe6eb;
+        background: #ffffff;
+        color: #52616b;
+      }
+
+      .label-action.is-selected { border-color: transparent; }
+      .label-action.is-selected[value="yes"] { background: #16794f; color: #ffffff; }
+      .label-action.is-selected[value="no"] { background: #b42318; color: #ffffff; }
+
+      .remove-action {
+        background: transparent;
+        color: #9b2c25;
+      }
+
+      .next-section { margin-top: 1rem; }
+
+      .annotation-card {
+        padding: clamp(1.25rem, 4vw, 2rem);
+      }
+
+      .annotation-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+      }
+
+      .progress {
+        margin: 0;
+        padding: .45rem .7rem;
+        border-radius: 999px;
+        background: #f0f3f6;
+        color: #52616b;
+        font-size: .8rem;
+        white-space: nowrap;
+      }
+
+      .candidate {
+        padding-top: 1.25rem;
+        border-top: 1px solid #edf0f2;
+      }
+
+      .sentence {
+        max-width: 58ch;
+        margin-bottom: 1.25rem;
+        color: #17212b;
+        font-size: clamp(1.3rem, 3vw, 1.75rem);
+        letter-spacing: -.025em;
+        line-height: 1.35;
+      }
+
+      .metadata-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem 1.25rem;
+        margin: 0 0 1.25rem;
+      }
+
+      .metadata-item { min-width: 0; }
+
+      .metadata-item dt {
+        color: #7a8793;
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+
+      .metadata-item dd {
+        margin: .2rem 0 0;
+        overflow-wrap: anywhere;
+        color: #344454;
+        font-size: .9rem;
+        line-height: 1.35;
+      }
+
+      .decision-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .75rem;
+      }
+
+      .decision-actions button {
+        min-height: 3rem;
+        color: #ffffff;
+        font-size: .95rem;
+      }
+
+      .decision-actions button[value="yes"] { background: #16794f; }
+      .decision-actions button[value="no"] { background: #b42318; }
+
+      .empty-state {
+        padding: 1.5rem;
+      }
+
+      .empty-state h2 { margin-bottom: .45rem; }
+      .empty-state p { margin-bottom: 0; color: #52616b; line-height: 1.5; }
+
+      @media (max-width: 680px) {
+        .page-header,
+        .annotation-header { align-items: flex-start; flex-direction: column; }
+        .metrics { grid-template-columns: 1fr; }
+        .annotation-row { grid-template-columns: 1fr; gap: .8rem; }
+        .annotation-actions { align-items: center; }
+      }
+
+      @media (max-width: 500px) {
+        .metadata-grid,
+        .decision-actions { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
-    <h1>Sentence relevance</h1>
-    <p class="progress">
-      {{ state.labeled_count }} labeled · {{ state.yes_count }} Yes · {{ state.no_count }} No
-    </p>
+    <main class="annotation-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Human annotation</p>
+          <h1>Sentence relevance</h1>
+        </div>
+        {% if state.published %}
+          <span class="status-chip">Uploaded</span>
+        {% elif state.final_ready %}
+          <span class="status-chip">Saved · uploading</span>
+        {% else %}
+          <span class="status-chip">Review workspace</span>
+        {% endif %}
+      </header>
 
-    {% if state.published %}
-      <h2>Dataset complete</h2>
-      <p>The balanced 100-sentence dataset was uploaded.</p>
-    {% elif candidate %}
-      <p class="sentence">{{ candidate.sentence }}</p>
-      <dl class="metadata">
-        <dt>Source</dt><dd>{{ candidate.source.value|capitalize }}</dd>
-        {% if candidate.place_name %}<dt>Place</dt><dd>{{ candidate.place_name }}</dd>{% endif %}
-        {% if candidate.region %}<dt>Region</dt><dd>{{ candidate.region }}</dd>{% endif %}
-        <dt>Coordinates</dt><dd>{{ "%.4f"|format(candidate.latitude) }}, {{ "%.4f"|format(candidate.longitude) }}</dd>
-        <dt>H3 cell</dt><dd>{{ candidate.h3_cell }}</dd>
-        {% if candidate.source_url %}<dt>Link</dt><dd><a href="{{ candidate.source_url }}" target="_blank" rel="noreferrer">Open source</a></dd>{% endif %}
-      </dl>
-      <form class="actions" method="post" action="/annotate">
-        <input type="hidden" name="candidate_id" value="{{ candidate.candidate_id }}">
-        <button type="submit" name="label" value="yes">Yes — relevant</button>
-        <button type="submit" name="label" value="no">No — not relevant</button>
-      </form>
-    {% else %}
-      <h2>No candidate is available</h2>
-      <p>The streamed candidate pool needs more eligible shared H3 cells.</p>
-    {% endif %}
+      <section class="metrics" aria-label="Annotation metrics">
+        <div class="metric">
+          <span class="metric-label">Saved</span>
+          <strong class="metric-value">{{ state.labeled_count }}</strong>
+        </div>
+        <div class="metric metric-yes">
+          <span class="metric-label">Yes</span>
+          <strong class="metric-value">{{ state.yes_count }}</strong>
+        </div>
+        <div class="metric metric-no">
+          <span class="metric-label">No</span>
+          <strong class="metric-value">{{ state.no_count }}</strong>
+        </div>
+      </section>
+
+      <section class="review-card" aria-labelledby="saved-annotations-heading">
+        <header class="section-heading">
+          <div>
+            <p class="eyebrow">Review</p>
+            <h2 id="saved-annotations-heading">Saved annotations</h2>
+          </div>
+          <span class="section-count">{{ state.labeled_count }} records</span>
+        </header>
+
+        {% if state.annotations %}
+          <ol class="annotation-list">
+            {% for annotation in state.annotations %}
+              <li class="annotation-row">
+                <div>
+                  <div class="annotation-topline">
+                    <span class="label-badge {% if annotation.label.value == 'yes' %}label-yes{% else %}label-no{% endif %}">
+                      {{ annotation.label.value|upper }}
+                    </span>
+                    <span class="annotation-source">{{ annotation.candidate.source.value }}</span>
+                  </div>
+                  <p class="annotation-sentence">{{ annotation.candidate.sentence }}</p>
+                  <p class="annotation-meta">
+                    {% if annotation.candidate.place_name %}{{ annotation.candidate.place_name }} · {% endif %}
+                    {{ "%.4f"|format(annotation.candidate.latitude) }}, {{ "%.4f"|format(annotation.candidate.longitude) }}
+                    {% if annotation.candidate.source_url %} · <a href="{{ annotation.candidate.source_url }}" target="_blank" rel="noreferrer">Source</a>{% endif %}
+                  </p>
+                </div>
+                <div class="annotation-actions">
+                  <form method="post" action="/annotation/update">
+                    <input type="hidden" name="candidate_id" value="{{ annotation.candidate.candidate_id }}">
+                    <button class="label-action {% if annotation.label.value == 'yes' %}is-selected{% endif %}" type="submit" name="label" value="yes" aria-label="Change label to Yes">Yes</button>
+                    <button class="label-action {% if annotation.label.value == 'no' %}is-selected{% endif %}" type="submit" name="label" value="no" aria-label="Change label to No">No</button>
+                  </form>
+                  <form method="post" action="/annotation/remove" onsubmit="return window.confirm('Remove this annotation?');">
+                    <input type="hidden" name="candidate_id" value="{{ annotation.candidate.candidate_id }}">
+                    <button class="remove-action" type="submit">Remove</button>
+                  </form>
+                </div>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <section class="empty-state">
+            <h2>No annotations yet</h2>
+            <p>Saved labels will appear here as you work.</p>
+          </section>
+        {% endif %}
+      </section>
+
+      {% if not state.published and not state.final_ready and candidate %}
+        <section class="next-section">
+          <section class="annotation-card">
+            <header class="annotation-header">
+              <div>
+                <p class="eyebrow">Continue labeling</p>
+                <h2>Next sentence</h2>
+              </div>
+              <p class="progress" aria-label="Annotation progress">{{ state.labeled_count }} labeled · {{ state.yes_count }} Yes · {{ state.no_count }} No</p>
+            </header>
+            <div class="candidate">
+              <p class="sentence">{{ candidate.sentence }}</p>
+              <dl class="metadata-grid">
+                <div class="metadata-item">
+                  <dt>Source</dt>
+                  <dd>{{ candidate.source.value|capitalize }}</dd>
+                </div>
+                {% if candidate.place_name %}
+                  <div class="metadata-item">
+                    <dt>Place</dt>
+                    <dd>{{ candidate.place_name }}</dd>
+                  </div>
+                {% endif %}
+                {% if candidate.region %}
+                  <div class="metadata-item">
+                    <dt>Region</dt>
+                    <dd>{{ candidate.region }}</dd>
+                  </div>
+                {% endif %}
+                <div class="metadata-item">
+                  <dt>Coordinates</dt>
+                  <dd>{{ "%.4f"|format(candidate.latitude) }}, {{ "%.4f"|format(candidate.longitude) }}</dd>
+                </div>
+                <div class="metadata-item">
+                  <dt>H3 cell</dt>
+                  <dd>{{ candidate.h3_cell }}</dd>
+                </div>
+                {% if candidate.source_url %}
+                  <div class="metadata-item">
+                    <dt>Link</dt>
+                    <dd><a href="{{ candidate.source_url }}" target="_blank" rel="noreferrer">Open source</a></dd>
+                  </div>
+                {% endif %}
+              </dl>
+              <form class="decision-actions" method="post" action="/annotate">
+                <input type="hidden" name="candidate_id" value="{{ candidate.candidate_id }}">
+                <button type="submit" name="label" value="yes">Yes — relevant</button>
+                <button type="submit" name="label" value="no">No — not relevant</button>
+              </form>
+            </div>
+          </section>
+        </section>
+      {% elif state.published %}
+        <section class="next-section">
+          <section class="empty-state">
+            <h2>Dataset uploaded</h2>
+            <p>The final balanced dataset is public on Hugging Face.</p>
+          </section>
+        </section>
+      {% elif state.final_ready %}
+        <section class="next-section">
+          <section class="empty-state">
+            <h2>Final set saved</h2>
+            <p>Your local annotations are saved. The public upload is running in the background.</p>
+          </section>
+        </section>
+      {% endif %}
+    </main>
   </body>
 </html>

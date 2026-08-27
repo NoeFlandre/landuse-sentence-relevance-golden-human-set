@@ -1,3 +1,6 @@
+import logging
+from threading import Event, Lock, Thread
+
 import pytest
 from tests.unit.test_constraints import make_annotations
 
@@ -21,7 +24,7 @@ def block_default_hub_upload(monkeypatch):
     monkeypatch.setattr(DatasetPublisher, "_upload_to_hub", block_upload)
 
 
-def test_publisher_uploads_only_when_all_quotas_are_met(block_default_hub_upload) -> None:
+def test_publisher_uploads_only_when_all_quotas_are_met(block_default_hub_upload, caplog) -> None:
     calls = []
     publisher = DatasetPublisher(
         dataset_id="NoeFlandre/landuse-sentence-relevance-golden-human-set",
@@ -31,11 +34,17 @@ def test_publisher_uploads_only_when_all_quotas_are_met(block_default_hub_upload
     assert publisher.publish_if_ready(make_annotations()[:-1]) is False
     assert calls == []
 
+    caplog.set_level(logging.INFO)
     assert publisher.publish_if_ready(make_annotations()) is True
     assert len(calls) == 1
     assert calls[0]["dataset_id"] == "NoeFlandre/landuse-sentence-relevance-golden-human-set"
     assert calls[0]["private"] is False
     assert len(calls[0]["records"]) == 100
+    assert [record.message for record in caplog.records] == [
+        "Final contract satisfied; uploading 100 annotations to "
+        "NoeFlandre/landuse-sentence-relevance-golden-human-set",
+        "Public upload complete for NoeFlandre/landuse-sentence-relevance-golden-human-set",
+    ]
 
 
 def test_publisher_does_not_reorder_the_deterministic_final_selection(block_default_hub_upload) -> None:
@@ -52,7 +61,7 @@ def test_publisher_does_not_reorder_the_deterministic_final_selection(block_defa
 
 
 def test_publisher_cleans_the_application_cache_after_a_successful_upload(
-    tmp_path, block_default_hub_upload
+    tmp_path, block_default_hub_upload, caplog
 ) -> None:
     cache = ManagedCache(tmp_path / "runtime-cache")
     cache.prepare({})
@@ -69,9 +78,37 @@ def test_publisher_cleans_the_application_cache_after_a_successful_upload(
         cleanup=cleanup,
     )
 
+    caplog.set_level(logging.INFO)
     assert publisher.publish_if_ready(make_annotations()) is True
     assert events == ["upload", "cleanup"]
     assert not cache.root.exists()
+    assert [record.message for record in caplog.records] == [
+        "Final contract satisfied; uploading 100 annotations to dataset",
+        "Public upload complete for dataset",
+        "Removing disposable runtime cache after successful upload",
+    ]
+
+
+def test_publisher_prepares_the_cache_before_reuploading_after_cleanup(
+    caplog, block_default_hub_upload
+) -> None:
+    events = []
+    publisher = DatasetPublisher(
+        dataset_id="dataset",
+        prepare=lambda: events.append("prepare"),
+        uploader=lambda **kwargs: events.append("upload"),
+        cleanup=lambda: events.append("cleanup"),
+    )
+
+    caplog.set_level(logging.INFO)
+    assert publisher.publish_if_ready(make_annotations()) is True
+    assert events == ["prepare", "upload", "cleanup"]
+    assert [record.message for record in caplog.records] == [
+        "Final contract satisfied; uploading 100 annotations to dataset",
+        "Preparing the disposable runtime cache for upload",
+        "Public upload complete for dataset",
+        "Removing disposable runtime cache after successful upload",
+    ]
 
 
 def test_publisher_keeps_the_application_cache_when_upload_fails(tmp_path, block_default_hub_upload) -> None:
@@ -94,6 +131,55 @@ def test_publisher_keeps_the_application_cache_when_upload_fails(tmp_path, block
 
     assert cleanup_calls == []
     assert (cache.root / "model.bin").exists()
+
+
+def test_publisher_serializes_concurrent_uploads(block_default_hub_upload) -> None:
+    active_uploads = 0
+    maximum_active_uploads = 0
+    upload_count = 0
+    state_lock = Lock()
+    first_upload_started = Event()
+    second_upload_started = Event()
+    release_first_upload = Event()
+    errors = []
+
+    def upload(**kwargs) -> None:
+        nonlocal active_uploads, maximum_active_uploads, upload_count
+        with state_lock:
+            active_uploads += 1
+            maximum_active_uploads = max(maximum_active_uploads, active_uploads)
+            upload_count += 1
+            current_upload = upload_count
+        if current_upload == 1:
+            first_upload_started.set()
+            assert release_first_upload.wait(timeout=2)
+        else:
+            second_upload_started.set()
+            assert release_first_upload.wait(timeout=2)
+        with state_lock:
+            active_uploads -= 1
+
+    publisher = DatasetPublisher(dataset_id="dataset", uploader=upload)
+
+    def publish() -> None:
+        try:
+            assert publisher.publish_if_ready(make_annotations()) is True
+        except BaseException as error:  # pragma: no cover - only reports a thread failure
+            errors.append(error)
+
+    first = Thread(target=publish)
+    second = Thread(target=publish)
+    first.start()
+    assert first_upload_started.wait(timeout=2)
+    second.start()
+    assert not second_upload_started.wait(timeout=1)
+    release_first_upload.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert errors == []
+    assert upload_count == 2
+    assert maximum_active_uploads == 1
 
 
 def test_real_hub_boundary_creates_a_public_dataset(monkeypatch) -> None:

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
-from landuse_sentence_relevance.domain.stratification import select_common_cells
+from landuse_sentence_relevance.domain.stratification import select_distinct_source_cells
 
 
 def _rank(seed: str, candidate_id: str) -> str:
@@ -17,11 +17,34 @@ class FinalizedCandidatePool:
     candidates: tuple[Candidate, ...]
     cells: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        _require_unique_candidate_ids(self.candidates)
+        _require_unique_candidate_cells(self.candidates)
+        _require_matching_candidate_cells(self.candidates, self.cells)
+
     def next_unannotated(self, annotated_ids: set[str]) -> Candidate | None:
         for candidate in self.candidates:
             if candidate.candidate_id not in annotated_ids:
                 return candidate
         return None
+
+
+def _require_unique_candidate_ids(candidates: tuple[Candidate, ...]) -> None:
+    candidate_ids = {candidate.candidate_id for candidate in candidates}
+    if len(candidate_ids) != len(candidates):
+        raise ValueError("candidate pool must contain unique candidate IDs")
+
+
+def _require_unique_candidate_cells(candidates: tuple[Candidate, ...]) -> None:
+    candidate_cells = {candidate.h3_cell for candidate in candidates}
+    if len(candidate_cells) != len(candidates):
+        raise ValueError("candidate pool must contain one candidate per H3 cell")
+
+
+def _require_matching_candidate_cells(candidates: tuple[Candidate, ...], cells: tuple[str, ...]) -> None:
+    candidate_cells = tuple(candidate.h3_cell for candidate in candidates)
+    if tuple(cells) != candidate_cells:
+        raise ValueError("candidate pool cells must match candidate order")
 
 
 class BoundedCandidatePool:
@@ -50,17 +73,23 @@ class BoundedCandidatePool:
 
     def finalize(
         self,
-        target_cell_count: int,
+        target_cells_per_source: int,
         center_of_cell: Callable[[str], tuple[float, float]],
+        minimum_distance_km: float = 0.0,
     ) -> FinalizedCandidatePool:
         eligible_cells = _eligible_cells(self._buckets)
-        cells = select_common_cells(
+        selected_by_source = select_distinct_source_cells(
             eligible_cells,
-            target_count=target_cell_count,
+            target_count_per_source=target_cells_per_source,
             center_of_cell=center_of_cell,
             seed=self._seed,
+            minimum_distance_km=minimum_distance_km,
         )
-        return FinalizedCandidatePool(candidates=_selected_candidates(self._buckets, cells), cells=cells)
+        cells = tuple(cell for source in Source for cell in selected_by_source[source])
+        return FinalizedCandidatePool(
+            candidates=_selected_candidates(self._buckets, selected_by_source),
+            cells=cells,
+        )
 
 
 def _eligible_cells(
@@ -74,12 +103,12 @@ def _eligible_cells(
 
 def _selected_candidates(
     buckets: dict[tuple[Source, str], dict[str, Candidate]],
-    cells: tuple[str, ...],
+    cells_by_source: dict[Source, tuple[str, ...]],
 ) -> tuple[Candidate, ...]:
     selected: list[Candidate] = []
-    for cell in cells:
-        for source in Source:
-            selected.extend(_sorted_bucket(buckets[(source, cell)]))
+    for source in Source:
+        for cell in cells_by_source[source]:
+            selected.append(_sorted_bucket(buckets[(source, cell)])[0])
     return tuple(selected)
 
 

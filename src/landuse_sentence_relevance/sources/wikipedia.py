@@ -1,18 +1,43 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
+from landuse_sentence_relevance.domain.stratification import select_spread_cells
+from landuse_sentence_relevance.observability import log_stream_progress
 from landuse_sentence_relevance.sources.protocols import SentenceSplitter
 
 PolygonLocation = tuple[str, float, float, str]
+logger = logging.getLogger(__name__)
 
 
 def _rank(seed: str, row_id: str) -> str:
     return hashlib.sha256(f"{seed}:{row_id}".encode()).hexdigest()
+
+
+def _validate_positive_limit(value: int, name: str) -> None:
+    if value < 1:
+        raise ValueError(f"{name} must be positive")
+
+
+def _validate_optional_limit(value: int | None, name: str) -> None:
+    if value is not None:
+        _validate_positive_limit(value, name)
+
+
+def _validate_candidate_cell_settings(
+    count: int | None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None,
+) -> None:
+    if count is None:
+        return
+    _validate_positive_limit(count, "candidate_cell_count")
+    if center_of_cell is None:
+        raise ValueError("center_of_cell is required when candidate_cell_count is set")
 
 
 class WikipediaCandidateSource:
@@ -24,35 +49,112 @@ class WikipediaCandidateSource:
         splitter: SentenceSplitter,
         cell_for_location: Callable[[float, float], str],
         max_polygons_per_cell: int = 8,
+        max_candidates_per_cell: int = 8,
+        candidate_cell_count: int | None = None,
+        center_of_cell: Callable[[str], tuple[float, float]] | None = None,
+        minimum_candidate_cells: int | None = None,
         seed: str = "wikipedia",
     ) -> None:
-        if max_polygons_per_cell < 1:
-            raise ValueError("max_polygons_per_cell must be positive")
+        _validate_positive_limit(max_polygons_per_cell, "max_polygons_per_cell")
+        _validate_positive_limit(max_candidates_per_cell, "max_candidates_per_cell")
+        _validate_candidate_cell_settings(candidate_cell_count, center_of_cell)
+        _validate_optional_limit(minimum_candidate_cells, "minimum_candidate_cells")
         self._row_loader = row_loader
         self._splitter = splitter
         self._cell_for_location = cell_for_location
         self._max_polygons_per_cell = max_polygons_per_cell
+        self._max_candidates_per_cell = max_candidates_per_cell
+        self._candidate_cell_count = candidate_cell_count
+        self._center_of_cell = center_of_cell
+        self._minimum_candidate_cells = minimum_candidate_cells
         self._seed = seed
+        self._selected_cells: frozenset[str] = frozenset()
+        self._candidate_cells: frozenset[str] = frozenset()
+
+    @property
+    def candidate_cells(self) -> frozenset[str]:
+        return self._candidate_cells
 
     def _selected_polygons(self) -> dict[str, Mapping[str, Any]]:
+        logger.info("Wikipedia source: selecting geolocated polygons")
         buckets: dict[str, dict[str, Mapping[str, Any]]] = defaultdict(dict)
+        rows_seen = 0
         for row in self._row_loader("polygons"):
+            rows_seen += 1
+            log_stream_progress(logger, "Wikipedia polygons", rows_seen)
             location = _polygon_location(row, self._cell_for_location)
             if location is None:
                 continue
             polygon_id, _, _, cell = location
-            _insert_polygon(buckets[cell], polygon_id, row, self._max_polygons_per_cell, self._seed)
-        return {polygon_id: row for bucket in buckets.values() for polygon_id, row in bucket.items()}
+            _insert_polygon(
+                buckets[cell],
+                polygon_id,
+                _polygon_metadata(row),
+                self._max_polygons_per_cell,
+                self._seed,
+            )
+        candidate_cells = _select_candidate_cells(
+            buckets,
+            self._candidate_cell_count,
+            self._center_of_cell,
+            self._seed,
+        )
+        self._selected_cells = frozenset(candidate_cells)
+        self._candidate_cells = frozenset()
+        selected = {polygon_id: row for cell in candidate_cells for polygon_id, row in buckets[cell].items()}
+        logger.info(
+            "Wikipedia source: selected %d polygons across %d candidate H3 cells from %d rows",
+            len(selected),
+            len(candidate_cells),
+            rows_seen,
+        )
+        return selected
 
     def iter_candidates(self) -> Iterable[Candidate]:
         polygons = self._selected_polygons()
         document_to_polygons = self._document_links(polygons)
+        logger.info(
+            "Wikipedia source: splitting English article sections (max %d candidates per H3 cell)",
+            self._max_candidates_per_cell,
+        )
+        sections_seen = 0
+        candidates_seen = 0
+        candidate_counts: dict[str, int] = {}
+        candidate_cells: set[str] = set()
         for section in self._row_loader("wikipedia_sections"):
-            yield from self._section_candidates(section, polygons, document_to_polygons)
+            if _candidate_budget_filled(
+                self._selected_cells,
+                candidate_counts,
+                self._max_candidates_per_cell,
+                self._minimum_candidate_cells,
+            ):
+                logger.info("Wikipedia source: candidate cell budget filled; stopping section scan")
+                break
+            sections_seen += 1
+            log_stream_progress(logger, "Wikipedia sections", sections_seen)
+            for candidate in self._section_candidates(
+                section,
+                polygons,
+                document_to_polygons,
+                candidate_counts,
+            ):
+                candidates_seen += 1
+                candidate_cells.add(candidate.h3_cell)
+                self._candidate_cells = frozenset(candidate_cells)
+                yield candidate
+        logger.info(
+            "Wikipedia source: yielded %d candidates from %d sections",
+            candidates_seen,
+            sections_seen,
+        )
 
     def _document_links(self, polygons: Mapping[str, Mapping[str, Any]]) -> dict[str, set[str]]:
+        logger.info("Wikipedia source: matching English Wikipedia article links")
         document_to_polygons: dict[str, set[str]] = defaultdict(set)
+        links_seen = 0
         for link in self._row_loader("polygon_document_links"):
+            links_seen += 1
+            log_stream_progress(logger, "Wikipedia article links", links_seen)
             if not _is_english_wikipedia_link(link):
                 continue
             link_ids = _link_ids(link, polygons)
@@ -60,6 +162,11 @@ class WikipediaCandidateSource:
                 continue
             document_id, polygon_id = link_ids
             document_to_polygons[document_id].add(polygon_id)
+        logger.info(
+            "Wikipedia source: matched %d article IDs from %d links",
+            len(document_to_polygons),
+            links_seen,
+        )
         return document_to_polygons
 
     def _section_candidates(
@@ -67,20 +174,68 @@ class WikipediaCandidateSource:
         section: Mapping[str, Any],
         polygons: Mapping[str, Mapping[str, Any]],
         document_to_polygons: Mapping[str, set[str]],
+        candidate_counts: dict[str, int],
     ) -> Iterable[Candidate]:
         metadata = _section_metadata(section, document_to_polygons)
         if metadata is None:
             return
         text, polygon_ids, section_id, source_url = metadata
         for polygon_id in sorted(polygon_ids):
-            polygon = polygons[polygon_id]
-            yield from self._polygon_sentence_candidates(
-                polygon,
+            yield from self._available_polygon_candidates(
+                polygons[polygon_id],
                 polygon_id,
                 text,
                 section_id,
                 source_url,
+                candidate_counts,
             )
+
+    def _available_polygon_candidates(
+        self,
+        polygon: Mapping[str, Any],
+        polygon_id: str,
+        text: str,
+        section_id: str,
+        source_url: str | None,
+        candidate_counts: dict[str, int],
+    ) -> Iterable[Candidate]:
+        location = _polygon_location(polygon, self._cell_for_location)
+        if location is None:
+            return
+        cell = location[3]
+        if _cell_is_full(cell, candidate_counts, self._max_candidates_per_cell):
+            return
+        yield from self._bounded_polygon_candidates(
+            polygon,
+            polygon_id,
+            text,
+            section_id,
+            source_url,
+            cell,
+            candidate_counts,
+        )
+
+    def _bounded_polygon_candidates(
+        self,
+        polygon: Mapping[str, Any],
+        polygon_id: str,
+        text: str,
+        section_id: str,
+        source_url: str | None,
+        cell: str,
+        candidate_counts: dict[str, int],
+    ) -> Iterable[Candidate]:
+        for candidate in self._polygon_sentence_candidates(
+            polygon,
+            polygon_id,
+            text,
+            section_id,
+            source_url,
+        ):
+            if _cell_is_full(cell, candidate_counts, self._max_candidates_per_cell):
+                break
+            candidate_counts[cell] = candidate_counts.get(cell, 0) + 1
+            yield candidate
 
     def _polygon_sentence_candidates(
         self,
@@ -129,6 +284,17 @@ def _coordinates(row: Mapping[str, Any]) -> tuple[Any, float, float] | None:
     return polygon_id, float(latitude), float(longitude)
 
 
+def _polygon_metadata(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "polygon_id": row.get("polygon_id"),
+        "has_english_wikipedia": row.get("has_english_wikipedia"),
+        "lat": row.get("lat"),
+        "lon": row.get("lon"),
+        "name": row.get("name"),
+        "region": row.get("region"),
+    }
+
+
 def _is_english_wikipedia_link(link: Mapping[str, Any]) -> bool:
     return link.get("project") == "wikipedia" and link.get("language") == "en"
 
@@ -174,6 +340,48 @@ def _section_text(section: Mapping[str, Any]) -> str | None:
 def _section_url(section: Mapping[str, Any]) -> str | None:
     page_id = section.get("page_id")
     return f"https://en.wikipedia.org/?curid={page_id}" if page_id is not None else None
+
+
+def _cell_is_full(cell: str, counts: Mapping[str, int], capacity: int) -> bool:
+    return counts.get(cell, 0) >= capacity
+
+
+def _all_cells_full(cells: Iterable[str], counts: Mapping[str, int], capacity: int) -> bool:
+    return all(_cell_is_full(cell, counts, capacity) for cell in cells)
+
+
+def _candidate_budget_filled(
+    cells: Iterable[str],
+    counts: Mapping[str, int],
+    capacity: int,
+    minimum_cells: int | None,
+) -> bool:
+    if minimum_cells is None:
+        return _all_cells_full(cells, counts, capacity)
+    return _filled_cell_count(cells, counts, capacity) >= minimum_cells
+
+
+def _filled_cell_count(cells: Iterable[str], counts: Mapping[str, int], capacity: int) -> int:
+    return sum(_cell_is_full(cell, counts, capacity) for cell in cells)
+
+
+def _select_candidate_cells(
+    buckets: Mapping[str, Mapping[str, Any]],
+    target_count: int | None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None,
+    seed: str,
+) -> tuple[str, ...]:
+    cells = tuple(sorted(buckets))
+    if target_count is None or len(cells) <= target_count:
+        return cells
+    if center_of_cell is None:
+        raise ValueError("center_of_cell is required when candidate_cell_count is set")
+    return select_spread_cells(
+        cells,
+        target_count=target_count,
+        center_of_cell=center_of_cell,
+        seed=seed,
+    )
 
 
 def _sentence_candidates(

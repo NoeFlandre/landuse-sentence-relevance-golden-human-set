@@ -5,6 +5,7 @@ from pathlib import Path
 from tests.unit.test_constraints import make_annotations
 
 import landuse_sentence_relevance.storage.session as session_module
+from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.storage.session import AnnotationStore
 
 
@@ -38,12 +39,51 @@ def test_annotation_store_replaces_duplicate_candidate_records(tmp_path) -> None
     }
 
 
+def test_annotation_store_saves_revised_annotations_without_stale_records(tmp_path) -> None:
+    path = tmp_path / "nested" / "deeper" / "annotations.jsonl"
+    store = AnnotationStore(path)
+    first, second = make_annotations()[:2]
+    store.save((first, second))
+
+    revised = first.__class__(candidate=first.candidate, label=Label.NO)
+    store.save((revised,))
+
+    assert store.load() == {first.candidate.candidate_id: revised}
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+
 def test_annotation_store_creates_missing_parent_directories(tmp_path) -> None:
     path = tmp_path / "nested" / "state" / "annotations.jsonl"
 
     AnnotationStore(path).record(make_annotations()[0])
 
     assert path.is_file()
+
+
+def test_annotation_store_save_writes_utf8_and_sorted_json(tmp_path: Path) -> None:
+    path = tmp_path / "annotations.jsonl"
+    first = make_annotations()[0]
+    annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
+
+    AnnotationStore(path).save((annotation,))
+
+    line = path.read_bytes().decode("utf-8").strip()
+    assert '"Héllö — hills"' in line
+    assert list(json.loads(line)) == sorted(json.loads(line))
+
+
+def test_annotation_store_save_passes_explicit_json_options(tmp_path: Path, monkeypatch) -> None:
+    options = {}
+    original_dumps = session_module.json.dumps
+
+    def spy_dumps(payload: object, **kwargs: object) -> str:
+        options.update(kwargs)
+        return original_dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    monkeypatch.setattr(session_module.json, "dumps", spy_dumps)
+    AnnotationStore(tmp_path / "annotations.jsonl").save((make_annotations()[0],))
+
+    assert options == {"ensure_ascii": False, "sort_keys": True}
 
 
 def test_annotation_store_writes_utf8_and_sorted_json(tmp_path, monkeypatch) -> None:

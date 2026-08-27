@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -61,12 +62,20 @@ class HuggingFaceDatasetRows:
                 split=split,
                 streaming=streaming,
                 revision=revision,
+                on_bad_files="warn",
             )
 
         return stream_dataset
 
     def __call__(self) -> Iterable[Mapping[str, Any]]:
         config = self._config
+        logging.getLogger(__name__).info(
+            "Opening Hugging Face stream: %s (config=%s, split=%s, revision=%s)",
+            config.dataset_id,
+            config.config,
+            config.split,
+            config.revision,
+        )
         return self._loader(
             path=config.dataset_id,
             name=config.config,

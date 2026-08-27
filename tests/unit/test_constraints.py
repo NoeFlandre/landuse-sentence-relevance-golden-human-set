@@ -5,7 +5,6 @@ import pytest
 from landuse_sentence_relevance.domain.constraints import (
     DatasetQuotas,
     FinalDatasetNotReadyError,
-    _cell_source_count,
     validate_final_dataset,
 )
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
@@ -14,17 +13,16 @@ from tests.unit.test_models import make_candidate
 
 def make_annotations() -> list[Annotation]:
     annotations: list[Annotation] = []
-    for cell_number in range(25):
+    for cell_number in range(100):
         cell = f"cell-{cell_number:02d}"
-        for source in Source:
-            for position in range(2):
-                candidate = replace(
-                    make_candidate(f"{source.value}-{cell}-{position}"),
-                    source=source,
-                    h3_cell=cell,
-                )
-                label = Label.YES if len(annotations) < 50 else Label.NO
-                annotations.append(Annotation(candidate=candidate, label=label))
+        source = Source.WIKIPEDIA if cell_number < 50 else Source.WEBSITE
+        candidate = replace(
+            make_candidate(f"{source.value}-{cell}"),
+            source=source,
+            h3_cell=cell,
+        )
+        label = Label.YES if cell_number < 50 else Label.NO
+        annotations.append(Annotation(candidate=candidate, label=label))
     return annotations
 
 
@@ -35,6 +33,14 @@ def with_invalid_resolution(rows: list[Annotation]) -> list[Annotation]:
 
 def test_valid_final_dataset_meets_every_quota() -> None:
     validate_final_dataset(make_annotations())
+
+
+def test_final_dataset_rejects_two_sentences_from_one_h3_cell() -> None:
+    rows = make_annotations()
+    rows[-1] = replace(rows[-1], candidate=replace(rows[-1].candidate, h3_cell=rows[0].candidate.h3_cell))
+
+    with pytest.raises(FinalDatasetNotReadyError, match="each H3 cell must contain exactly one row"):
+        validate_final_dataset(rows)
 
 
 @pytest.mark.parametrize(
@@ -55,17 +61,10 @@ def test_custom_quotas_are_supported() -> None:
         total=4,
         per_source=2,
         per_label=2,
-        cell_count=1,
-        per_source_cell=2,
+        cell_count=4,
+        rows_per_cell=1,
     )
-    rows = make_annotations()[:4]
-    rows = [
-        Annotation(
-            candidate=replace(a.candidate, h3_cell="cell-00"),
-            label=Label.YES if index < 2 else Label.NO,
-        )
-        for index, a in enumerate(rows)
-    ]
+    rows = [make_annotations()[index] for index in (0, 1, 50, 51)]
 
     validate_final_dataset(rows, quotas)
 
@@ -76,7 +75,8 @@ def test_custom_quotas_are_supported() -> None:
         {"total": 99},
         {"per_source": 49},
         {"per_label": 49},
-        {"cell_count": 24},
+        {"cell_count": 99},
+        {"rows_per_cell": 2},
         {"h3_resolution": 2},
     ],
 )
@@ -98,7 +98,7 @@ def test_each_final_dataset_invariant_has_a_failing_case(kind: str) -> None:
     elif kind == "label":
         rows[0] = replace(rows[0], label=Label.NO)
     elif kind == "cell":
-        rows[0] = replace(rows[0], candidate=replace(rows[0].candidate, h3_cell="new-cell"))
+        rows[0] = replace(rows[0], candidate=replace(rows[0].candidate, h3_cell=rows[1].candidate.h3_cell))
     else:
         object.__setattr__(rows[0].candidate, "h3_resolution", 2)
 
@@ -127,10 +127,10 @@ def test_each_final_dataset_invariant_has_a_failing_case(kind: str) -> None:
         ),
         (
             lambda rows: [
-                replace(rows[0], candidate=replace(rows[0].candidate, h3_cell="new-cell")),
+                replace(rows[0], candidate=replace(rows[0].candidate, h3_cell=rows[1].candidate.h3_cell)),
                 *rows[1:],
             ],
-            "the final dataset must cover the configured H3 cells",
+            "each H3 cell must contain exactly one row",
         ),
         (
             with_invalid_resolution,
@@ -145,19 +145,10 @@ def test_final_dataset_errors_are_specific(mutator, message: str) -> None:
     assert str(error.value) == message
 
 
-def test_cell_source_count_counts_only_the_requested_source() -> None:
-    rows = tuple(make_annotations()[:1])
-
-    assert _cell_source_count(rows, "cell-00", Source.WIKIPEDIA) == 1
-    assert _cell_source_count(rows, "cell-00", Source.WEBSITE) == 0
-
-
-def test_final_dataset_reports_an_unbalanced_source_within_a_cell() -> None:
+def test_final_dataset_uses_disjoint_source_cells() -> None:
     rows = make_annotations()
-    rows[0] = replace(rows[0], candidate=replace(rows[0].candidate, source=Source.WEBSITE))
-    rows[6] = replace(rows[6], candidate=replace(rows[6].candidate, source=Source.WIKIPEDIA))
 
-    with pytest.raises(FinalDatasetNotReadyError) as error:
-        validate_final_dataset(rows)
+    wikipedia_cells = {row.candidate.h3_cell for row in rows if row.candidate.source is Source.WIKIPEDIA}
+    website_cells = {row.candidate.h3_cell for row in rows if row.candidate.source is Source.WEBSITE}
 
-    assert str(error.value) == "each H3 cell must contain the same source quota"
+    assert wikipedia_cells.isdisjoint(website_cells)

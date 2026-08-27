@@ -61,7 +61,7 @@ def load_predictor(
             self.head_dim = d_model // heads
             self.norm1 = nn.LayerNorm(d_model)
             self.qkv = nn.Linear(d_model, 3 * d_model, bias=False)
-            self.output = nn.Linear(d_model, d_model, bias=False)
+            self.out_proj = nn.Linear(d_model, d_model, bias=False)
             self.norm2 = nn.LayerNorm(d_model)
             feedforward = d_model * expand
             self.ffn_gate = nn.Linear(d_model, feedforward, bias=False)
@@ -77,7 +77,7 @@ def load_predictor(
             attention = (query @ key.transpose(-2, -1)) / (self.head_dim**0.5)
             attention = attention.softmax(dim=-1)
             hidden = (attention @ value).transpose(1, 2).contiguous().view(batch, length, dimension)
-            inputs = residual + self.output(hidden)
+            inputs = residual + self.out_proj(hidden)
             residual = inputs
             hidden = self.norm2(inputs)
             hidden = self.ffn_down(functional.silu(self.ffn_gate(hidden)) * self.ffn_up(hidden))
@@ -89,12 +89,12 @@ def load_predictor(
             d_model = config["d_model"]
             self.embed = nn.Embedding(257, d_model, padding_idx=256)
             self.ngram_embed = ByteNgramEmbed(config["ngram_buckets"], config["ngram_dim"])
-            self.ngram_projection = nn.Linear(config["ngram_dim"], d_model, bias=False)
+            self.ngram_proj = nn.Linear(config["ngram_dim"], d_model, bias=False)
             self.conv_layers = nn.ModuleList(
                 ByteConvBlock(d_model, config["conv_kernel"], config["ffn_expand"])
                 for _ in range(config["n_conv"])
             )
-            self.attention_layers = nn.ModuleList(
+            self.attn_layers = nn.ModuleList(
                 ByteAttentionBlock(d_model, config["n_heads"], config["ffn_expand"])
                 for _ in range(config["n_attn"])
             )
@@ -109,10 +109,10 @@ def load_predictor(
 
         def forward(self, byte_ids):
             mask = byte_ids != 256
-            hidden = self.embed(byte_ids) + self.ngram_projection(self.ngram_embed(byte_ids))
+            hidden = self.embed(byte_ids) + self.ngram_proj(self.ngram_embed(byte_ids))
             for layer in self.conv_layers:
                 hidden = layer(hidden)
-            for layer in self.attention_layers:
+            for layer in self.attn_layers:
                 hidden = layer(hidden)
             hidden = self.final_norm(hidden)
             mask = mask.unsqueeze(-1).to(hidden.dtype)

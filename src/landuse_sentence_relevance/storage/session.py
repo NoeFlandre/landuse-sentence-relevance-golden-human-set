@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 from landuse_sentence_relevance.domain.models import Annotation
+from landuse_sentence_relevance.storage.atomic import TextWriter, atomic_write
 
 
 class AnnotationStore:
@@ -17,6 +19,16 @@ class AnnotationStore:
         with self._path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(annotation.to_dict(), ensure_ascii=False, sort_keys=True))
             handle.write("\n")
+
+    def save(self, annotations: Iterable[Annotation]) -> None:
+        """Replace the persisted annotation set with the supplied records."""
+
+        def write_annotations(handle: TextWriter) -> None:
+            for annotation in annotations:
+                handle.write(json.dumps(annotation.to_dict(), ensure_ascii=False, sort_keys=True))
+                handle.write("\n")
+
+        atomic_write(self._path, write_annotations)
 
     def load(self) -> dict[str, Annotation]:
         if not self._path.exists():
