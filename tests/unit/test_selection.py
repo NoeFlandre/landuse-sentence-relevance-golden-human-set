@@ -93,6 +93,25 @@ def test_selection_discards_surplus_rows_at_either_label_boundary(wikipedia_labe
     assert select_final_annotations(reversed(rows), quotas) == (rows[3], rows[4], rows[0], rows[1])
 
 
+@pytest.mark.parametrize("surplus_index", [1, 2])
+def test_selection_does_not_overfill_either_mixed_source_quota(surplus_index: int) -> None:
+    quotas = DatasetQuotas(total=4, per_source=2, per_label=2, cell_count=4)
+    pool = make_annotations()
+    rows = [
+        Annotation(pool[index].candidate, label)
+        for index, label in ((0, Label.YES), (1, Label.NO), (50, Label.YES), (51, Label.NO))
+    ]
+    surplus = rows[surplus_index]
+    extra = replace(
+        surplus,
+        candidate=replace(
+            surplus.candidate, candidate_id=f"{surplus.candidate.candidate_id}-extra", h3_cell="extra-cell"
+        ),
+    )
+
+    assert select_final_annotations([extra, *reversed(rows)], quotas) == (rows[2], rows[3], rows[0], rows[1])
+
+
 @pytest.mark.parametrize(("quota", "expected"), [(-1, None), (0, ())])
 def test_selection_preserves_empty_pool_behavior_for_nonpositive_quotas(quota, expected) -> None:
     quotas = DatasetQuotas(total=2 * quota, per_source=quota, per_label=quota, cell_count=2 * quota)
