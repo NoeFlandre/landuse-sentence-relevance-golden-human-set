@@ -43,19 +43,6 @@ def test_final_dataset_rejects_two_sentences_from_one_h3_cell() -> None:
         validate_final_dataset(rows)
 
 
-@pytest.mark.parametrize(
-    "mutator",
-    [
-        lambda rows: rows[:-1],
-        lambda rows: [*rows, rows[0]],
-        lambda rows: [Annotation(a.candidate, Label.NO) for a in rows],
-    ],
-)
-def test_invalid_final_dataset_is_rejected(mutator) -> None:
-    with pytest.raises(FinalDatasetNotReadyError):
-        validate_final_dataset(mutator(make_annotations()))
-
-
 def test_custom_quotas_are_supported() -> None:
     quotas = DatasetQuotas(
         total=4,
@@ -85,31 +72,21 @@ def test_inconsistent_quotas_are_rejected(kwargs) -> None:
         DatasetQuotas(**kwargs)
 
 
-@pytest.mark.parametrize("kind", ["duplicate", "source", "label", "cell", "resolution"])
-def test_each_final_dataset_invariant_has_a_failing_case(kind: str) -> None:
-    rows = make_annotations()
-    if kind == "duplicate":
-        rows[-1] = replace(
-            rows[-1],
-            candidate=replace(rows[-1].candidate, candidate_id=rows[0].candidate.candidate_id),
-        )
-    elif kind == "source":
-        rows[0] = replace(rows[0], candidate=replace(rows[0].candidate, source=Source.WEBSITE))
-    elif kind == "label":
-        rows[0] = replace(rows[0], label=Label.NO)
-    elif kind == "cell":
-        rows[0] = replace(rows[0], candidate=replace(rows[0].candidate, h3_cell=rows[1].candidate.h3_cell))
-    else:
-        object.__setattr__(rows[0].candidate, "h3_resolution", 2)
-
-    with pytest.raises(FinalDatasetNotReadyError):
-        validate_final_dataset(rows)
-
-
 @pytest.mark.parametrize(
     ("mutator", "message"),
     [
         (lambda rows: rows[:-1], "expected 100 rows, received 99"),
+        (lambda rows: [*rows, rows[0]], "expected 100 rows, received 101"),
+        (
+            lambda rows: [
+                *rows[:-1],
+                replace(
+                    rows[-1],
+                    candidate=replace(rows[-1].candidate, candidate_id=rows[0].candidate.candidate_id),
+                ),
+            ],
+            "candidate IDs must be unique",
+        ),
         (
             lambda rows: [*rows[:-1], Annotation(rows[0].candidate, rows[-1].label)],
             "candidate IDs must be unique",
@@ -120,6 +97,10 @@ def test_each_final_dataset_invariant_has_a_failing_case(kind: str) -> None:
                 for index, row in enumerate(rows)
             ],
             "source quotas are not satisfied",
+        ),
+        (
+            lambda rows: [replace(rows[0], label=Label.NO), *rows[1:]],
+            "label quotas are not satisfied",
         ),
         (
             lambda rows: [Annotation(row.candidate, Label.NO) for row in rows],
@@ -143,12 +124,3 @@ def test_final_dataset_errors_are_specific(mutator, message: str) -> None:
         validate_final_dataset(mutator(make_annotations()))
 
     assert str(error.value) == message
-
-
-def test_final_dataset_uses_disjoint_source_cells() -> None:
-    rows = make_annotations()
-
-    wikipedia_cells = {row.candidate.h3_cell for row in rows if row.candidate.source is Source.WIKIPEDIA}
-    website_cells = {row.candidate.h3_cell for row in rows if row.candidate.source is Source.WEBSITE}
-
-    assert wikipedia_cells.isdisjoint(website_cells)

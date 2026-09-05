@@ -35,31 +35,21 @@ def _feasible_diagonal(
     rows_by_category: Mapping[Category, tuple[Annotation, ...]],
     quotas: DatasetQuotas,
 ) -> int | None:
-    minimum = max(0, quotas.per_label - quotas.per_source)
-    maximum = min(quotas.per_source, quotas.per_label)
-    for diagonal in range(minimum, maximum + 1):
+    # DatasetQuotas guarantees equal source and label quotas.
+    for diagonal in range(quotas.per_source + 1):
         required = _required_counts(diagonal, quotas)
-        if _has_capacity(rows_by_category, required):
+        if all(len(rows_by_category[category]) >= count for category, count in required.items()):
             return diagonal
     return None
 
 
 def _required_counts(diagonal: int, quotas: DatasetQuotas) -> dict[Category, int]:
-    sources = tuple(Source)
-    labels = tuple(Label)
     return {
-        (sources[0], labels[0]): diagonal,
-        (sources[0], labels[1]): quotas.per_source - diagonal,
-        (sources[1], labels[0]): quotas.per_label - diagonal,
-        (sources[1], labels[1]): quotas.per_source - quotas.per_label + diagonal,
+        (Source.WIKIPEDIA, Label.YES): diagonal,
+        (Source.WIKIPEDIA, Label.NO): quotas.per_source - diagonal,
+        (Source.WEBSITE, Label.YES): quotas.per_label - diagonal,
+        (Source.WEBSITE, Label.NO): quotas.per_source - quotas.per_label + diagonal,
     }
-
-
-def _has_capacity(
-    rows_by_category: Mapping[Category, tuple[Annotation, ...]],
-    required: Mapping[Category, int],
-) -> bool:
-    return all(len(rows_by_category[category]) >= count for category, count in required.items())
 
 
 def _select_rows(

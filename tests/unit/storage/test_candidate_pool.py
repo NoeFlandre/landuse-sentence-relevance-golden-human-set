@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from tests.unit.test_models import make_candidate
 
-import landuse_sentence_relevance.storage as storage
-import landuse_sentence_relevance.storage.candidate_pool as candidate_pool
 from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
-from landuse_sentence_relevance.storage.atomic import TextWriter
+from landuse_sentence_relevance.storage import CandidatePoolStore
 
 
 def _pool() -> FinalizedCandidatePool:
@@ -24,15 +23,9 @@ def _pool() -> FinalizedCandidatePool:
     )
 
 
-def _store_type():
-    store_type = getattr(storage, "CandidatePoolStore", None)
-    assert store_type is not None
-    return store_type
-
-
 def test_candidate_pool_store_round_trips_candidates_and_metadata(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "deeper" / "candidate-pool.json"
-    store = _store_type()(path)
+    store = CandidatePoolStore(path)
     metadata = {"schema_version": 1, "fingerprint": "stable-test-fingerprint"}
 
     store.save(_pool(), metadata)
@@ -43,7 +36,7 @@ def test_candidate_pool_store_round_trips_candidates_and_metadata(tmp_path: Path
 
 def test_candidate_pool_store_reads_with_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "candidate-pool.json"
-    store = _store_type()(path)
+    store = CandidatePoolStore(path)
     metadata = {"schema_version": 1, "fingerprint": "encoding"}
     store.save(_pool(), metadata)
     read_encodings: list[str | None] = []
@@ -60,13 +53,13 @@ def test_candidate_pool_store_reads_with_utf8(tmp_path: Path, monkeypatch: pytes
 
 
 def test_candidate_pool_store_returns_none_when_the_pool_is_missing(tmp_path: Path) -> None:
-    store = _store_type()(tmp_path / "missing.json")
+    store = CandidatePoolStore(tmp_path / "missing.json")
 
     assert store.load({"schema_version": 1, "fingerprint": "missing"}) is None
 
 
 def test_candidate_pool_store_rejects_a_different_fingerprint(tmp_path: Path) -> None:
-    store = _store_type()(tmp_path / "candidate-pool.json")
+    store = CandidatePoolStore(tmp_path / "candidate-pool.json")
     store.save(_pool(), {"schema_version": 1, "fingerprint": "saved"})
 
     with pytest.raises(
@@ -76,49 +69,45 @@ def test_candidate_pool_store_rejects_a_different_fingerprint(tmp_path: Path) ->
         store.load({"schema_version": 1, "fingerprint": "different"})
 
 
-def test_candidate_pool_store_passes_explicit_json_options(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    options: dict[str, object] = {}
-
-    def spy_dump(_payload: object, _handle: TextWriter, **kwargs: object) -> None:
-        options.update(kwargs)
-
-    monkeypatch.setattr(candidate_pool.json, "dump", spy_dump)
-
+def test_candidate_pool_store_writes_compact_sorted_utf8_json(tmp_path: Path) -> None:
+    path = tmp_path / "candidate-pool.json"
+    store = CandidatePoolStore(path)
+    candidate = replace(make_candidate(), sentence="Héllö — hills")
+    pool = FinalizedCandidatePool(candidates=(candidate,), cells=(candidate.h3_cell,))
     metadata = {"schema_version": 1, "fingerprint": "deterministic"}
-    _store_type()(tmp_path / "candidate-pool.json").save(_pool(), metadata)
 
-    assert options == {
-        "ensure_ascii": False,
-        "sort_keys": True,
-        "separators": (",", ":"),
-    }
+    store.save(pool, metadata)
+
+    expected = (
+        '{"candidates":[{"candidate_id":"c-1","h3_cell":"832830fffffffff","h3_resolution":3,'
+        '"language":"en","latitude":45.0,"longitude":2.0,"place_name":"A place","region":"A region",'
+        '"sentence":"Héllö — hills","source":"wikipedia","source_field":"wikipedia_section",'
+        '"source_record_id":"polygon-1","source_url":"https://example.test/article"}],'
+        '"cells":["832830fffffffff"],"metadata":{"fingerprint":"deterministic","schema_version":1}}\n'
+    ).encode()
+    assert path.read_bytes() == expected
+    assert store.load(metadata) == pool
 
 
 def test_candidate_pool_store_reuses_a_saved_pool_without_calling_the_builder(tmp_path: Path) -> None:
-    store = _store_type()(tmp_path / "candidate-pool.json")
+    store = CandidatePoolStore(tmp_path / "candidate-pool.json")
     metadata = {"schema_version": 1, "fingerprint": "saved"}
     expected = _pool()
     store.save(expected, metadata)
     calls: list[str] = []
-    load_or_build = getattr(store, "load_or_build", None)
-    assert load_or_build is not None
 
-    actual = load_or_build(metadata, lambda: calls.append("built") or expected)
+    actual = store.load_or_build(metadata, lambda: calls.append("built") or expected)
 
     assert actual == expected
     assert calls == []
 
 
 def test_candidate_pool_store_builds_and_saves_a_missing_pool(tmp_path: Path) -> None:
-    store = _store_type()(tmp_path / "candidate-pool.json")
+    store = CandidatePoolStore(tmp_path / "candidate-pool.json")
     metadata = {"schema_version": 1, "fingerprint": "new"}
     expected = _pool()
-    load_or_build = getattr(store, "load_or_build", None)
-    assert load_or_build is not None
 
-    actual = load_or_build(metadata, lambda: expected)
+    actual = store.load_or_build(metadata, lambda: expected)
 
     assert actual == expected
     assert store.load(metadata) == expected

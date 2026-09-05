@@ -116,7 +116,7 @@ class AnnotationWorkflow:
             yes_count = sum(annotation.label is Label.YES for annotation in annotations)
             no_count = sum(annotation.label is Label.NO for annotation in annotations)
             return WorkflowState(
-                current_candidate=self._current_candidate_unlocked(selected),
+                current_candidate=self._current_candidate_unlocked(selected is not None),
                 labeled_count=len(annotations),
                 yes_count=yes_count,
                 no_count=no_count,
@@ -160,12 +160,10 @@ class AnnotationWorkflow:
             raise UnknownCandidateError("the candidate is unknown or is not the current candidate")
         return candidate
 
-    def _current_candidate_unlocked(self, selected: tuple[Annotation, ...] | None = None) -> Candidate | None:
-        if (
-            self._published
-            or selected is not None
-            or select_final_annotations(self._annotations.values()) is not None
-        ):
+    def _current_candidate_unlocked(self, final_ready: bool | None = None) -> Candidate | None:
+        if self._published or final_ready:
+            return None
+        if final_ready is None and select_final_annotations(self._annotations.values()) is not None:
             return None
         return self._pool.next_unannotated(set(self._annotations))
 

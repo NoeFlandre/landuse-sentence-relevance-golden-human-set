@@ -105,12 +105,8 @@ def _selected_candidates(
     buckets: dict[tuple[Source, str], dict[str, Candidate]],
     cells_by_source: dict[Source, tuple[str, ...]],
 ) -> tuple[Candidate, ...]:
-    selected: list[Candidate] = []
-    for source in Source:
-        for cell in cells_by_source[source]:
-            selected.append(_sorted_bucket(buckets[(source, cell)])[0])
-    return tuple(selected)
-
-
-def _sorted_bucket(bucket: dict[str, Candidate]) -> list[Candidate]:
-    return sorted(bucket.values(), key=lambda row: row.candidate_id)
+    return tuple(
+        min(buckets[(source, cell)].values(), key=lambda row: row.candidate_id)
+        for source in Source
+        for cell in cells_by_source[source]
+    )

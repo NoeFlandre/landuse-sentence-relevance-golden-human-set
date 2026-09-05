@@ -27,10 +27,11 @@ def check(source_root: Path, coverage_path: Path) -> list[tuple[str, float]]:
     failures: list[tuple[str, float]] = []
     for path in sorted(source_root.rglob("*.py")):
         executed, missing = _coverage_lines(coverage_data, path)
-        for block in cc_visit(path.read_text(encoding="utf-8")):
+        source = path.read_text(encoding="utf-8")
+        source_lines = source.splitlines()
+        for block in cc_visit(source):
             if type(block).__name__ != "Function":
                 continue
-            source_lines = path.read_text(encoding="utf-8").splitlines()
             if "pragma: no cover" in source_lines[block.lineno - 1]:
                 continue
             first_line = int(block.lineno)

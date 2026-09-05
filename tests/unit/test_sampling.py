@@ -4,7 +4,6 @@ from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.sampling import (
     BoundedCandidatePool,
     FinalizedCandidatePool,
-    _sorted_bucket,
 )
 
 
@@ -155,13 +154,18 @@ def test_snapshot_orders_cells_before_sources() -> None:
     assert [candidate.candidate_id for candidate in pool.snapshot()] == ["wiki-a", "web-b"]
 
 
-def test_sorted_bucket_orders_candidates_by_id() -> None:
-    candidates = {
-        "b": make_candidate("b", Source.WIKIPEDIA, "cell"),
-        "a": make_candidate("a", Source.WIKIPEDIA, "cell"),
-    }
+@pytest.mark.parametrize("candidate_ids", [("z", "a", "m"), ("a", "m", "z")])
+def test_finalization_selects_smallest_candidate_id_per_cell(candidate_ids) -> None:
+    pool = BoundedCandidatePool(capacity_per_stratum=3, seed="test")
+    for source in Source:
+        for candidate_id in candidate_ids:
+            pool.add(make_candidate(f"{source}-{candidate_id}", source, source.value))
 
-    assert [candidate.candidate_id for candidate in _sorted_bucket(candidates)] == ["a", "b"]
+    finalized = pool.finalize(1, lambda cell: (0.0, 0.0))
+
+    assert finalized.candidates == tuple(
+        make_candidate(f"{source}-a", source, source.value) for source in Source
+    )
 
 
 def test_pool_requires_enough_disjoint_source_cells() -> None:

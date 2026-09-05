@@ -82,10 +82,3 @@ def _exceeds_quotas(state: SelectionState, quotas: DatasetQuotas) -> bool:
     return (
         selected_count > quotas.total or wikipedia_count > quotas.per_source or yes_count > quotas.per_label
     )
-
-
-def _label_rows(rows: list[Annotation]) -> tuple[tuple[Annotation, ...], tuple[Annotation, ...]]:
-    ordered = sorted(rows, key=lambda row: row.candidate.candidate_id)
-    yes_rows = tuple(row for row in ordered if row.label is Label.YES)
-    no_rows = tuple(row for row in ordered if row.label is Label.NO)
-    return yes_rows, no_rows

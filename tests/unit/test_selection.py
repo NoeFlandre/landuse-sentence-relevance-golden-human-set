@@ -1,15 +1,13 @@
 from dataclasses import replace
-from types import SimpleNamespace
-from typing import cast
+
+import pytest
 
 import landuse_sentence_relevance.domain.selection as selection
-import landuse_sentence_relevance.domain.selection_direct as selection_direct
 from landuse_sentence_relevance.domain.constraints import DatasetQuotas
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
 from landuse_sentence_relevance.domain.selection import (
     _advance_states,
     _exceeds_quotas,
-    _label_rows,
     select_final_annotations,
 )
 from tests.unit.test_constraints import make_annotations
@@ -63,39 +61,18 @@ def test_selection_uses_general_path_when_rows_per_cell_is_not_one(monkeypatch) 
     assert calls > 0
 
 
-def test_feasible_diagonal_respects_both_quota_bounds(monkeypatch) -> None:
-    quotas = cast(DatasetQuotas, SimpleNamespace(per_source=2, per_label=3))
-    calls = []
+@pytest.mark.parametrize("wikipedia_yes", [0, 1, 2])
+def test_selection_balances_real_categories_at_each_capacity_boundary(wikipedia_yes: int) -> None:
+    quotas = DatasetQuotas(total=4, per_source=2, per_label=2, cell_count=4)
+    rows = make_annotations()
+    candidates = [rows[index].candidate for index in (0, 1, 50, 51)]
+    labels = [Label.YES] * wikipedia_yes + [Label.NO] * (2 - wikipedia_yes)
+    labels += [Label.YES] * (2 - wikipedia_yes) + [Label.NO] * wikipedia_yes
+    annotations = [Annotation(candidate, label) for candidate, label in zip(candidates, labels, strict=True)]
 
-    def fake_required_counts(diagonal, quotas):
-        return {"diagonal": diagonal}
+    selected = select_final_annotations(reversed(annotations), quotas)
 
-    def fake_has_capacity(rows_by_category, required):
-        calls.append(required["diagonal"])
-        return required["diagonal"] == 0
-
-    monkeypatch.setattr(selection_direct, "_required_counts", fake_required_counts)
-    monkeypatch.setattr(selection_direct, "_has_capacity", fake_has_capacity)
-
-    assert selection_direct._feasible_diagonal({}, quotas) is None
-    assert calls == [1, 2]
-
-
-def test_feasible_diagonal_includes_zero_when_quotas_are_balanced(monkeypatch) -> None:
-    quotas = cast(DatasetQuotas, SimpleNamespace(per_source=2, per_label=2))
-
-    monkeypatch.setattr(
-        selection_direct,
-        "_required_counts",
-        lambda diagonal, quotas: {"diagonal": diagonal},
-    )
-    monkeypatch.setattr(
-        selection_direct,
-        "_has_capacity",
-        lambda rows_by_category, required: required["diagonal"] == 0,
-    )
-
-    assert selection_direct._feasible_diagonal({}, quotas) == 0
+    assert selected == tuple(sorted(annotations, key=lambda row: row.candidate.candidate_id))
 
 
 def test_selection_returns_none_when_label_balance_is_impossible() -> None:
@@ -116,20 +93,6 @@ def test_selection_rejects_duplicate_candidate_ids() -> None:
     duplicate = replace(rows[0].candidate, candidate_id=rows[1].candidate.candidate_id)
 
     assert select_final_annotations([*rows[:-1], Annotation(duplicate, rows[-1].label)]) is None
-
-
-def test_label_rows_separates_yes_and_no_annotations() -> None:
-    rows = make_annotations()[:4]
-
-    yes_rows, no_rows = _label_rows(
-        [
-            Annotation(rows[0].candidate, Label.YES),
-            Annotation(rows[1].candidate, Label.NO),
-        ]
-    )
-
-    assert [row.candidate.candidate_id for row in yes_rows] == [rows[0].candidate.candidate_id]
-    assert [row.candidate.candidate_id for row in no_rows] == [rows[1].candidate.candidate_id]
 
 
 def test_advance_states_discards_states_over_the_label_quota() -> None:

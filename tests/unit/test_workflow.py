@@ -2,6 +2,9 @@ import logging
 from threading import Event
 from typing import cast
 
+import pytest
+
+import landuse_sentence_relevance.workflow as workflow_module
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher
@@ -67,7 +70,7 @@ def test_workflow_changes_a_saved_label_and_updates_metrics(tmp_path) -> None:
     assert state.annotations[0].label is Label.NO
 
 
-def test_review_edits_share_one_commit_path(tmp_path, monkeypatch) -> None:
+def test_state_checks_balance_once_while_annotations_are_incomplete(tmp_path, monkeypatch) -> None:
     rows = make_annotations()[:2]
     workflow = AnnotationWorkflow(
         pool=FinalizedCandidatePool(
@@ -79,20 +82,22 @@ def test_review_edits_share_one_commit_path(tmp_path, monkeypatch) -> None:
     )
     workflow.annotate(rows[0].candidate.candidate_id, Label.YES)
 
-    commit_calls = 0
-    original_commit = workflow._commit_review_edit
+    selection_calls = 0
+    select = workflow_module.select_final_annotations
 
-    def observe_commit(edit) -> object:
-        nonlocal commit_calls
-        commit_calls += 1
-        return original_commit(edit)
+    def observe_selection(annotations):
+        nonlocal selection_calls
+        selection_calls += 1
+        return select(annotations)
 
-    monkeypatch.setattr(workflow, "_commit_review_edit", observe_commit)
+    monkeypatch.setattr(workflow_module, "select_final_annotations", observe_selection)
 
-    workflow.change_label(rows[0].candidate.candidate_id, Label.NO)
-    workflow.remove_annotation(rows[0].candidate.candidate_id)
+    state = workflow.state()
 
-    assert commit_calls == 2
+    assert state.current_candidate == rows[1].candidate
+    assert (state.labeled_count, state.yes_count, state.no_count) == (1, 1, 0)
+    assert state.final_ready is False
+    assert selection_calls == 1
 
 
 def test_deferred_workflow_persists_before_publication(tmp_path) -> None:
@@ -264,20 +269,12 @@ def test_workflow_rejects_unknown_or_duplicate_annotations(tmp_path) -> None:
     first = workflow.current_candidate()
     assert first is not None
 
-    try:
+    with pytest.raises(UnknownCandidateError):
         workflow.annotate("unknown", Label.YES)
-    except UnknownCandidateError:
-        pass
-    else:
-        raise AssertionError("unknown candidate should be rejected")
 
     workflow.annotate(first.candidate_id, Label.YES)
-    try:
+    with pytest.raises(UnknownCandidateError):
         workflow.annotate(first.candidate_id, Label.NO)
-    except UnknownCandidateError:
-        pass
-    else:
-        raise AssertionError("duplicate candidate should be rejected")
 
 
 def test_workflow_publishes_automatically_when_the_final_contract_is_met(tmp_path) -> None:
@@ -299,9 +296,5 @@ def test_workflow_publishes_automatically_when_the_final_contract_is_met(tmp_pat
     assert state.published is True
     assert state.final_ready is True
     assert len(calls) == 1
-    try:
+    with pytest.raises(WorkflowCompleteError):
         workflow.annotate(rows[0].candidate.candidate_id, rows[0].label)
-    except WorkflowCompleteError:
-        pass
-    else:
-        raise AssertionError("a completed workflow must reject additional labels")

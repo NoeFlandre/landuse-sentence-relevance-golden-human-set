@@ -37,57 +37,37 @@ def test_atomic_write_preserves_the_destination_when_writing_fails(tmp_path: Pat
         atomic_write(path, fail_after_writing)
 
     assert path.read_text(encoding="utf-8") == "old"
-    assert list(tmp_path.glob(".state.json.*.tmp")) == []
+    assert set(tmp_path.iterdir()) == {path}
 
 
 def test_atomic_write_uses_a_sibling_utf8_tempfile_and_replaces_the_destination(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "state.json"
-    temporary_path = tmp_path / ".state.json.fake.tmp"
-    captured_tempfile: dict[str, object] = {}
-    captured_replace: list[tuple[Path, Path]] = []
-    writes: list[str] = []
-
-    class Handle:
-        name = str(temporary_path)
-
-        def __enter__(self) -> Handle:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def write(self, value: str) -> int:
-            writes.append(value)
-            return len(value)
-
-    def named_temporary_file(**kwargs: object) -> Handle:
-        captured_tempfile.update(kwargs)
-        return Handle()
+    path.write_bytes(b"old")
+    original_replace = atomic_module.os.replace
+    replacements: list[Path] = []
 
     def replace(source: Path, destination: Path) -> None:
-        captured_replace.append((source, destination))
+        replacements.append(source)
+        assert source != destination == path
+        assert source.parent == destination.parent
+        assert source.read_bytes() == "Héllö — hills".encode()
+        assert destination.read_bytes() == b"old"
+        original_replace(source, destination)
 
-    monkeypatch.setattr(atomic_module, "NamedTemporaryFile", named_temporary_file)
     monkeypatch.setattr(atomic_module.os, "replace", replace)
 
-    atomic_write(path, lambda handle: handle.write("new"))
+    atomic_write(path, lambda handle: handle.write("Héllö — hills"))
 
-    assert captured_tempfile == {
-        "mode": "w",
-        "encoding": "utf-8",
-        "dir": tmp_path,
-        "prefix": ".state.json.",
-        "suffix": ".tmp",
-        "delete": False,
-    }
-    assert writes == ["new"]
-    assert captured_replace == [(temporary_path, path)]
+    assert len(replacements) == 1
+    assert path.read_bytes() == "Héllö — hills".encode()
+    assert set(tmp_path.iterdir()) == {path}
 
 
 def test_atomic_write_reraises_a_tempfile_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "state.json"
+    path.write_bytes(b"old")
 
     def fail(**_kwargs: object) -> object:
         raise OSError("cannot create temporary file")
@@ -97,37 +77,32 @@ def test_atomic_write_reraises_a_tempfile_error(tmp_path: Path, monkeypatch: pyt
     with pytest.raises(OSError, match="cannot create temporary file"):
         atomic_write(path, lambda _handle: None)
 
+    assert path.read_bytes() == b"old"
+    assert set(tmp_path.iterdir()) == {path}
 
+
+@pytest.mark.parametrize("remove_temporary", [False, True])
 def test_atomic_write_cleans_up_after_replace_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remove_temporary: bool
 ) -> None:
     path = tmp_path / "state.json"
-    temporary_path = tmp_path / ".state.json.fake.tmp"
-    unlink_calls: list[tuple[Path, bool | None]] = []
+    path.write_bytes(b"old")
+    failure = RuntimeError("replace failed")
 
-    class Handle:
-        name = str(temporary_path)
+    def replace(source: Path, destination: Path) -> None:
+        assert source != destination == path
+        assert source.parent == destination.parent
+        assert source.read_bytes() == b"new"
+        assert destination.read_bytes() == b"old"
+        if remove_temporary:
+            source.unlink()
+        raise failure
 
-        def __enter__(self) -> Handle:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def write(self, _value: str) -> int:
-            return 0
-
-    def replace(_source: Path, _destination: Path) -> None:
-        raise RuntimeError("replace failed")
-
-    def unlink(path: Path, missing_ok: bool | None = None) -> None:
-        unlink_calls.append((path, missing_ok))
-
-    monkeypatch.setattr(atomic_module, "NamedTemporaryFile", lambda **_kwargs: Handle())
     monkeypatch.setattr(atomic_module.os, "replace", replace)
-    monkeypatch.setattr(Path, "unlink", unlink)
 
-    with pytest.raises(RuntimeError, match="replace failed"):
-        atomic_write(path, lambda _handle: None)
+    with pytest.raises(RuntimeError, match="replace failed") as error:
+        atomic_write(path, lambda handle: handle.write("new"))
 
-    assert unlink_calls == [(temporary_path, True)]
+    assert error.value is failure
+    assert path.read_bytes() == b"old"
+    assert set(tmp_path.iterdir()) == {path}
