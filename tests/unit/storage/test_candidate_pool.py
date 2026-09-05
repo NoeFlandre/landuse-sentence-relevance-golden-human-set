@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import ANY, Mock
 
 import pytest
 from tests.unit.test_models import make_candidate
@@ -69,12 +70,14 @@ def test_candidate_pool_store_rejects_a_different_fingerprint(tmp_path: Path) ->
         store.load({"schema_version": 1, "fingerprint": "different"})
 
 
-def test_candidate_pool_store_writes_compact_sorted_utf8_json(tmp_path: Path) -> None:
+def test_candidate_pool_store_writes_compact_sorted_utf8_json(tmp_path, monkeypatch) -> None:
     path = tmp_path / "candidate-pool.json"
     store = CandidatePoolStore(path)
     candidate = replace(make_candidate(), sentence="Héllö — hills")
     pool = FinalizedCandidatePool(candidates=(candidate,), cells=(candidate.h3_cell,))
     metadata = {"schema_version": 1, "fingerprint": "deterministic"}
+    serialize = Mock(wraps=json.dump)
+    monkeypatch.setattr(json, "dump", serialize)
 
     store.save(pool, metadata)
 
@@ -87,6 +90,7 @@ def test_candidate_pool_store_writes_compact_sorted_utf8_json(tmp_path: Path) ->
     ).encode()
     assert path.read_bytes() == expected
     assert store.load(metadata) == pool
+    serialize.assert_called_once_with(ANY, ANY, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def test_candidate_pool_store_reuses_a_saved_pool_without_calling_the_builder(tmp_path: Path) -> None:

@@ -75,10 +75,29 @@ def test_selection_balances_real_categories_at_each_capacity_boundary(wikipedia_
     assert selected == tuple(sorted(annotations, key=lambda row: row.candidate.candidate_id))
 
 
-def test_selection_returns_none_when_label_balance_is_impossible() -> None:
-    rows = [Annotation(row.candidate, Label.YES) for row in make_annotations()]
+@pytest.mark.parametrize("label", list(Label))
+def test_selection_returns_none_when_label_balance_is_impossible(label: Label) -> None:
+    rows = [Annotation(row.candidate, label) for row in make_annotations()]
 
     assert select_final_annotations(rows) is None
+
+
+@pytest.mark.parametrize("wikipedia_label", list(Label))
+def test_selection_discards_surplus_rows_at_either_label_boundary(wikipedia_label: Label) -> None:
+    quotas = DatasetQuotas(total=4, per_source=2, per_label=2, cell_count=4)
+    website_label = Label.NO if wikipedia_label is Label.YES else Label.YES
+    pool = make_annotations()
+    rows = [Annotation(pool[index].candidate, wikipedia_label) for index in (0, 1, 2)]
+    rows += [Annotation(pool[index].candidate, website_label) for index in (50, 51, 52)]
+
+    assert select_final_annotations(reversed(rows), quotas) == (rows[3], rows[4], rows[0], rows[1])
+
+
+@pytest.mark.parametrize(("quota", "expected"), [(-1, None), (0, ())])
+def test_selection_preserves_empty_pool_behavior_for_nonpositive_quotas(quota, expected) -> None:
+    quotas = DatasetQuotas(total=2 * quota, per_source=quota, per_label=quota, cell_count=2 * quota)
+
+    assert select_final_annotations((), quotas) == expected
 
 
 def test_selection_returns_none_for_an_impossible_general_path() -> None:

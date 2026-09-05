@@ -1,6 +1,7 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import ANY, Mock
 
 from tests.unit.test_constraints import make_annotations
 
@@ -38,11 +39,13 @@ def test_annotation_store_replaces_duplicate_candidate_records(tmp_path) -> None
     }
 
 
-def test_annotation_store_append_and_replace_write_identical_sorted_utf8_json(tmp_path: Path) -> None:
+def test_annotation_store_append_and_replace_write_identical_sorted_utf8_json(tmp_path, monkeypatch) -> None:
     path = tmp_path / "annotations.jsonl"
     store = AnnotationStore(path)
     first = make_annotations()[0]
     annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
+    serialize = Mock(wraps=json.dumps)
+    monkeypatch.setattr(json, "dumps", serialize)
     expected = (
         '{"candidate_id": "wikipedia-cell-00", "h3_cell": "cell-00", "h3_resolution": 3, '
         '"label": "yes", "language": "en", "latitude": 45.0, "longitude": 2.0, '
@@ -55,10 +58,12 @@ def test_annotation_store_append_and_replace_write_identical_sorted_utf8_json(tm
     store.record(annotation)
     assert path.read_bytes() == expected * 2
     assert store.load() == {annotation.candidate.candidate_id: annotation}
+    serialize.assert_called_with(ANY, ensure_ascii=False, sort_keys=True)
 
     store.save((annotation,))
     assert path.read_bytes() == expected
     assert store.load() == {annotation.candidate.candidate_id: annotation}
+    serialize.assert_called_with(ANY, ensure_ascii=False, sort_keys=True)
 
 
 def test_annotation_store_saves_revised_annotations_without_stale_records(tmp_path) -> None:
@@ -82,19 +87,19 @@ def test_annotation_store_creates_missing_parent_directories(tmp_path) -> None:
     assert path.is_file()
 
 
-def test_annotation_store_loads_using_utf8(tmp_path, monkeypatch) -> None:
+def test_annotation_store_records_and_loads_using_explicit_utf8(tmp_path, monkeypatch) -> None:
     path = tmp_path / "annotations.jsonl"
     first = make_annotations()[0]
     annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
-    AnnotationStore(path).record(annotation)
     encodings = []
-    original_read_text = Path.read_text
+    original_open = Path.open
 
-    def spy_read_text(self, *args, **kwargs):
+    def spy_open(self, *args, **kwargs):
         encodings.append(kwargs.get("encoding"))
-        return original_read_text(self, *args, **kwargs)
+        return original_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_text", spy_read_text)
+    monkeypatch.setattr(Path, "open", spy_open)
 
+    AnnotationStore(path).record(annotation)
     assert AnnotationStore(path).load() == {annotation.candidate.candidate_id: annotation}
-    assert encodings == ["utf-8"]
+    assert encodings == ["utf-8", "utf-8"]

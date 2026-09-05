@@ -36,11 +36,17 @@ def _feasible_diagonal(
     quotas: DatasetQuotas,
 ) -> int | None:
     # DatasetQuotas guarantees equal source and label quotas.
-    for diagonal in range(quotas.per_source + 1):
-        required = _required_counts(diagonal, quotas)
-        if all(len(rows_by_category[category]) >= count for category, count in required.items()):
-            return diagonal
-    return None
+    minimum = max(
+        0,
+        quotas.per_source - len(rows_by_category[(Source.WIKIPEDIA, Label.NO)]),
+        quotas.per_label - len(rows_by_category[(Source.WEBSITE, Label.YES)]),
+    )
+    maximum = min(
+        quotas.per_source,
+        len(rows_by_category[(Source.WIKIPEDIA, Label.YES)]),
+        len(rows_by_category[(Source.WEBSITE, Label.NO)]),
+    )
+    return minimum if minimum <= maximum else None
 
 
 def _required_counts(diagonal: int, quotas: DatasetQuotas) -> dict[Category, int]:

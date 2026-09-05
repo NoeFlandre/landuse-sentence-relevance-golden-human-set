@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -46,10 +47,10 @@ def test_atomic_write_uses_a_sibling_utf8_tempfile_and_replaces_the_destination(
     path = tmp_path / "state.json"
     path.write_bytes(b"old")
     original_replace = atomic_module.os.replace
-    replacements: list[Path] = []
+    create_tempfile = Mock(wraps=atomic_module.NamedTemporaryFile)
+    monkeypatch.setattr(atomic_module, "NamedTemporaryFile", create_tempfile)
 
     def replace(source: Path, destination: Path) -> None:
-        replacements.append(source)
         assert source != destination == path
         assert source.parent == destination.parent
         assert source.read_bytes() == "Héllö — hills".encode()
@@ -60,7 +61,9 @@ def test_atomic_write_uses_a_sibling_utf8_tempfile_and_replaces_the_destination(
 
     atomic_write(path, lambda handle: handle.write("Héllö — hills"))
 
-    assert len(replacements) == 1
+    create_tempfile.assert_called_once_with(
+        mode="w", encoding="utf-8", dir=tmp_path, prefix=".state.json.", suffix=".tmp", delete=False
+    )
     assert path.read_bytes() == "Héllö — hills".encode()
     assert set(tmp_path.iterdir()) == {path}
 
