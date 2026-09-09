@@ -3,8 +3,12 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Callable, Iterable, Mapping
+from itertools import product
 
 from landuse_sentence_relevance.domain.models import Source
+
+_EARTH_RADIUS_KM = 6371.0088
+_UNIT_CUBE_NEIGHBOR_OFFSETS = tuple(product((-1, 0, 1), repeat=3))
 
 
 def _haversine_km(first: tuple[float, float], second: tuple[float, float]) -> float:
@@ -16,7 +20,111 @@ def _haversine_km(first: tuple[float, float], second: tuple[float, float]) -> fl
         math.sin(delta_latitude / 2) ** 2
         + math.cos(latitude_1) * math.cos(latitude_2) * math.sin(delta_longitude / 2) ** 2
     )
-    return 6371.0088 * 2 * math.asin(math.sqrt(haversine))
+    return _EARTH_RADIUS_KM * 2 * math.asin(math.sqrt(haversine))
+
+
+def _conflict_counts(
+    centers: Mapping[str, tuple[float, float]],
+    minimum_distance_km: float,
+) -> dict[str, int]:
+    """Count cells that would conflict with each cell at the distance floor."""
+    cells = tuple(sorted(centers))
+    if not cells:
+        return {}
+    if minimum_distance_km <= 0:
+        return dict.fromkeys(cells, 0)
+    if minimum_distance_km >= math.pi * _EARTH_RADIUS_KM:
+        return {cell: len(cells) - 1 for cell in cells}
+
+    return _spatial_conflict_counts(cells, centers, minimum_distance_km)
+
+
+def _spatial_conflict_counts(
+    cells: tuple[str, ...],
+    centers: Mapping[str, tuple[float, float]],
+    minimum_distance_km: float,
+) -> dict[str, int]:
+    counts = dict.fromkeys(cells, 0)
+    chord_radius = 2 * math.sin(minimum_distance_km / _EARTH_RADIUS_KM / 2)
+    vectors = _cell_vectors(cells, centers)
+    buckets = _spatial_buckets(cells, vectors, chord_radius)
+    for cell in cells:
+        _count_cell_conflicts(
+            cell,
+            centers,
+            vectors,
+            buckets,
+            chord_radius,
+            minimum_distance_km,
+            counts,
+        )
+    return counts
+
+
+def _cell_vectors(
+    cells: tuple[str, ...],
+    centers: Mapping[str, tuple[float, float]],
+) -> dict[str, tuple[float, float, float]]:
+    return {cell: _unit_vector(centers[cell]) for cell in cells}
+
+
+def _spatial_buckets(
+    cells: tuple[str, ...],
+    vectors: Mapping[str, tuple[float, float, float]],
+    width: float,
+) -> dict[tuple[int, int, int], list[str]]:
+    buckets: dict[tuple[int, int, int], list[str]] = {}
+    for cell in cells:
+        buckets.setdefault(_cube_bin(vectors[cell], width), []).append(cell)
+    return buckets
+
+
+def _count_cell_conflicts(
+    cell: str,
+    centers: Mapping[str, tuple[float, float]],
+    vectors: Mapping[str, tuple[float, float, float]],
+    buckets: Mapping[tuple[int, int, int], list[str]],
+    width: float,
+    minimum_distance_km: float,
+    counts: dict[str, int],
+) -> None:
+    bucket = _cube_bin(vectors[cell], width)
+    for offset in _UNIT_CUBE_NEIGHBOR_OFFSETS:
+        neighbor_bucket = tuple(sum((bucket[index], offset[index])) for index in range(3))
+        _count_bucket_conflicts(cell, centers, buckets.get(neighbor_bucket, ()), minimum_distance_km, counts)
+
+
+def _count_bucket_conflicts(
+    cell: str,
+    centers: Mapping[str, tuple[float, float]],
+    other_cells: Iterable[str],
+    minimum_distance_km: float,
+    counts: dict[str, int],
+) -> None:
+    for other in other_cells:
+        if other <= cell:
+            continue
+        if _haversine_km(centers[cell], centers[other]) < minimum_distance_km:
+            counts[cell] += 1
+            counts[other] += 1
+
+
+def _unit_vector(center: tuple[float, float]) -> tuple[float, float, float]:
+    latitude, longitude = map(math.radians, center)
+    cosine_latitude = math.cos(latitude)
+    return (
+        cosine_latitude * math.cos(longitude),
+        cosine_latitude * math.sin(longitude),
+        math.sin(latitude),
+    )
+
+
+def _cube_bin(vector: tuple[float, float, float], width: float) -> tuple[int, int, int]:
+    return (
+        math.floor((vector[0] + 1) / width),
+        math.floor((vector[1] + 1) / width),
+        math.floor((vector[2] + 1) / width),
+    )
 
 
 def _stable_key(seed: str, cell: str) -> str:
@@ -62,8 +170,10 @@ def select_distinct_source_cells(
     _require_nonnegative_distance(minimum_distance_km)
     available = _available_source_cells(eligible_cells)
     centers = _cell_centers(available, center_of_cell)
+    conflict_counts = _conflict_counts(centers, minimum_distance_km) if minimum_distance_km > 0 else None
     selected_by_source = _empty_source_selection()
     selected_cells: list[str] = []
+    nearest_distances = {} if minimum_distance_km > 0 else None
     for _ in range(target_count_per_source):
         _append_selection_round(
             available,
@@ -73,6 +183,8 @@ def select_distinct_source_cells(
             target_count_per_source,
             minimum_distance_km,
             seed,
+            nearest_distances,
+            conflict_counts,
         )
     return _freeze_source_selection(selected_by_source)
 
@@ -112,6 +224,8 @@ def _append_selection_round(
     target_count: int,
     minimum_distance_km: float,
     seed: str,
+    nearest_distances: dict[str, float] | None = None,
+    conflict_counts: Mapping[str, int] | None = None,
 ) -> None:
     for source in Source:
         _append_next_source_cell(
@@ -123,6 +237,8 @@ def _append_selection_round(
             target_count,
             minimum_distance_km,
             seed,
+            nearest_distances,
+            conflict_counts,
         )
 
 
@@ -135,7 +251,36 @@ def _append_next_source_cell(
     target_count: int,
     minimum_distance_km: float,
     seed: str,
+    nearest_distances: dict[str, float] | None = None,
+    conflict_counts: Mapping[str, int] | None = None,
 ) -> None:
+    candidates = _required_source_candidates(
+        source,
+        available,
+        selected_by_source,
+        selected_cells,
+        target_count,
+    )
+    distant = _required_distant_candidates(
+        candidates,
+        selected_cells,
+        centers,
+        minimum_distance_km,
+        nearest_distances,
+    )
+    cell = _next_source_cell(distant, selected_cells, centers, seed, nearest_distances, conflict_counts)
+    _update_distance_cache_if_enabled(centers, nearest_distances, selected_cells, cell)
+    selected_by_source[source].append(cell)
+    selected_cells.append(cell)
+
+
+def _required_source_candidates(
+    source: Source,
+    available: Mapping[Source, set[str]],
+    selected_by_source: Mapping[Source, list[str]],
+    selected_cells: list[str],
+    target_count: int,
+) -> list[str]:
     candidates = _feasible_source_cells(
         source,
         available,
@@ -145,12 +290,102 @@ def _append_next_source_cell(
     )
     if not candidates:
         raise ValueError("need enough disjoint source cells")
-    distant = _distant_cells(candidates, selected_cells, centers, minimum_distance_km)
+    return candidates
+
+
+def _required_distant_candidates(
+    candidates: list[str],
+    selected_cells: list[str],
+    centers: Mapping[str, tuple[float, float]],
+    minimum_distance_km: float,
+    nearest_distances: Mapping[str, float] | None,
+) -> list[str]:
+    distant = _distant_candidates(
+        candidates,
+        selected_cells,
+        centers,
+        minimum_distance_km,
+        nearest_distances,
+    )
     if not distant:
         raise ValueError("cannot satisfy the minimum distance between H3 cells")
-    cell = _farthest_or_stable_cell(distant, selected_cells, centers, seed)
-    selected_by_source[source].append(cell)
-    selected_cells.append(cell)
+    return distant
+
+
+def _distant_candidates(
+    candidates: list[str],
+    selected_cells: list[str],
+    centers: Mapping[str, tuple[float, float]],
+    minimum_distance_km: float,
+    nearest_distances: Mapping[str, float] | None,
+) -> list[str]:
+    if nearest_distances is None or not selected_cells:
+        return _distant_cells(candidates, selected_cells, centers, minimum_distance_km)
+    return _cached_distant_cells(candidates, nearest_distances, minimum_distance_km)
+
+
+def _next_source_cell(
+    candidates: list[str],
+    selected_cells: list[str],
+    centers: Mapping[str, tuple[float, float]],
+    seed: str,
+    nearest_distances: Mapping[str, float] | None,
+    conflict_counts: Mapping[str, int] | None = None,
+) -> str:
+    if conflict_counts is not None:
+        return _least_conflicting_cell(candidates, conflict_counts, seed)
+    if nearest_distances is None or not selected_cells:
+        return _farthest_or_stable_cell(candidates, selected_cells, centers, seed)
+    return _farthest_cached_cell(candidates, nearest_distances, seed)
+
+
+def _least_conflicting_cell(
+    cells: list[str],
+    conflict_counts: Mapping[str, int],
+    seed: str,
+) -> str:
+    return min(cells, key=lambda cell: (conflict_counts[cell], _stable_key(seed, cell)))
+
+
+def _update_distance_cache_if_enabled(
+    centers: Mapping[str, tuple[float, float]],
+    nearest_distances: dict[str, float] | None,
+    selected_cells: list[str],
+    selected: str,
+) -> None:
+    if nearest_distances is not None:
+        _update_selected_distance_cache(centers, nearest_distances, selected_cells, selected)
+
+
+def _cached_distant_cells(
+    cells: list[str],
+    nearest_distances: Mapping[str, float],
+    minimum_distance_km: float,
+) -> list[str]:
+    return [cell for cell in cells if nearest_distances[cell] >= minimum_distance_km]
+
+
+def _farthest_cached_cell(
+    cells: list[str],
+    nearest_distances: Mapping[str, float],
+    seed: str,
+) -> str:
+    return max(cells, key=lambda cell: (nearest_distances[cell], _stable_key(seed, cell)))
+
+
+def _update_selected_distance_cache(
+    centers: Mapping[str, tuple[float, float]],
+    nearest_distances: dict[str, float],
+    selected_cells: list[str],
+    selected: str,
+) -> None:
+    selected_center = centers[selected]
+    for cell, center in centers.items():
+        if cell == selected or cell in selected_cells:
+            continue
+        distance = _haversine_km(center, selected_center)
+        nearest_distances[cell] = min(nearest_distances.get(cell, math.inf), distance)
+    nearest_distances[selected] = 0.0
 
 
 def _feasible_source_cells(

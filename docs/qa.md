@@ -19,8 +19,10 @@ The feature is at `tests/acceptance/features/annotation.feature`. Its step defin
 Run the complete gate with:
 
 ```bash
-uv run python scripts/gauntlet.py
+./scripts/uv-seagate run python scripts/gauntlet.py --skip-docker
 ```
+
+The local command keeps UV and test scratch data on the Seagate drive. CI runs the same gauntlet with ordinary `uv` commands on its own ephemeral runner.
 
 It runs, in order:
 

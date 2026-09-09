@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 
 class HuggingFaceDatasetLoader(Protocol):
@@ -13,11 +13,32 @@ class HuggingFaceDatasetLoader(Protocol):
         self,
         *,
         path: str,
-        name: str,
+        name: str | None,
         split: str,
         streaming: Literal[True],
-        revision: str,
+        revision: str | None = None,
+        columns: list[str] | None = None,
+        data_files: dict[str, list[str]] | None = None,
     ) -> Iterable[Mapping[str, Any]]: ...
+
+
+@runtime_checkable
+class ShardableRows(Protocol):
+    """Expose contiguous remote shards without loading their rows locally."""
+
+    def shard(
+        self,
+        num_shards: int,
+        index: int,
+        contiguous: bool = True,
+    ) -> Iterable[Mapping[str, Any]]: ...
+
+
+@runtime_checkable
+class ColumnSelectableRows(Protocol):
+    """Project a streaming dataset before its rows are read."""
+
+    def select_columns(self, column_names: list[str]) -> Iterable[Mapping[str, Any]]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +47,8 @@ class HuggingFaceRowConfig:
     revision: str
     split: str
     config: str
+    columns: tuple[str, ...] | None = None
+    remote_files: tuple[str, ...] | None = None
 
 
 class HuggingFaceDatasetRows:
@@ -51,18 +74,28 @@ class HuggingFaceDatasetRows:
         def stream_dataset(
             *,
             path: str,
-            name: str,
+            name: str | None,
             split: str,
             streaming: Literal[True],
-            revision: str,
+            revision: str | None = None,
+            columns: list[str] | None = None,
+            data_files: dict[str, list[str]] | None = None,
         ) -> Iterable[Mapping[str, Any]]:
+            kwargs: dict[str, Any] = {
+                "path": path,
+                "name": name,
+                "split": split,
+                "streaming": streaming,
+                "on_bad_files": "warn",
+            }
+            if revision is not None:
+                kwargs["revision"] = revision
+            if columns is not None:
+                kwargs["columns"] = columns
+            if data_files is not None:
+                kwargs["data_files"] = data_files
             return load_dataset(
-                path=path,
-                name=name,
-                split=split,
-                streaming=streaming,
-                revision=revision,
-                on_bad_files="warn",
+                **kwargs,
             )
 
         return stream_dataset
@@ -76,10 +109,55 @@ class HuggingFaceDatasetRows:
             config.split,
             config.revision,
         )
-        return self._loader(
-            path=config.dataset_id,
-            name=config.config,
-            split=config.split,
-            streaming=True,
-            revision=config.revision,
-        )
+        stream = self._loader(**_load_kwargs(config))
+        if config.columns is None or not isinstance(stream, ColumnSelectableRows):
+            return stream
+        return stream.select_columns(list(config.columns))
+
+    def shards(self, shard_count: int | None = None) -> tuple[Iterable[Mapping[str, Any]], ...]:
+        """Partition one streaming dataset into bounded contiguous remote shards."""
+        _validate_shard_count(shard_count)
+        stream = self()
+        if not isinstance(stream, ShardableRows):
+            return (stream,)
+        return _partition_stream(stream, _actual_shard_count(stream, shard_count))
+
+
+def _load_kwargs(config: HuggingFaceRowConfig) -> dict[str, Any]:
+    if config.remote_files is None:
+        kwargs: dict[str, Any] = {
+            "path": config.dataset_id,
+            "name": config.config,
+            "split": config.split,
+            "streaming": True,
+            "revision": config.revision,
+        }
+    else:
+        kwargs = {
+            "path": "parquet",
+            "name": None,
+            "data_files": {config.split: list(config.remote_files)},
+            "split": config.split,
+            "streaming": True,
+        }
+    if config.columns is not None:
+        kwargs["columns"] = list(config.columns)
+    return kwargs
+
+
+def _validate_shard_count(shard_count: int | None) -> None:
+    if shard_count is not None and shard_count < 1:
+        raise ValueError("shard_count must be positive")
+
+
+def _actual_shard_count(stream: ShardableRows, shard_count: int | None) -> int:
+    return shard_count if shard_count is not None else int(getattr(stream, "n_shards", 1))
+
+
+def _partition_stream(
+    stream: ShardableRows,
+    shard_count: int,
+) -> tuple[Iterable[Mapping[str, Any]], ...]:
+    if shard_count < 1:
+        raise ValueError("shard_count must be positive")
+    return tuple(stream.shard(shard_count, index, contiguous=True) for index in range(shard_count))

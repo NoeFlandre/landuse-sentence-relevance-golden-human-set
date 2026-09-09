@@ -2,23 +2,23 @@
 
 This project builds a 100-sentence human golden set through a small local UI.
 
-The app streams two public Hugging Face datasets, keeps English sentences only, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The authoritative benchmark is `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set/annotations.csv`, the human-annotated file used for benchmark evaluations.
+The V2 app streams two public Hugging Face datasets, keeps English sentences from inside source text blocks when available, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The V1 authoritative benchmark remains `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set/annotations.csv`; V2 uses separate Seagate files and the `v2` Hugging Face split.
 
 ## Run locally
 
 ```bash
-uv sync --extra models
-uv run landuse-annotate
+./scripts/uv-seagate sync --extra models
+./scripts/uv-seagate run landuse-annotate
 ```
 
-Open <http://127.0.0.1:8000>. The source datasets are streamed. The candidate bank, annotation log, auth files, and disposable model/data cache live under `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set` by default.
+Open <http://127.0.0.1:8000>. The source datasets are streamed. The V2 candidate bank, annotation log, auth files, virtual environment, UV cache, temporary files, and disposable model/data cache live under `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set` by default.
+
+Use `scripts/uv-seagate` for local UV commands. It refuses to fall back to the Mac's internal storage when the Seagate drive is not mounted.
 
 Authenticate once if needed; the login is stored separately from disposable model/data files:
 
 ```bash
-HF_HOME="/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set/huggingface-auth" \
-HF_TOKEN_PATH="/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set/huggingface-auth/token" \
-uv run hf auth login
+./scripts/uv-seagate run hf auth login
 ```
 
 The terminal shows startup stages, sparse stream checkpoints, annotation counts, and final upload/cleanup without printing sentence text or raw rows. An existing login in the old application cache is migrated automatically on the next start.

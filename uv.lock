@@ -901,12 +901,13 @@ wheels = [
 
 [[package]]
 name = "landuse-sentence-relevance-golden-human-set"
-version = "1.0.0"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "fastapi" },
     { name = "h3" },
+    { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "jinja2" },
     { name = "numpy" },
@@ -939,6 +940,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=4.4,<5" },
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "h3", specifier = ">=4.3,<5" },
+    { name = "httpx", specifier = ">=0.27,<1" },
     { name = "huggingface-hub", specifier = ">=0.35,<2" },
     { name = "jinja2", specifier = ">=3.1,<4" },
     { name = "numpy", specifier = ">=2.2,<3" },

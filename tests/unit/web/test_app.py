@@ -101,6 +101,16 @@ def test_ui_uses_a_compact_annotation_layout() -> None:
     assert 'class="decision-actions"' in response.text
 
 
+def test_ui_places_continuation_before_saved_annotations() -> None:
+    workflow = FakeWorkflow(make_candidate(), [])
+    client = TestClient(create_app(workflow))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.text.index("Continue labeling") < response.text.index("Saved annotations")
+
+
 def test_ui_posts_the_selected_label_and_redirects_to_next_candidate() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
     client = TestClient(create_app(workflow))

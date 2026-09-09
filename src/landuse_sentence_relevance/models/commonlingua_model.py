@@ -3,10 +3,25 @@ from __future__ import annotations
 from typing import Any
 
 
+def _resolve_device(torch: Any, requested: str) -> str:
+    if requested not in {"auto", "cpu", "mps"}:
+        raise ValueError("device must be one of: auto, cpu, mps")
+    mps_available = bool(torch.backends.mps.is_available())
+    if requested == "mps" and not mps_available:
+        raise RuntimeError("MPS device is not available on this machine")
+    return {"cpu": "cpu", "mps": "mps", "auto": "mps" if mps_available else "cpu"}[requested]
+
+
+def _configure_execution(torch: Any, execution_device: str) -> None:
+    if execution_device == "cpu":
+        torch.set_num_threads(1)
+
+
 def load_predictor(
     checkpoint_path: str,
+    device: str = "cpu",
 ) -> tuple[Any, dict[int, str], int]:  # pragma: no cover - optional model extra
-    """Load the official CommonLingua checkpoint architecture on CPU."""
+    """Load the official CommonLingua checkpoint architecture."""
     try:
         import numpy as np
         import torch
@@ -14,6 +29,9 @@ def load_predictor(
         import torch.nn.functional as functional
     except ImportError as error:
         raise RuntimeError("Install model support with `uv sync --extra models`") from error
+
+    execution_device = _resolve_device(torch, device)
+    _configure_execution(torch, execution_device)
 
     class ByteNgramEmbed(nn.Module):
         def __init__(self, num_buckets: int, embed_dim: int, n: int = 3) -> None:
@@ -132,17 +150,31 @@ def load_predictor(
     }
     model = ByteHybrid(checkpoint["num_classes"], checkpoint["max_len"], config)
     model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(execution_device)
     model.eval()
     index_to_language = {index: language for language, index in checkpoint["lang2idx"].items()}
     max_len = int(checkpoint["max_len"])
 
-    def predictor(text: str) -> tuple[str, float]:
-        raw = text.encode("utf-8", errors="replace")[:max_len]
-        encoded = np.full((1, max_len), 256, dtype=np.int64)
-        encoded[0, : len(raw)] = np.frombuffer(raw, dtype=np.uint8)
+    def predict_many(texts):
+        text_items = tuple(texts)
+        encoded = np.full((len(text_items), max_len), 256, dtype=np.int64)
+        for row, text in enumerate(text_items):
+            raw = text.encode("utf-8", errors="replace")[:max_len]
+            encoded[row, : len(raw)] = np.frombuffer(raw, dtype=np.uint8)
         with torch.no_grad():
-            probabilities = torch.softmax(model(torch.from_numpy(encoded)).float(), dim=-1)
-        confidence, index = probabilities[0].max(dim=0)
-        return index_to_language[int(index)], float(confidence)
+            inputs = torch.from_numpy(encoded).to(execution_device)
+            probabilities = torch.softmax(model(inputs).float(), dim=-1)
+        confidence, index = probabilities.max(dim=1)
+        return tuple(
+            (index_to_language[int(predicted_index)], float(predicted_confidence))
+            for predicted_index, predicted_confidence in zip(index, confidence, strict=True)
+        )
 
-    return predictor, index_to_language, max_len
+    class Predictor:
+        def __call__(self, text: str) -> tuple[str, float]:
+            return predict_many((text,))[0]
+
+        def predict_many(self, texts):
+            return predict_many(texts)
+
+    return Predictor(), index_to_language, max_len

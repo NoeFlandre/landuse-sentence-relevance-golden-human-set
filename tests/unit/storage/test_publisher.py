@@ -47,6 +47,19 @@ def test_publisher_uploads_only_when_all_quotas_are_met(block_default_hub_upload
     ]
 
 
+def test_publisher_uses_the_configured_dataset_split(block_default_hub_upload) -> None:
+    calls = []
+    publisher = DatasetPublisher(
+        dataset_id="dataset",
+        split="v2",
+        uploader=lambda **kwargs: calls.append(kwargs),
+    )
+
+    assert publisher.publish_if_ready(make_annotations()) is True
+
+    assert calls[0]["split"] == "v2"
+
+
 def test_publisher_does_not_reorder_the_deterministic_final_selection(block_default_hub_upload) -> None:
     records = []
     publisher = DatasetPublisher(
@@ -230,6 +243,41 @@ def test_real_hub_boundary_creates_a_public_dataset(monkeypatch) -> None:
             "commit_message": "Publish balanced human annotations",
         },
     )
+
+
+def test_real_hub_boundary_defaults_to_the_train_split(monkeypatch) -> None:
+    import datasets
+    import huggingface_hub
+
+    calls = []
+
+    class FakeApi:
+        def __init__(self, token):
+            calls.append(("api", token))
+
+        def create_repo(self, **kwargs):
+            calls.append(("repo", kwargs))
+
+    class FakeDataset:
+        @classmethod
+        def from_list(cls, records):
+            calls.append(("records", records))
+            return cls()
+
+        def push_to_hub(self, *args, **kwargs):
+            calls.append(("push", args, kwargs))
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+    monkeypatch.setattr(datasets, "Dataset", FakeDataset)
+
+    DatasetPublisher("dataset", token="token")._upload_to_hub(
+        dataset_id="dataset",
+        records=[],
+        token="token",
+        private=False,
+    )
+
+    assert calls[-1][2]["split"] == "train"
 
 
 def test_real_hub_boundary_reports_missing_dependencies(monkeypatch) -> None:

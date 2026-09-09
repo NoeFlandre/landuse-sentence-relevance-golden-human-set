@@ -363,55 +363,6 @@
         </div>
       </section>
 
-      <section class="review-card" aria-labelledby="saved-annotations-heading">
-        <header class="section-heading">
-          <div>
-            <p class="eyebrow">Review</p>
-            <h2 id="saved-annotations-heading">Saved annotations</h2>
-          </div>
-          <span class="section-count">{{ state.labeled_count }} records</span>
-        </header>
-
-        {% if state.annotations %}
-          <ol class="annotation-list">
-            {% for annotation in state.annotations %}
-              <li class="annotation-row">
-                <div>
-                  <div class="annotation-topline">
-                    <span class="label-badge {% if annotation.label.value == 'yes' %}label-yes{% else %}label-no{% endif %}">
-                      {{ annotation.label.value|upper }}
-                    </span>
-                    <span class="annotation-source">{{ annotation.candidate.source.value }}</span>
-                  </div>
-                  <p class="annotation-sentence">{{ annotation.candidate.sentence }}</p>
-                  <p class="annotation-meta">
-                    {% if annotation.candidate.place_name %}{{ annotation.candidate.place_name }} · {% endif %}
-                    {{ "%.4f"|format(annotation.candidate.latitude) }}, {{ "%.4f"|format(annotation.candidate.longitude) }}
-                    {% if annotation.candidate.source_url %} · <a href="{{ annotation.candidate.source_url }}" target="_blank" rel="noreferrer">Source</a>{% endif %}
-                  </p>
-                </div>
-                <div class="annotation-actions">
-                  <form method="post" action="/annotation/update">
-                    <input type="hidden" name="candidate_id" value="{{ annotation.candidate.candidate_id }}">
-                    <button class="label-action {% if annotation.label.value == 'yes' %}is-selected{% endif %}" type="submit" name="label" value="yes" aria-label="Change label to Yes">Yes</button>
-                    <button class="label-action {% if annotation.label.value == 'no' %}is-selected{% endif %}" type="submit" name="label" value="no" aria-label="Change label to No">No</button>
-                  </form>
-                  <form method="post" action="/annotation/remove" onsubmit="return window.confirm('Remove this annotation?');">
-                    <input type="hidden" name="candidate_id" value="{{ annotation.candidate.candidate_id }}">
-                    <button class="remove-action" type="submit">Remove</button>
-                  </form>
-                </div>
-              </li>
-            {% endfor %}
-          </ol>
-        {% else %}
-          <section class="empty-state">
-            <h2>No annotations yet</h2>
-            <p>Saved labels will appear here as you work.</p>
-          </section>
-        {% endif %}
-      </section>
-
       {% if not state.published and not state.final_ready and candidate %}
         <section class="next-section">
           <section class="annotation-card">
@@ -479,6 +430,56 @@
           </section>
         </section>
       {% endif %}
+
+      <section class="review-card" aria-labelledby="saved-annotations-heading">
+        <header class="section-heading">
+          <div>
+            <p class="eyebrow">Review</p>
+            <h2 id="saved-annotations-heading">Saved annotations</h2>
+          </div>
+          <span class="section-count">{{ state.labeled_count }} records</span>
+        </header>
+
+        {% if state.annotations %}
+          <ol class="annotation-list">
+            {% for annotation in state.annotations %}
+              <li class="annotation-row">
+                <div>
+                  <div class="annotation-topline">
+                    <span class="label-badge {% if annotation.label.value == 'yes' %}label-yes{% else %}label-no{% endif %}">
+                      {{ annotation.label.value|upper }}
+                    </span>
+                    <span class="annotation-source">{{ annotation.candidate.source.value }}</span>
+                  </div>
+                  <p class="annotation-sentence">{{ annotation.candidate.sentence }}</p>
+                  <p class="annotation-meta">
+                    {% if annotation.candidate.place_name %}{{ annotation.candidate.place_name }} · {% endif %}
+                    {{ "%.4f"|format(annotation.candidate.latitude) }}, {{ "%.4f"|format(annotation.candidate.longitude) }}
+                    {% if annotation.candidate.source_url %} · <a href="{{ annotation.candidate.source_url }}" target="_blank" rel="noreferrer">Source</a>{% endif %}
+                  </p>
+                </div>
+                <div class="annotation-actions">
+                  <form method="post" action="/annotation/update">
+                    <input type="hidden" name="candidate_id" value="{{ annotation.candidate.candidate_id }}">
+                    <button class="label-action {% if annotation.label.value == 'yes' %}is-selected{% endif %}" type="submit" name="label" value="yes" aria-label="Change label to Yes">Yes</button>
+                    <button class="label-action {% if annotation.label.value == 'no' %}is-selected{% endif %}" type="submit" name="label" value="no" aria-label="Change label to No">No</button>
+                  </form>
+                  <form method="post" action="/annotation/remove" onsubmit="return window.confirm('Remove this annotation?');">
+                    <input type="hidden" name="candidate_id" value="{{ annotation.candidate.candidate_id }}">
+                    <button class="remove-action" type="submit">Remove</button>
+                  </form>
+                </div>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <section class="empty-state">
+            <h2>No annotations yet</h2>
+            <p>Saved labels will appear here as you work.</p>
+          </section>
+        {% endif %}
+      </section>
+
     </main>
   </body>
 </html>

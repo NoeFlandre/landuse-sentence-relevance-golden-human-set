@@ -1,3 +1,4 @@
+import math
 from collections import Counter
 
 import pytest
@@ -6,12 +7,22 @@ import landuse_sentence_relevance.domain.stratification as stratification
 from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.stratification import (
     _append_next_source_cell,
+    _cached_distant_cells,
+    _conflict_counts,
+    _count_bucket_conflicts,
+    _cube_bin,
     _distance_to_selection,
+    _distant_candidates,
     _distant_cells,
+    _farthest_cached_cell,
     _farthest_or_stable_cell,
     _feasible_source_cells,
     _haversine_km,
+    _next_source_cell,
+    _required_distant_candidates,
     _stable_key,
+    _unit_vector,
+    _update_selected_distance_cache,
     select_common_cells,
     select_distinct_source_cells,
     select_spread_cells,
@@ -54,6 +65,37 @@ def test_distinct_source_cell_selection_is_disjoint_and_globally_spread() -> Non
     )
 
 
+def test_distinct_source_cell_selection_avoids_a_greedy_dead_end() -> None:
+    centers = {
+        **{f"wikipedia-{index}": (0.0, 5.0 * longitude) for index, longitude in enumerate((0, 1, 2, 6))},
+        **{f"website-{index}": (0.0, 5.0 * longitude) for index, longitude in enumerate((3, 4, 5, 7))},
+    }
+
+    selected = select_distinct_source_cells(
+        {
+            Source.WIKIPEDIA: {f"wikipedia-{index}" for index in range(4)},
+            Source.WEBSITE: {f"website-{index}" for index in range(4)},
+        },
+        target_count_per_source=2,
+        center_of_cell=centers.__getitem__,
+        seed="test",
+        minimum_distance_km=1_000,
+    )
+
+    cells = selected[Source.WIKIPEDIA] + selected[Source.WEBSITE]
+    assert len(cells) == 4
+    assert len(set(cells)) == 4
+    assert (
+        min(
+            _haversine_km(centers[first], centers[second])
+            for first in cells
+            for second in cells
+            if first != second
+        )
+        >= 1_000
+    )
+
+
 def test_distinct_source_cell_selection_uses_zero_distance_by_default() -> None:
     centers = {
         "wiki-a": (0.0, 0.0),
@@ -73,6 +115,399 @@ def test_distinct_source_cell_selection_uses_zero_distance_by_default() -> None:
     )
 
     assert sum(len(cells) for cells in selected.values()) == 4
+
+
+def test_distinct_source_cell_selection_updates_minimum_distances_incrementally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers = {
+        **{f"wiki-{index}": (0.0, -150.0 + index * 50.0) for index in range(4)},
+        **{f"web-{index}": (0.0, -125.0 + index * 50.0) for index in range(4)},
+    }
+    calls = 0
+    original_haversine = stratification._haversine_km
+
+    def counted_haversine(first: tuple[float, float], second: tuple[float, float]) -> float:
+        nonlocal calls
+        calls += 1
+        return original_haversine(first, second)
+
+    monkeypatch.setattr(stratification, "_haversine_km", counted_haversine)
+
+    selected = select_distinct_source_cells(
+        {
+            Source.WIKIPEDIA: {f"wiki-{index}" for index in range(4)},
+            Source.WEBSITE: {f"web-{index}" for index in range(4)},
+        },
+        target_count_per_source=2,
+        center_of_cell=centers.__getitem__,
+        seed="test",
+        minimum_distance_km=1_000,
+    )
+
+    assert sum(len(cells) for cells in selected.values()) == 4
+    assert calls == 22
+
+
+def test_distinct_source_cell_selection_does_not_enable_cache_at_zero_distance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers = {
+        "wiki-a": (0.0, 0.0),
+        "wiki-b": (0.0, 1.0),
+        "web-a": (0.0, 10.0),
+        "web-b": (0.0, 11.0),
+    }
+
+    def unexpected_cache_update(
+        centers: dict[str, tuple[float, float]],
+        nearest_distances: dict[str, float],
+        selected_cells: list[str],
+        selected: str,
+    ) -> None:
+        raise AssertionError("zero minimum distance must not update the distance cache")
+
+    monkeypatch.setattr(stratification, "_update_selected_distance_cache", unexpected_cache_update)
+
+    select_distinct_source_cells(
+        {
+            Source.WIKIPEDIA: {"wiki-a", "wiki-b"},
+            Source.WEBSITE: {"web-a", "web-b"},
+        },
+        target_count_per_source=2,
+        center_of_cell=centers.__getitem__,
+        seed="test",
+        minimum_distance_km=0.0,
+    )
+
+
+def test_conflict_counts_return_zero_for_zero_distance() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 0.001)}
+
+    assert _conflict_counts(centers, 0.0) == {"a": 0, "b": 0}
+
+
+def test_conflict_counts_count_nearby_cells_for_any_positive_distance() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 0.001)}
+
+    assert _conflict_counts(centers, 1.0) == {"a": 1, "b": 1}
+
+
+def test_conflict_counts_use_a_conservative_result_at_the_maximum_distance() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 180.0), "c": (30.0, 30.0)}
+    maximum_distance = math.pi * stratification._EARTH_RADIUS_KM
+
+    assert _conflict_counts(centers, maximum_distance) == {"a": 2, "b": 2, "c": 2}
+
+
+def test_spatial_conflict_counts_use_the_chord_radius_for_bucketing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers = {"a": (0.0, 0.0)}
+    received: list[float] = []
+    original_buckets = stratification._spatial_buckets
+
+    def capture_buckets(
+        cells: tuple[str, ...],
+        vectors: dict[str, tuple[float, float, float]],
+        width: float,
+    ) -> dict[tuple[int, int, int], list[str]]:
+        received.append(width)
+        return original_buckets(cells, vectors, width)
+
+    monkeypatch.setattr(stratification, "_spatial_buckets", capture_buckets)
+
+    _conflict_counts(centers, 1_000.0)
+
+    assert received == [2 * math.sin(1_000.0 / stratification._EARTH_RADIUS_KM / 2)]
+
+
+def test_count_bucket_conflicts_skip_only_cells_before_the_current_cell() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 0.001), "c": (0.0, 0.002)}
+    counts = dict.fromkeys(centers, 0)
+
+    _count_bucket_conflicts("b", centers, ["a", "c"], 1.0, counts)
+
+    assert counts == {"a": 0, "b": 1, "c": 1}
+
+
+def test_count_bucket_conflicts_keep_the_strict_distance_boundary() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 1.0)}
+    counts = {"a": 0, "b": 0}
+    boundary = _haversine_km(centers["a"], centers["b"])
+
+    _count_bucket_conflicts("a", centers, ["b"], boundary, counts)
+
+    assert counts == {"a": 0, "b": 0}
+
+
+def test_count_bucket_conflicts_increment_each_endpoint_once() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 0.001)}
+    counts = {"a": 4, "b": 7}
+
+    _count_bucket_conflicts("a", centers, ["b"], 1.0, counts)
+
+    assert counts == {"a": 5, "b": 8}
+
+
+def test_unit_vector_preserves_all_three_spherical_components() -> None:
+    latitude = math.radians(45.0)
+    longitude = math.radians(60.0)
+
+    assert _unit_vector((45.0, 60.0)) == pytest.approx(
+        (
+            math.cos(latitude) * math.cos(longitude),
+            math.cos(latitude) * math.sin(longitude),
+            math.sin(latitude),
+        )
+    )
+
+
+def test_cube_bin_offsets_each_vector_component_by_one_before_scaling() -> None:
+    assert _cube_bin((-0.4, 0.1, 0.6), 0.2) == (2, 5, 8)
+
+
+def test_distinct_source_cell_selection_does_not_build_conflicts_at_zero_distance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_conflict_counts(
+        centers: dict[str, tuple[float, float]], minimum_distance_km: float
+    ) -> dict[str, int]:
+        raise AssertionError("zero minimum distance must not build conflict counts")
+
+    monkeypatch.setattr(stratification, "_conflict_counts", unexpected_conflict_counts)
+
+    select_distinct_source_cells(
+        {
+            Source.WIKIPEDIA: {"wiki-a", "wiki-b"},
+            Source.WEBSITE: {"web-a", "web-b"},
+        },
+        target_count_per_source=2,
+        center_of_cell=lambda cell: (0.0, float(len(cell))),
+        seed="test",
+        minimum_distance_km=0.0,
+    )
+
+
+def test_distinct_source_cell_selection_builds_conflicts_for_one_kilometer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: list[float] = []
+    original_conflict_counts = stratification._conflict_counts
+
+    def capture_conflict_counts(
+        centers: dict[str, tuple[float, float]], minimum_distance_km: float
+    ) -> dict[str, int]:
+        received.append(minimum_distance_km)
+        return original_conflict_counts(centers, minimum_distance_km)
+
+    monkeypatch.setattr(stratification, "_conflict_counts", capture_conflict_counts)
+
+    select_distinct_source_cells(
+        {
+            Source.WIKIPEDIA: {"wiki-a", "wiki-b"},
+            Source.WEBSITE: {"web-a", "web-b"},
+        },
+        target_count_per_source=1,
+        center_of_cell=lambda cell: (0.0, float(len(cell))),
+        seed="test",
+        minimum_distance_km=1.0,
+    )
+
+    assert received == [1.0]
+
+
+def test_append_next_source_cell_passes_distance_cache_to_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
+    selected_by_source = {source: [] for source in Source}
+    selected_cells: list[str] = []
+    centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
+    nearest_distances = {"wiki": 100.0}
+    received: list[dict[str, float] | None] = []
+
+    def capture_next_cell(
+        candidates: list[str],
+        selected: list[str],
+        candidate_centers: dict[str, tuple[float, float]],
+        seed: str,
+        distances: dict[str, float] | None,
+        conflict_counts: dict[str, int] | None,
+    ) -> str:
+        received.append(distances)
+        return candidates[0]
+
+    monkeypatch.setattr(stratification, "_next_source_cell", capture_next_cell)
+
+    _append_next_source_cell(
+        Source.WIKIPEDIA,
+        available,
+        selected_by_source,
+        selected_cells,
+        centers,
+        target_count=1,
+        minimum_distance_km=0.0,
+        seed="test",
+        nearest_distances=nearest_distances,
+    )
+
+    assert received == [nearest_distances]
+
+
+def test_conflict_ties_use_the_requested_seed() -> None:
+    centers = {"a": (0.0, 0.0), "b": (0.0, 1.0)}
+    conflicts = {"a": 0, "b": 0}
+
+    assert _next_source_cell(["b", "a"], [], centers, "seed", None, conflicts) == "a"
+
+
+def test_distinct_source_cell_selection_caches_any_positive_distance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers = {
+        "wiki-a": (0.0, 0.0),
+        "wiki-b": (0.0, 1.0),
+        "web-a": (0.0, 10.0),
+        "web-b": (0.0, 11.0),
+    }
+    cache_updates = 0
+    original_update = stratification._update_selected_distance_cache
+
+    def counted_cache_update(
+        cache_centers: dict[str, tuple[float, float]],
+        nearest_distances: dict[str, float],
+        selected_cells: list[str],
+        selected: str,
+    ) -> None:
+        nonlocal cache_updates
+        cache_updates += 1
+        original_update(cache_centers, nearest_distances, selected_cells, selected)
+
+    monkeypatch.setattr(stratification, "_update_selected_distance_cache", counted_cache_update)
+
+    select_distinct_source_cells(
+        {
+            Source.WIKIPEDIA: {"wiki-a", "wiki-b"},
+            Source.WEBSITE: {"web-a", "web-b"},
+        },
+        target_count_per_source=2,
+        center_of_cell=centers.__getitem__,
+        seed="test",
+        minimum_distance_km=1.0,
+    )
+
+    assert cache_updates == 4
+
+
+def test_append_next_source_cell_passes_centers_to_distance_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
+    selected_by_source = {source: [] for source in Source}
+    selected_cells: list[str] = []
+    centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
+    received: dict[str, object] = {}
+
+    def capture_distance_filter(
+        candidates: list[str],
+        selected: list[str],
+        filter_centers: dict[str, tuple[float, float]],
+        minimum_distance: float,
+        nearest_distances: dict[str, float] | None,
+    ) -> list[str]:
+        received["centers"] = filter_centers
+        return candidates
+
+    monkeypatch.setattr(stratification, "_required_distant_candidates", capture_distance_filter)
+
+    _append_next_source_cell(
+        Source.WIKIPEDIA,
+        available,
+        selected_by_source,
+        selected_cells,
+        centers,
+        target_count=1,
+        minimum_distance_km=0.0,
+        seed="test",
+    )
+
+    assert received["centers"] is centers
+
+
+def test_required_distant_candidates_passes_centers_to_distance_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centers = {"candidate": (0.0, 0.0)}
+    received: dict[str, object] = {}
+
+    def capture_distance_filter(
+        candidates: list[str],
+        selected: list[str],
+        filter_centers: dict[str, tuple[float, float]],
+        minimum_distance: float,
+        nearest_distances: dict[str, float] | None,
+    ) -> list[str]:
+        received["centers"] = filter_centers
+        return candidates
+
+    monkeypatch.setattr(stratification, "_distant_candidates", capture_distance_filter)
+
+    assert _required_distant_candidates(["candidate"], [], centers, 1.0, None) == ["candidate"]
+    assert received["centers"] is centers
+
+
+def test_distant_candidates_use_centers_when_the_cache_is_disabled() -> None:
+    centers = {"selected": (0.0, 0.0), "candidate": (0.0, 0.001)}
+
+    assert (
+        _distant_candidates(
+            ["candidate"],
+            ["selected"],
+            centers,
+            1.0,
+            None,
+        )
+        == []
+    )
+
+
+def test_next_source_cell_uses_seed_for_cached_ties() -> None:
+    assert (
+        _next_source_cell(
+            ["a", "b"],
+            ["selected"],
+            {"a": (0.0, 0.0), "b": (0.0, 1.0)},
+            "seed",
+            {"a": 1.0, "b": 1.0},
+        )
+        == "b"
+    )
+
+
+def test_cached_distant_cells_keep_a_candidate_at_the_boundary() -> None:
+    assert _cached_distant_cells(["candidate"], {"candidate": 100.0}, 100.0) == ["candidate"]
+
+
+def test_farthest_cached_cell_prioritizes_distance() -> None:
+    assert _farthest_cached_cell(["a", "z"], {"a": 100.0, "z": 1.0}, "seed") == "a"
+
+
+def test_farthest_cached_cell_uses_seed_for_ties() -> None:
+    assert _farthest_cached_cell(["a", "b"], {"a": 1.0, "b": 1.0}, "seed") == "b"
+
+
+def test_farthest_cached_cell_uses_each_cell_in_the_tiebreaker() -> None:
+    assert _farthest_cached_cell(["b", "a"], {"a": 1.0, "b": 1.0}, "seed") == "b"
+
+
+def test_update_selected_distance_cache_marks_the_selected_cell_as_zero() -> None:
+    nearest_distances = {"candidate": math.inf}
+    centers = {"selected": (0.0, 0.0), "candidate": (0.0, 1.0)}
+
+    _update_selected_distance_cache(centers, nearest_distances, [], "selected")
+
+    assert nearest_distances["selected"] == 0.0
 
 
 def test_feasible_source_cells_reserves_cells_for_the_other_source() -> None:

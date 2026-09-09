@@ -22,6 +22,7 @@ class DatasetUploader(Protocol):
         records: list[dict[str, Any]],
         token: str | None,
         private: bool,
+        split: str,
     ) -> None: ...
 
 
@@ -35,12 +36,14 @@ class DatasetPublisher:
         uploader: DatasetUploader | None = None,
         prepare: Callable[[], None] | None = None,
         cleanup: Callable[[], None] | None = None,
+        split: str = "train",
     ) -> None:
         self._dataset_id = dataset_id
         self._token = token
         self._uploader = uploader or self._upload_to_hub
         self._prepare = prepare
         self._cleanup = cleanup
+        self._split = split
         self._publish_lock = Lock()
 
     def publish_if_ready(self, annotations: Iterable[Annotation]) -> bool:
@@ -62,6 +65,7 @@ class DatasetPublisher:
                 records=[annotation.to_dict() for annotation in selected],
                 token=self._token,
                 private=False,
+                split=self._split,
             )
             logger.info("Public upload complete for %s", self._dataset_id)
             if self._cleanup is not None:
@@ -76,6 +80,7 @@ class DatasetPublisher:
         records: list[dict[str, Any]],
         token: str | None,
         private: bool,
+        split: str = "train",
     ) -> None:
         try:
             from datasets import Dataset
@@ -89,7 +94,7 @@ class DatasetPublisher:
         api.create_repo(repo_id=dataset_id, repo_type="dataset", private=private, exist_ok=True)
         Dataset.from_list(records).push_to_hub(
             dataset_id,
-            split="train",
+            split=split,
             token=token,
             commit_message="Publish balanced human annotations",
         )
