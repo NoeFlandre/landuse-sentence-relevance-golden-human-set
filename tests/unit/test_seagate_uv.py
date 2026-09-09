@@ -7,6 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).parents[2]
 
 
+def test_seagate_uv_uses_a_portable_shell_entrypoint() -> None:
+    assert (ROOT / "scripts/uv-seagate").read_text(encoding="utf-8").splitlines()[0] == "#!/bin/sh"
+
+
 def test_seagate_uv_routes_project_state_to_the_external_drive(tmp_path: Path) -> None:
     fake_uv_dir = tmp_path / "bin"
     fake_uv_dir.mkdir()

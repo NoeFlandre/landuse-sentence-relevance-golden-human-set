@@ -1,14 +1,14 @@
-#!/bin/zsh
+#!/bin/sh
 
-set -euo pipefail
+set -eu
 
-script_directory="${0:A:h}"
-project_root="${script_directory:h}"
+script_directory=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+project_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
 default_data_root="/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set"
 data_root="${PROJECT_DATA_ROOT:-$default_data_root}"
 
-if [[ ! -d "$data_root" ]]; then
-    print -u2 -- "Project data drive is not mounted: $data_root"
+if [ ! -d "$data_root" ]; then
+    printf '%s\n' "Project data drive is not mounted: $data_root" >&2
     exit 2
 fi
 
