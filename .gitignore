@@ -14,7 +14,7 @@ state/
 
 # Local Seagate annotation state and disposable runtime files.
 /annotations*.csv
-/annotations*.jsonl
+/annotations*.jsonl*
 /candidate-pool*.json
 /candidate-progress*.json
 /annotation-distribution-map*.png
