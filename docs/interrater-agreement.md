@@ -1,5 +1,7 @@
 # Interrater agreement
 
+A one-screen version of the numbers is on [Interrater agreement at a glance](interrater-agreement-summary.md).
+
 This page records how agreement is computed between the human benchmark and the two machine-labeled copies of the V2 combined export, and what the current run reports.
 
 ## Raters
