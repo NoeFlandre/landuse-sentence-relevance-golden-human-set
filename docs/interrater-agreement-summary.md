@@ -17,7 +17,3 @@
 | human | 79 | 79 |
 | gpt | 96 | 62 |
 | claude | 96 | 62 |
-
-## Takeaway
-
-The two models agree with each other much more than either agrees with the human. Both over-predict `yes`: each labels 21 human-`no` sentences as `yes`, against only 4 the other way. The gap is a systematic bias, not random noise.
