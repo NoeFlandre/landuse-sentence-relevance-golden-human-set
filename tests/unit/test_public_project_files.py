@@ -1,3 +1,4 @@
+import os
 import tomllib
 from pathlib import Path
 
@@ -117,3 +118,18 @@ def test_source_distribution_is_bounded_to_project_files() -> None:
     assert "uv-environment/**" not in sdist["exclude"]
     assert "runtime-cache/**" not in sdist["exclude"]
     assert "site/**" in sdist["exclude"]
+
+
+def test_mutation_gate_uses_every_core_by_default() -> None:
+    from scripts.gauntlet import default_mutation_workers
+
+    assert default_mutation_workers() >= 1
+    assert default_mutation_workers() == max(1, os.cpu_count() or 1)
+
+
+def test_gauntlet_passes_the_worker_count_to_mutmut_and_its_environment() -> None:
+    source = (ROOT / "scripts/gauntlet.py").read_text(encoding="utf-8")
+
+    assert '"--mutation-workers"' in source
+    assert '["uv", "run", "mutmut", "run", "--max-children", workers]' in source
+    assert 'environment["MUTMUT_MAX_CHILDREN"] = workers' in source

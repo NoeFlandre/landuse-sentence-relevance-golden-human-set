@@ -7,10 +7,12 @@ __pycache__/
 coverage.json
 htmlcov/
 site/
+dist/
 mutants/
 /models/
 .env
 .DS_Store
+*.numbers
 
 # Local Seagate results and reusable runtime state.
 /results/

@@ -11,7 +11,7 @@ All generated artifacts stay on the Seagate project drive and are ignored by Git
 | V2 website benchmark | `results/annotations/benchmark/v2-website-balanced-58.csv` | 58 context-aware website rows, balanced 29 Yes / 29 No |
 | V2 combined export | `results/annotations/benchmark/v2-wikipedia-website-combined.csv` | Combined V2 Wikipedia and website export |
 | V2 LLM outputs | `results/annotations/llm/` | Two 158-row machine-labeled copies; not the human benchmark |
-| Interrater agreement | `results/analysis/interrater/` | Machine-readable human/GPT/Claude agreement report and disagreement list |
+| Interrater agreement | `results/analysis/interrater/` | Machine-readable human/GPT/Claude agreement report; the reviewable disagreement CSV is committed at `docs/data/interrater-disagreements.csv` |
 | Annotation sessions | `results/annotations/sessions/` | Resumable JSONL sessions, including historical V1 and V2 runs |
 | V1 candidate pool | `results/candidates/v1/pool.json` | Historical V1 candidate bank |
 | V2 candidate pool | `results/candidates/v2/pool.json` | 512 reusable candidates, 256 per source |
@@ -31,6 +31,5 @@ The benchmark path above is the human-annotated CSV to use for benchmark evaluat
 - `state/uv-environment/` and `state/uv-python/` store the UV environment and interpreter.
 - `state/uv-cache/`, `state/python-cache/`, and `state/xdg-cache/` store tool caches.
 - `state/tmp/` is disposable process scratch space.
-- `state/legacy/` holds pre-migration scratch and quality-cache trees preserved for later deletion; new runs do not use them.
 
 Use `scripts/uv-seagate` for every local UV command. It creates and uses these paths only after confirming that the Seagate project directory is mounted.

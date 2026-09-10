@@ -17,3 +17,5 @@
 | human | 79 | 79 |
 | gpt | 96 | 62 |
 | claude | 96 | 62 |
+
+Every disagreeing sentence: [interrater-disagreements.csv](data/interrater-disagreements.csv) (31 rows).

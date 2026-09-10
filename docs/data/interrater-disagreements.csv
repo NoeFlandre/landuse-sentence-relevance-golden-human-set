@@ -1,0 +1,32 @@
+minority_rater,minority_label,human,gpt,claude,sentence,source,region,polygon_name,source_url
+claude,no,yes,yes,no,It is one of the Line Islands belonging to the Republic of Kiribati .,wikipedia,kiribati,Malden Island,https://en.wikipedia.org/?curid=19023
+claude,no,yes,yes,no,"Jarvis is one of the Line Islands and, for statistical purposes, is also grouped as one of the United States Minor Outlying Islands .",wikipedia,kiribati,Jarvis Island,https://en.wikipedia.org/?curid=15683
+claude,yes,no,no,yes,"Based on Ross Island, the AFD provides the United States Antarctic Program with professional emergency ser",website,antarctica,Antarctic Fire Department,http://www.antarcticfire.org/
+claude,yes,no,no,yes,It is the largest paper and pulp company in Latin America and among the biggest producers in the sector.,wikipedia,brazil-nordeste,Suzano Mucuri Power Station,https://en.wikipedia.org/?curid=24145606
+claude,yes,no,no,yes,The Australian Antarctic Territory ( AAT ) is a region of East Antarctica claimed by Australia as an external territory .,wikipedia,antarctica,Australian Antarctic Territory,https://en.wikipedia.org/?curid=242046
+claude,yes,no,no,yes,Welcome to the Arctic – welcome to Icecamp Greenland!,website,greenland,Icecamp Greenland,https://icecamp-greenland.com
+gpt,no,yes,no,yes,It has almost 900 people living on 70 km .,wikipedia,new-caledonia,Bélep,https://en.wikipedia.org/?curid=4329553
+gpt,no,yes,no,yes,The islands have no permanent human inhabitants.,wikipedia,new-zealand,Auckland Islands,https://en.wikipedia.org/?curid=160167
+gpt,yes,no,yes,no,Discover a premium selection of 15 signature bars and restaurants.,website,morocco,Oasis,https://www.mazaganbeachresort.com/dining/oasis
+gpt,yes,no,yes,no,"The cape, but not the settlement, was formerly known as North Cape (or Cape North).",wikipedia,russia-far-eastern-fed-district,Мыс Шмидта,https://en.wikipedia.org/?curid=23603159
+gpt,yes,no,yes,no,You will take a 2hr scenic journey to a sleepy town called Gansbaai.,website,south-africa,White Shark Projects,https://www.whitesharkprojects.co.za/
+gpt,yes,no,yes,no,in 2000 Meybod was recorded as the first Historical city of Iran in the list of national monuments.,website,iran,بومگردی کثنوا,https://www.meybodadvisor.ir/
+human,no,no,yes,yes,"Construction started in June 2006 with a total investment of 236 million yuan, and the airport was opened in June 2008.",wikipedia,china-heilongjiang,漠河古莲机场,https://en.wikipedia.org/?curid=33444714
+human,no,no,yes,yes,"Find the ideal camper area according to your needs and wishes: sea view spot, electric and water terminals, in a quiet and naturalsetting or at a walking distance from the city centre!",website,bretagne,Aire de camping-car du Porzou,https://www.deconcarneauapontaven.com/en/information/camper-areas-brittany/
+human,no,no,yes,yes,It was founded in 1981 and is part of the Wet Tropics of Queensland .,wikipedia,australia,Daintree National Park,https://en.wikipedia.org/?curid=103263
+human,no,no,yes,yes,"One of the smallest libraries in HSPLS, our 775- sq. ft. “portable” library building opened in its present location on Feb. 24, 1994.",website,us-hawaii,Na'alehu Public Library,https://www.librarieshawaii.org/branch/naalehu-public-library/
+human,no,no,yes,yes,Recent technical challenges and scheduled maintenance have reduced the output of our power generation capacity.,website,tuvalu,Tuvalu Electricity Corporation,https://www.tectuvalu.tv/
+human,no,no,yes,yes,"Romantics and families alike find action and fun at Carmel Valley Ranch, California’s premier resort.",website,us-california,Carmel Valley Ranch Golf Course,https://www.carmelvalleyranch.com/
+human,no,no,yes,yes,"Selo in Sakha Republic, Russia",wikipedia,russia-far-eastern-fed-district,Хатынгнах,https://en.wikipedia.org/?curid=41176973
+human,no,no,yes,yes,"St Mary's Church building was completed in 1861 and consecrated on 9th May, Ascension Day of that year.",website,saint-helena-ascension-and-tristan-da-cunha,St Mary’s Church,https://www.ascension.gov.ac/map-marker/st-marys-church
+human,no,no,yes,yes,The Centre is a purpose built multi-use facility in the Hamlet of Gjoa Haven.,website,canada-nunavut,Nattilik Herritage Center,https://nattilikheritage.ca/
+human,no,no,yes,yes,The airport received its first passenger flight on 24 September 2021.,wikipedia,russia-ural-fed-district,Аэропорт Тобольск (Ремезов),https://en.wikipedia.org/?curid=68890913
+human,no,no,yes,yes,"The arena was opened in 2003 and has a capacity of 7,100.",wikipedia,russia-far-eastern-fed-district,Платинум Арена,https://en.wikipedia.org/?curid=6362860
+human,no,no,yes,yes,The farthest point of the peninsula is Jacobsen Head.,wikipedia,antarctica,Binder Rocks,https://en.wikipedia.org/?curid=1436304
+human,no,no,yes,yes,The guano -coated Gardner Pinnacles.,wikipedia,us-hawaii,Pūhāhonu,https://en.wikipedia.org/?curid=513273
+human,no,no,yes,yes,The island is described as 'inconspicuous and fladt'.,wikipedia,greenland,Centrum Island,https://en.wikipedia.org/?curid=69906758
+human,no,no,yes,yes,The main village is Tuihana.,wikipedia,polynesie-francaise,Tematangi,https://en.wikipedia.org/?curid=13896267
+human,no,no,yes,yes,"This is one of three DOC Great Walk huts on the Kepler Track - the Luxmore, Iris Burn and Moturau.",website,new-zealand,Iris Burn Hut,https://doc.govt.nz/link/59306afc10ef4acb9e3592232f4111a1
+human,no,no,yes,yes,"Town under republic jurisdiction in Sakha Republic, Russia",wikipedia,russia-far-eastern-fed-district,Мирный,https://en.wikipedia.org/?curid=5852070
+human,yes,yes,no,no,Ifalik is located approximately 40 kilometers (25 mi) east of Woleai and 700 kilometers (430 mi) southeast of the island of Yap .,wikipedia,micronesia,Ifalik Atoll,https://en.wikipedia.org/?curid=20958345
+human,yes,yes,no,no,"It is located just to the west of the northern part of Dangerous Ground , and is 22 miles (35 km) southeast of Philippine-occupied Thitu Island (Pag-asa) and 22 miles (35 km) north-northeast of Taiwan-occupied Itu Aba Island .",wikipedia,philippines,Kota Island,https://en.wikipedia.org/?curid=6343481

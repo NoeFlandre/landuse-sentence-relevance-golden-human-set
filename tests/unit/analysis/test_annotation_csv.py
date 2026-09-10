@@ -9,6 +9,7 @@ import pytest
 from landuse_sentence_relevance.analysis.annotation_csv import (
     SENTENCE_COLUMN,
     read_rater_labels,
+    read_sentence_context,
 )
 from landuse_sentence_relevance.analysis.interrater import InterraterDataError
 
@@ -66,7 +67,7 @@ def test_read_rater_labels_rejects_a_row_with_a_missing_value(tmp_path: Path) ->
 
     with pytest.raises(
         InterraterDataError,
-        match=rf"^{re.escape(str(path))} has a row missing 'sentence' or 'llm_label'$",
+        match=rf"^{re.escape(str(path))} has a row missing one of \['sentence', 'llm_label'\]$",
     ):
         read_rater_labels(path, "gpt", "llm_label")
 
@@ -113,3 +114,43 @@ def test_read_rater_labels_keeps_a_newline_inside_a_quoted_sentence(tmp_path: Pa
     path = write_csv(tmp_path / "wrapped.csv", 'sentence,llm_label\n"A field,\nthen a road.",yes\n')
 
     assert read_rater_labels(path, "gpt", "llm_label") == {"A field,\nthen a road.": "yes"}
+
+
+CONTEXT_CSV = "sentence,label,source,region\nA field.,yes,wikipedia,fiji\nA road.,no,website,peru\n"
+
+
+def test_read_sentence_context_keys_the_requested_columns_by_sentence(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "human.csv", CONTEXT_CSV)
+
+    assert read_sentence_context(path, ("source", "region")) == {
+        "A field.": {"source": "wikipedia", "region": "fiji"},
+        "A road.": {"source": "website", "region": "peru"},
+    }
+
+
+def test_read_sentence_context_rejects_a_missing_context_column(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "human.csv", CONTEXT_CSV)
+
+    with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} is missing column 'place'$"):
+        read_sentence_context(path, ("place",))
+
+
+def test_read_sentence_context_rejects_a_duplicated_sentence(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "dupe.csv", "sentence,source\nA field.,wikipedia\nA field.,website\n")
+
+    with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} has a duplicate sentence: "):
+        read_sentence_context(path, ("source",))
+
+
+def test_read_sentence_context_rejects_an_empty_file(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "empty.csv", "")
+
+    with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} is missing column 'sentence'$"):
+        read_sentence_context(path, ("source",))
+
+
+def test_read_sentence_context_rejects_a_file_without_rows(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "header.csv", "sentence,source\n")
+
+    with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} has no rows$"):
+        read_sentence_context(path, ("source",))

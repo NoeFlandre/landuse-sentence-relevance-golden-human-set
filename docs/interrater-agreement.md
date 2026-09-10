@@ -56,12 +56,37 @@ The command reads the three default paths above and writes two files into `resul
 
 | File | Contents |
 | --- | --- |
-| `agreement.json` | The full machine-readable report: matched-row count, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, and a `sources` block with each input path, label column, row count, and SHA-256 |
-| `disagreements.csv` | One row per non-unanimous sentence, with a column per rater |
+| `results/analysis/interrater/agreement.json` | The full machine-readable report: matched-row count, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, and a `sources` block with each input path, label column, row count, and SHA-256 |
+| `docs/data/interrater-disagreements.csv` | The reviewable disagreement table described below |
 
-Both outputs are byte-identical across repeated runs on unchanged inputs. `--human`, `--gpt`, `--claude`, and `--output-directory` override the defaults. A validation failure prints to standard error, returns exit status 1, and writes nothing.
+Both outputs are byte-identical across repeated runs on unchanged inputs. `--human`, `--gpt`, `--claude`, `--output-directory`, and `--review-csv` override the defaults. A validation failure prints to standard error, returns exit status 1, and writes nothing.
 
-Like every other generated artifact, `results/` stays on the Seagate project drive and is not committed.
+`results/` stays on the Seagate project drive and is not committed; the review CSV is committed with the documentation so it can be read without the drive.
+
+## Reviewing the disagreements
+
+[`interrater-disagreements.csv`](data/interrater-disagreements.csv) holds one row per non-unanimous sentence — 31 of the 158 — with the columns a reviewer needs and nothing else:
+
+| Column | Meaning |
+| --- | --- |
+| `minority_rater` | The rater the other two outvoted. Empty if no label holds a strict majority |
+| `minority_label` | The label that outvoted rater chose |
+| `human`, `gpt`, `claude` | The three labels for that sentence, in that order |
+| `sentence` | The sentence itself, immediately after the labels |
+| `source`, `region`, `polygon_name`, `source_url` | Where the sentence came from |
+
+Rows are sorted by `minority_rater`, then `minority_label`, then the sentence, so each systematic pattern reads as one block. For the current run:
+
+| Outvoted rater | Their label | Rows |
+| --- | --- | --- |
+| human | `no` | 17 |
+| human | `yes` | 2 |
+| gpt | `yes` | 4 |
+| gpt | `no` | 2 |
+| claude | `yes` | 4 |
+| claude | `no` | 2 |
+
+The largest block is the 17 sentences where both models said `yes` and the human annotator said `no`.
 
 ## Current results
 

@@ -6,17 +6,25 @@ from pathlib import Path
 import pytest
 from scripts.interrater_agreement import (
     DEFAULT_OUTPUT_DIRECTORY,
+    DEFAULT_REVIEW_CSV,
     DEFAULT_SOURCES,
     RaterSource,
     build_report,
+    build_review_rows,
     file_digest,
     main,
     write_report,
+    write_review_csv,
 )
 
 from landuse_sentence_relevance.analysis.interrater import InterraterDataError
 
-HUMAN_CSV = "sentence,label\nA field.,yes\nA meeting.,no\nA road.,yes\n"
+HUMAN_CSV = (
+    "sentence,label,source,region,polygon_name,source_url\n"
+    "A field.,yes,wikipedia,fiji,Rabi,https://example.invalid/field\n"
+    "A meeting.,no,wikipedia,fiji,Rabi,https://example.invalid/meeting\n"
+    "A road.,yes,website,peru,Cusco,https://example.invalid/road\n"
+)
 GPT_CSV = "sentence,llm_label\nA field.,yes\nA meeting.,no\nA road.,no\n"
 CLAUDE_CSV = "sentence,llm_label\nA field.,yes\nA meeting.,yes\nA road.,yes\n"
 
@@ -47,6 +55,10 @@ def test_default_sources_point_at_the_human_benchmark_and_both_llm_runs() -> Non
 
 def test_default_output_directory_is_the_machine_readable_analysis_folder() -> None:
     assert Path("results/analysis/interrater") == DEFAULT_OUTPUT_DIRECTORY
+
+
+def test_default_review_csv_is_committed_with_the_documentation() -> None:
+    assert Path("docs/data/interrater-disagreements.csv") == DEFAULT_REVIEW_CSV
 
 
 def test_file_digest_is_the_sha256_of_the_file_bytes(tmp_path: Path) -> None:
@@ -80,39 +92,72 @@ def test_build_report_fails_loudly_on_misaligned_sources(tmp_path: Path) -> None
         build_report(misaligned)
 
 
-def test_write_report_writes_deterministic_json_and_a_disagreement_csv(
-    sources: tuple[RaterSource, ...], tmp_path: Path
+def test_build_review_rows_reads_context_from_the_first_source(
+    sources: tuple[RaterSource, ...],
 ) -> None:
+    header, rows = build_review_rows(sources)
+
+    assert header == (
+        "minority_rater",
+        "minority_label",
+        "human",
+        "gpt",
+        "claude",
+        "sentence",
+        "source",
+        "region",
+        "polygon_name",
+        "source_url",
+    )
+    assert [(row["minority_rater"], row["sentence"]) for row in rows] == [
+        ("claude", "A meeting."),
+        ("gpt", "A road."),
+    ]
+    assert rows[1]["polygon_name"] == "Cusco"
+    assert rows[1]["source"] == "website"
+
+
+def test_write_report_writes_deterministic_json(sources: tuple[RaterSource, ...], tmp_path: Path) -> None:
     report = build_report(sources)
     directory = tmp_path / "out" / "interrater"
 
-    json_path, csv_path = write_report(report, directory)
+    json_path = write_report(report, directory)
 
     assert json_path == directory / "agreement.json"
-    assert csv_path == directory / "disagreements.csv"
     assert json.loads(json_path.read_text(encoding="utf-8")) == report
     assert json_path.read_text(encoding="utf-8").endswith("\n")
-    assert csv_path.read_text(encoding="utf-8").splitlines() == [
-        "sentence,claude,gpt,human",
-        "A meeting.,yes,no,no",
-        "A road.,yes,no,yes",
+
+
+def test_write_review_csv_writes_a_header_and_one_row_per_disagreement(
+    sources: tuple[RaterSource, ...], tmp_path: Path
+) -> None:
+    header, rows = build_review_rows(sources)
+    path = tmp_path / "review" / "disagreements.csv"
+
+    assert write_review_csv(header, rows, path) == path
+    assert path.read_text(encoding="utf-8").splitlines() == [
+        "minority_rater,minority_label,human,gpt,claude,sentence,source,region,polygon_name,source_url",
+        "claude,yes,no,no,yes,A meeting.,wikipedia,fiji,Rabi,https://example.invalid/meeting",
+        "gpt,no,yes,no,yes,A road.,website,peru,Cusco,https://example.invalid/road",
     ]
 
 
-def test_write_report_is_byte_identical_when_run_twice(
+def test_write_review_csv_is_byte_identical_when_run_twice(
     sources: tuple[RaterSource, ...], tmp_path: Path
 ) -> None:
-    first_json, first_csv = write_report(build_report(sources), tmp_path / "first")
-    second_json, second_csv = write_report(build_report(sources), tmp_path / "second")
+    header, rows = build_review_rows(sources)
 
-    assert first_json.read_bytes() == second_json.read_bytes()
-    assert first_csv.read_bytes() == second_csv.read_bytes()
+    first = write_review_csv(header, rows, tmp_path / "first.csv")
+    second = write_review_csv(header, rows, tmp_path / "second.csv")
+
+    assert first.read_bytes() == second.read_bytes()
 
 
-def test_main_writes_the_report_and_reports_success(
+def test_main_writes_the_report_and_the_review_csv(
     sources: tuple[RaterSource, ...], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     directory = tmp_path / "report"
+    review = tmp_path / "review" / "disagreements.csv"
 
     exit_code = main(
         [
@@ -124,12 +169,18 @@ def test_main_writes_the_report_and_reports_success(
             str(sources[2].path),
             "--output-directory",
             str(directory),
+            "--review-csv",
+            str(review),
         ]
     )
 
+    output = capsys.readouterr().out
+
     assert exit_code == 0
     assert (directory / "agreement.json").is_file()
-    assert "matched rows: 3" in capsys.readouterr().out
+    assert review.is_file()
+    assert "matched rows: 3" in output
+    assert "disagreements: 2" in output
 
 
 def test_main_reports_a_validation_failure_without_writing_output(
@@ -139,6 +190,7 @@ def test_main_reports_a_validation_failure_without_writing_output(
     (tmp_path / "gpt.csv").write_text("sentence,llm_label\nA field.,yes\n", encoding="utf-8")
     (tmp_path / "claude.csv").write_text(CLAUDE_CSV, encoding="utf-8")
     directory = tmp_path / "report"
+    review = tmp_path / "review" / "disagreements.csv"
 
     exit_code = main(
         [
@@ -150,9 +202,12 @@ def test_main_reports_a_validation_failure_without_writing_output(
             str(tmp_path / "claude.csv"),
             "--output-directory",
             str(directory),
+            "--review-csv",
+            str(review),
         ]
     )
 
     assert exit_code == 1
     assert not directory.exists()
+    assert not review.exists()
     assert "interrater validation failed" in capsys.readouterr().err

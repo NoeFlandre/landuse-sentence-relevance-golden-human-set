@@ -5,22 +5,31 @@ import csv
 import hashlib
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from landuse_sentence_relevance.analysis.annotation_csv import SENTENCE_COLUMN, read_rater_labels
-from landuse_sentence_relevance.analysis.interrater import InterraterDataError, interrater_report
+from landuse_sentence_relevance.analysis.annotation_csv import read_rater_labels, read_sentence_context
+from landuse_sentence_relevance.analysis.disagreement_review import (
+    CONTEXT_COLUMNS,
+    review_header,
+    review_rows,
+)
+from landuse_sentence_relevance.analysis.interrater import (
+    InterraterDataError,
+    aligned_sentences,
+    interrater_report,
+)
 
 BENCHMARK_CSV = Path("results/annotations/benchmark/v2-wikipedia-website-combined.csv")
 GPT_CSV = Path("results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-extra-high-2026-09-10.csv")
 CLAUDE_CSV = Path("results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv")
 
 DEFAULT_OUTPUT_DIRECTORY = Path("results/analysis/interrater")
+DEFAULT_REVIEW_CSV = Path("docs/data/interrater-disagreements.csv")
 
 JSON_FILENAME = "agreement.json"
-DISAGREEMENT_FILENAME = "disagreements.csv"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,12 +54,16 @@ def file_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _read_raters(sources: Sequence[RaterSource]) -> dict[str, dict[str, str]]:
+    return {
+        source.name: read_rater_labels(source.path, source.name, source.label_column) for source in sources
+    }
+
+
 def build_report(sources: Sequence[RaterSource]) -> dict[str, Any]:
     """Read every source, align it, and return the agreement report plus provenance."""
 
-    raters = {
-        source.name: read_rater_labels(source.path, source.name, source.label_column) for source in sources
-    }
+    raters = _read_raters(sources)
     report = interrater_report(raters)
     report["sources"] = [
         {
@@ -65,20 +78,37 @@ def build_report(sources: Sequence[RaterSource]) -> dict[str, Any]:
     return report
 
 
-def write_report(report: dict[str, Any], directory: Path) -> tuple[Path, Path]:
-    """Write the deterministic JSON report and its companion disagreement CSV."""
+def build_review_rows(
+    sources: Sequence[RaterSource],
+) -> tuple[tuple[str, ...], list[dict[str, str]]]:
+    """Build the reviewable disagreement table, keeping the raters in source order."""
+
+    raters = _read_raters(sources)
+    sentences = aligned_sentences(raters)
+    names = [source.name for source in sources]
+    context = read_sentence_context(sources[0].path, CONTEXT_COLUMNS)
+    rows = review_rows(raters, sentences, context, rater_names=names)
+    return review_header(names, CONTEXT_COLUMNS), rows
+
+
+def write_report(report: dict[str, Any], directory: Path) -> Path:
+    """Write the deterministic machine-readable JSON report."""
 
     directory.mkdir(parents=True, exist_ok=True)
     json_path = directory / JSON_FILENAME
     json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    csv_path = directory / DISAGREEMENT_FILENAME
-    names = list(report["raters"])
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow([SENTENCE_COLUMN, *names])
-        for entry in report["disagreements"]:
-            writer.writerow([entry["sentence"], *(entry["labels"][name] for name in names)])
-    return json_path, csv_path
+    return json_path
+
+
+def write_review_csv(header: Sequence[str], rows: Sequence[Mapping[str, str]], path: Path) -> Path:
+    """Write one CSV row per disagreement, ready to open in a spreadsheet."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(header), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 def _summary(report: dict[str, Any]) -> str:
@@ -95,6 +125,7 @@ def _summary(report: dict[str, Any]) -> str:
         f"all raters unanimous: {three['unanimous']}/{three['matched']} "
         f"({three['unanimous_agreement']:.4f}), Fleiss kappa {three['fleiss_kappa']:.4f}"
     )
+    lines.append(f"disagreements: {len(report['disagreements'])}")
     return "\n".join(lines)
 
 
@@ -104,6 +135,7 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--gpt", type=Path, default=GPT_CSV)
     parser.add_argument("--claude", type=Path, default=CLAUDE_CSV)
     parser.add_argument("--output-directory", type=Path, default=DEFAULT_OUTPUT_DIRECTORY)
+    parser.add_argument("--review-csv", type=Path, default=DEFAULT_REVIEW_CSV)
     return parser.parse_args(argv)
 
 
@@ -116,13 +148,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         report = build_report(sources)
+        header, rows = build_review_rows(sources)
     except InterraterDataError as error:
         print(f"interrater validation failed: {error}", file=sys.stderr)
         return 1
-    json_path, csv_path = write_report(report, arguments.output_directory)
+    json_path = write_report(report, arguments.output_directory)
+    review_path = write_review_csv(header, rows, arguments.review_csv)
     print(_summary(report))
     print(f"wrote {json_path}")
-    print(f"wrote {csv_path}")
+    print(f"wrote {review_path}")
     return 0
 
 
