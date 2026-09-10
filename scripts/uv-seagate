@@ -6,22 +6,23 @@ script_directory=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 project_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
 default_data_root="/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set"
 data_root="${PROJECT_DATA_ROOT:-$default_data_root}"
+state_root="${PROJECT_STATE_ROOT:-$data_root/state}"
 
 if [ ! -d "$data_root" ]; then
     printf '%s\n' "Project data drive is not mounted: $data_root" >&2
     exit 2
 fi
 
-export UV_CACHE_DIR="${UV_CACHE_DIR:-$data_root/uv-cache}"
-export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$data_root/uv-python}"
-export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$data_root/uv-environment}"
-export TMPDIR="${PROJECT_TMPDIR:-$data_root/tmp}"
-export XDG_CACHE_HOME="${PROJECT_XDG_CACHE_HOME:-$data_root/xdg-cache}"
-export PYTHONPYCACHEPREFIX="${PROJECT_PYTHON_CACHE:-$data_root/python-cache}"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$state_root/uv-cache}"
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$state_root/uv-python}"
+export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$state_root/uv-environment}"
+export TMPDIR="${PROJECT_TMPDIR:-$state_root/tmp}"
+export XDG_CACHE_HOME="${PROJECT_XDG_CACHE_HOME:-$state_root/xdg-cache}"
+export PYTHONPYCACHEPREFIX="${PROJECT_PYTHON_CACHE:-$state_root/python-cache}"
 export USE_TORCH="${USE_TORCH:-0}"
 export LANGUAGE_MODEL_DEVICE="${LANGUAGE_MODEL_DEVICE:-cpu}"
-export HF_HOME="${HF_HOME:-$data_root/huggingface-auth}"
-export HF_TOKEN_PATH="${HF_TOKEN_PATH:-$data_root/huggingface-auth/token}"
+export HF_HOME="${HF_HOME:-$state_root/huggingface-auth}"
+export HF_TOKEN_PATH="${HF_TOKEN_PATH:-$state_root/huggingface-auth/token}"
 
 mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$UV_PROJECT_ENVIRONMENT" "$TMPDIR" "$XDG_CACHE_HOME" "$PYTHONPYCACHEPREFIX"
 cd "$project_root"

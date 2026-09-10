@@ -7,6 +7,8 @@ from pathlib import Path
 
 PROJECT_NAME = "landuse-sentence-relevance-golden-human-set"
 DEFAULT_DATA_ROOT = Path("/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set")
+DEFAULT_RESULTS_ROOT = DEFAULT_DATA_ROOT / "results"
+DEFAULT_STATE_ROOT = DEFAULT_DATA_ROOT / "state"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,11 +30,11 @@ class Settings:
     language_model_device: str = "auto"
     website_config: str = "default"
     website_split: str = "polygons"
-    candidate_pool_path: Path = DEFAULT_DATA_ROOT / "candidate-pool-v2.json"
-    candidate_progress_path: Path = DEFAULT_DATA_ROOT / "candidate-progress-v2.json"
-    session_path: Path = DEFAULT_DATA_ROOT / "annotations-v2.jsonl"
-    model_cache_dir: Path = DEFAULT_DATA_ROOT / "runtime-cache"
-    hf_auth_dir: Path = DEFAULT_DATA_ROOT / "huggingface-auth"
+    candidate_pool_path: Path = DEFAULT_RESULTS_ROOT / "candidates/v2/pool.json"
+    candidate_progress_path: Path = DEFAULT_RESULTS_ROOT / "candidates/v2/progress.json"
+    session_path: Path = DEFAULT_RESULTS_ROOT / "annotations/sessions/v2-wikipedia.jsonl"
+    model_cache_dir: Path = DEFAULT_STATE_ROOT / "runtime-cache"
+    hf_auth_dir: Path = DEFAULT_STATE_ROOT / "huggingface-auth"
     output_dataset_split: str = "v2"
     h3_resolution: int = 3
     candidate_cell_count: int = 512
@@ -58,17 +60,21 @@ class Settings:
     def from_env(cls, values: Mapping[str, str] | None = None) -> Settings:
         env = os.environ if values is None else values
         data_root = Path(env.get("PROJECT_DATA_ROOT", str(DEFAULT_DATA_ROOT)))
+        results_root = data_root / "results"
+        state_root = data_root / "state"
         return cls(
             data_root=data_root,
             candidate_pool_path=Path(
-                env.get("CANDIDATE_POOL_PATH", str(data_root / "candidate-pool-v2.json"))
+                env.get("CANDIDATE_POOL_PATH", str(results_root / "candidates/v2/pool.json"))
             ),
             candidate_progress_path=Path(
-                env.get("CANDIDATE_PROGRESS_PATH", str(data_root / "candidate-progress-v2.json"))
+                env.get("CANDIDATE_PROGRESS_PATH", str(results_root / "candidates/v2/progress.json"))
             ),
-            session_path=Path(env.get("SESSION_PATH", str(data_root / "annotations-v2.jsonl"))),
-            model_cache_dir=Path(env.get("MODEL_CACHE_DIR", str(data_root / "runtime-cache"))),
-            hf_auth_dir=Path(env.get("HF_AUTH_DIR", str(data_root / "huggingface-auth"))),
+            session_path=Path(
+                env.get("SESSION_PATH", str(results_root / "annotations/sessions/v2-wikipedia.jsonl"))
+            ),
+            model_cache_dir=Path(env.get("MODEL_CACHE_DIR", str(state_root / "runtime-cache"))),
+            hf_auth_dir=Path(env.get("HF_AUTH_DIR", str(state_root / "huggingface-auth"))),
             output_dataset_split=env.get("OUTPUT_DATASET_SPLIT", "v2"),
             sat_batch_size=int(env.get("SAT_BATCH_SIZE", "4")),
             sat_workers=int(env.get("SAT_WORKERS", "1")),

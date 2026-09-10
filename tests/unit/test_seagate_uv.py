@@ -64,27 +64,27 @@ def test_seagate_uv_routes_project_state_to_the_external_drive(tmp_path: Path) -
     assert result.returncode == 0
     values = dict(line.split("=", maxsplit=1) for line in result.stdout.splitlines())
     assert values == {
-        "UV_CACHE_DIR": str(data_root / "uv-cache"),
-        "UV_PROJECT_ENVIRONMENT": str(data_root / "uv-environment"),
-        "TMPDIR": str(data_root / "tmp"),
-        "XDG_CACHE_HOME": str(data_root / "xdg-cache"),
-        "PYTHONPYCACHEPREFIX": str(data_root / "python-cache"),
+        "UV_CACHE_DIR": str(data_root / "state/uv-cache"),
+        "UV_PROJECT_ENVIRONMENT": str(data_root / "state/uv-environment"),
+        "TMPDIR": str(data_root / "state/tmp"),
+        "XDG_CACHE_HOME": str(data_root / "state/xdg-cache"),
+        "PYTHONPYCACHEPREFIX": str(data_root / "state/python-cache"),
         "USE_TORCH": "0",
         "LANGUAGE_MODEL_DEVICE": "cpu",
-        "HF_HOME": str(data_root / "huggingface-auth"),
-        "HF_TOKEN_PATH": str(data_root / "huggingface-auth" / "token"),
-        "UV_PYTHON_INSTALL_DIR": str(data_root / "uv-python"),
+        "HF_HOME": str(data_root / "state/huggingface-auth"),
+        "HF_TOKEN_PATH": str(data_root / "state/huggingface-auth" / "token"),
+        "UV_PYTHON_INSTALL_DIR": str(data_root / "state/uv-python"),
         "PWD": str(ROOT),
         "ARGS": "run python -V",
     }
     assert all(
         (data_root / directory).is_dir()
         for directory in (
-            "uv-cache",
-            "uv-environment",
-            "tmp",
-            "xdg-cache",
-            "python-cache",
+            "state/uv-cache",
+            "state/uv-environment",
+            "state/tmp",
+            "state/xdg-cache",
+            "state/python-cache",
         )
     )
 

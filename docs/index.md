@@ -2,7 +2,7 @@
 
 This project builds a 100-sentence human golden set through a small local UI.
 
-The V2 app streams two public Hugging Face datasets, keeps English sentences from inside source text blocks when available, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The V1 authoritative benchmark remains `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set/annotations.csv`; V2 uses separate Seagate files and the `v2` Hugging Face split.
+The V2 app streams two public Hugging Face datasets, keeps English sentences from inside source text blocks when available, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The V1 authoritative human-annotated benchmark is `results/annotations/benchmark/v1-human-annotated.csv`; all V2 artifacts are organized under `results/`, and the layout is listed in [Results](results.md).
 
 ## Run locally
 
@@ -11,7 +11,7 @@ The V2 app streams two public Hugging Face datasets, keeps English sentences fro
 ./scripts/uv-seagate run landuse-annotate
 ```
 
-Open <http://127.0.0.1:8000>. The source datasets are streamed. The V2 candidate bank, annotation log, auth files, virtual environment, UV cache, temporary files, and disposable model/data cache live under `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set` by default.
+Open <http://127.0.0.1:8000>. The source datasets are streamed. The V2 candidate bank and annotation logs live under `results/`; auth files, the virtual environment, UV cache, temporary files, and model cache live under `state/`. Both trees are on `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set` by default.
 
 Use `scripts/uv-seagate` for local UV commands. It refuses to fall back to the Mac's internal storage when the Seagate drive is not mounted.
 

@@ -107,7 +107,9 @@ def test_source_distribution_is_bounded_to_project_files() -> None:
     sdist = configuration["tool"]["hatch"]["build"]["targets"]["sdist"]
 
     assert "src" in sdist["only-include"]
-    assert "tmp/**" in sdist["exclude"]
-    assert "uv-environment/**" in sdist["exclude"]
-    assert "runtime-cache/**" in sdist["exclude"]
+    assert "results/**" in sdist["exclude"]
+    assert "state/**" in sdist["exclude"]
+    assert "tmp/**" not in sdist["exclude"]
+    assert "uv-environment/**" not in sdist["exclude"]
+    assert "runtime-cache/**" not in sdist["exclude"]
     assert "site/**" in sdist["exclude"]

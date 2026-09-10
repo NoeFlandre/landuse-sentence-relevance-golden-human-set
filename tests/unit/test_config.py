@@ -3,6 +3,8 @@ from pathlib import Path
 from landuse_sentence_relevance.config import Settings
 
 SEAGATE_DATA_ROOT = Path("/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set")
+RESULTS_ROOT = SEAGATE_DATA_ROOT / "results"
+STATE_ROOT = SEAGATE_DATA_ROOT / "state"
 
 
 def test_defaults_pin_the_approved_data_and_model_revisions() -> None:
@@ -37,11 +39,11 @@ def test_defaults_keep_all_persistent_runtime_data_on_the_seagate_drive() -> Non
     settings = Settings.from_env({})
 
     assert settings.data_root == SEAGATE_DATA_ROOT
-    assert settings.candidate_pool_path == SEAGATE_DATA_ROOT / "candidate-pool-v2.json"
-    assert settings.candidate_progress_path == SEAGATE_DATA_ROOT / "candidate-progress-v2.json"
-    assert settings.session_path == SEAGATE_DATA_ROOT / "annotations-v2.jsonl"
-    assert settings.model_cache_dir == SEAGATE_DATA_ROOT / "runtime-cache"
-    assert settings.hf_auth_dir == SEAGATE_DATA_ROOT / "huggingface-auth"
+    assert settings.candidate_pool_path == RESULTS_ROOT / "candidates/v2/pool.json"
+    assert settings.candidate_progress_path == RESULTS_ROOT / "candidates/v2/progress.json"
+    assert settings.session_path == RESULTS_ROOT / "annotations/sessions/v2-wikipedia.jsonl"
+    assert settings.model_cache_dir == STATE_ROOT / "runtime-cache"
+    assert settings.hf_auth_dir == STATE_ROOT / "huggingface-auth"
 
 
 def test_environment_can_change_only_runtime_paths_and_thresholds() -> None:

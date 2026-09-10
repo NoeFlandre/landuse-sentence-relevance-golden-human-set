@@ -8,27 +8,11 @@ coverage.json
 htmlcov/
 site/
 mutants/
-state/
 /models/
 .env
 .DS_Store
 
-# Local Seagate annotation state and disposable runtime files.
-/annotations*.csv
-/annotations*.jsonl*
-/candidate-pool*.json
-/candidate-progress*.json
-/annotation-distribution-map*.png
-/annotation-distribution-map.svg
-/annotation-ui*.log
-/huggingface-auth/
-/python-cache/
-/runtime-cache/
-/tmp/
-/uv-cache/
-/uv-cache-quality/
-/uv-cache-retry/
-/uv-environment/
-/uv-python/
-/xdg-cache/
+# Local Seagate results and reusable runtime state.
+/results/
+/state/
 /local-venv-backup-*/
