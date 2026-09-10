@@ -12,6 +12,7 @@ def test_mkdocs_configuration_is_strict_and_has_public_navigation() -> None:
         "site_url: https://noeflandre.github.io/landuse-sentence-relevance-golden-human-set/" in configuration
     )
     assert "Overview: index.md" in configuration
+    assert "Interrater agreement: interrater-agreement.md" in configuration
     assert "QA: qa.md" in configuration
 
 
@@ -67,6 +68,7 @@ def test_mutation_gate_covers_deterministic_sources() -> None:
     source_paths = configuration["tool"]["mutmut"]["source_paths"]
 
     assert {
+        "src/landuse_sentence_relevance/analysis",
         "src/landuse_sentence_relevance/domain",
         "src/landuse_sentence_relevance/storage",
         "src/landuse_sentence_relevance/sources/validation.py",
@@ -75,6 +77,8 @@ def test_mutation_gate_covers_deterministic_sources() -> None:
     }.issubset(source_paths)
 
     selected_tests = configuration["tool"]["mutmut"]["pytest_add_cli_args_test_selection"]
+    assert "tests/unit/analysis" in selected_tests
+    assert "tests/unit/test_interrater_script.py" in selected_tests
     assert "tests/unit/sources/test_website_helpers.py" in selected_tests
     assert "tests/unit/test_models.py" in selected_tests
 

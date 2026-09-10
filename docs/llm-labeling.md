@@ -13,7 +13,7 @@ Both runs used the shared prompt below, the same 158-row input, and web search d
 
 The input is `results/annotations/unlabeled/v2-wikipedia-website-combined.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
 
-The two outputs agree on 146 of 158 rows and disagree on 12. This is recorded for review; neither output is silently selected as ground truth. The human benchmark remains `results/annotations/benchmark/v1-human-annotated.csv`.
+The two outputs agree on 146 of 158 rows and disagree on 12. Agreement with the human benchmark is quantified in [Interrater agreement](interrater-agreement.md). This is recorded for review; neither output is silently selected as ground truth. The human benchmark remains `results/annotations/benchmark/v1-human-annotated.csv`.
 
 ## Shared prompt
 

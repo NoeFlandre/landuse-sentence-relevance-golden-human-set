@@ -112,6 +112,7 @@ show_missing = true
 
 [tool.mutmut]
 source_paths = [
+    "src/landuse_sentence_relevance/analysis",
     "src/landuse_sentence_relevance/domain",
     "src/landuse_sentence_relevance/storage",
     "src/landuse_sentence_relevance/sources/validation.py",
@@ -125,6 +126,7 @@ pytest_add_cli_args = [
     "--ignore=tests/unit/test_public_project_files.py",
 ]
 pytest_add_cli_args_test_selection = [
+    "tests/unit/analysis",
     "tests/unit/domain",
     "tests/unit/sources/test_validation.py",
     "tests/unit/sources/test_website.py",
@@ -132,6 +134,7 @@ pytest_add_cli_args_test_selection = [
     "tests/unit/storage",
     "tests/unit/test_models.py",
     "tests/unit/test_constraints.py",
+    "tests/unit/test_interrater_script.py",
     "tests/unit/test_sampling.py",
     "tests/unit/test_selection.py",
     "tests/unit/test_stratification.py",

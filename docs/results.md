@@ -11,6 +11,7 @@ All generated artifacts stay on the Seagate project drive and are ignored by Git
 | V2 website benchmark | `results/annotations/benchmark/v2-website-balanced-58.csv` | 58 context-aware website rows, balanced 29 Yes / 29 No |
 | V2 combined export | `results/annotations/benchmark/v2-wikipedia-website-combined.csv` | Combined V2 Wikipedia and website export |
 | V2 LLM outputs | `results/annotations/llm/` | Two 158-row machine-labeled copies; not the human benchmark |
+| Interrater agreement | `results/analysis/interrater/` | Machine-readable human/GPT/Claude agreement report and disagreement list |
 | Annotation sessions | `results/annotations/sessions/` | Resumable JSONL sessions, including historical V1 and V2 runs |
 | V1 candidate pool | `results/candidates/v1/pool.json` | Historical V1 candidate bank |
 | V2 candidate pool | `results/candidates/v2/pool.json` | 512 reusable candidates, 256 per source |
@@ -19,7 +20,7 @@ All generated artifacts stay on the Seagate project drive and are ignored by Git
 | Failed checkpoints | `results/candidates/v2/archive/failures/` | Preserved historical failure evidence |
 | Static maps | `results/maps/{v1,v2}/` | Non-interactive world/H3 distribution plots |
 
-The benchmark path above is the human-annotated CSV to use for benchmark evaluation. The two machine-labeling runs and their exact shared prompt are documented in [LLM labeling](llm-labeling.md). Session logs and candidate pools are working artifacts, not alternate benchmark files. Before publishing a new benchmark, validate its source, label, uniqueness, and H3 quotas with the project quality gate.
+The benchmark path above is the human-annotated CSV to use for benchmark evaluation. The two machine-labeling runs and their exact shared prompt are documented in [LLM labeling](llm-labeling.md). Their agreement with the human benchmark is measured in [Interrater agreement](interrater-agreement.md). Session logs and candidate pools are working artifacts, not alternate benchmark files. Before publishing a new benchmark, validate its source, label, uniqueness, and H3 quotas with the project quality gate.
 
 ## Runtime state
 

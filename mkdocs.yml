@@ -23,5 +23,6 @@ nav:
   - Annotation: annotation.md
   - Results: results.md
   - LLM labeling: llm-labeling.md
+  - Interrater agreement: interrater-agreement.md
   - QA: qa.md
   - Licensing: licensing.md
