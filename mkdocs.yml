@@ -22,5 +22,6 @@ nav:
   - Data sources: data-sources.md
   - Annotation: annotation.md
   - Results: results.md
+  - LLM labeling: llm-labeling.md
   - QA: qa.md
   - Licensing: licensing.md
