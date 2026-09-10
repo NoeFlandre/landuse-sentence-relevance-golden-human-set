@@ -134,10 +134,7 @@ def _try_finalize(
         return None
 
 
-def build_workflow(  # pragma: no cover - full startup needs remote datasets and model weights
-    settings: Settings,
-) -> AnnotationWorkflow:
-    logger.info("Starting annotation workflow")
+def _prepare_runtime(settings: Settings) -> ManagedCache:
     cache = ManagedCache(settings.model_cache_dir)
     cache.prepare()
     logger.info("Disposable runtime cache prepared at %s", cache.root)
@@ -149,16 +146,14 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
         logger.info("Hugging Face login available; reusing the saved credential")
     else:
         logger.info("No saved Hugging Face login found; authenticate once before the final upload")
-    pool_store = CandidatePoolStore(settings.candidate_pool_path)
-    progress_store = CandidateProgressStore(settings.candidate_progress_path)
-    metadata = _candidate_pool_metadata(settings)
-    persisted_pool = pool_store.load(metadata)
-    if persisted_pool is not None:
-        logger.info(
-            "Reusable candidate pool found at %s; skipping streamed rows and sentence splitting",
-            settings.candidate_pool_path,
-        )
-        return _workflow(settings, cache, persisted_pool)
+    return cache
+
+
+def _load_candidate_pool(
+    settings: Settings,
+    progress_store: CandidateProgressStore,
+    metadata: Mapping[str, Any],
+) -> BoundedCandidatePool:
     progress_candidates = progress_store.load(metadata)
     pool = BoundedCandidatePool(
         capacity_per_stratum=settings.candidate_capacity_per_stratum,
@@ -172,6 +167,12 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
             settings.candidate_progress_path,
             len(progress_candidates),
         )
+    return pool
+
+
+def _h3_geometry(
+    settings: Settings,
+) -> tuple[Callable[[float, float], str], Callable[[str], tuple[float, float]]]:
     try:
         from h3 import cell_to_latlng, latlng_to_cell
     except ImportError as error:  # pragma: no cover - dependency installation boundary
@@ -183,16 +184,12 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
     def center_of_cell(cell: str) -> tuple[float, float]:
         return tuple(cell_to_latlng(cell))
 
-    resumed_pool = _try_finalize(
-        pool,
-        target_cells_per_source=settings.candidate_pool_cells_per_source,
-        center_of_cell=center_of_cell,
-        minimum_distance_km=settings.minimum_cell_distance_km,
-    )
-    if resumed_pool is not None:
-        logger.info("Candidate progress already satisfies the final pool constraints")
-        pool_store.save(resumed_pool, metadata)
-        return _workflow(settings, cache, resumed_pool)
+    return cell_for_location, center_of_cell
+
+
+def _remote_files(
+    settings: Settings,
+) -> tuple[Mapping[str, tuple[str, ...]], Mapping[str, tuple[str, ...]]]:
     logger.info(
         "Selecting %d aligned remote Parquet shards per source dataset",
         settings.remote_file_sample_count,
@@ -211,13 +208,29 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
         settings.remote_file_sample_count,
         token=settings.hf_token,
     )
+    return wikipedia_remote_files, website_remote_files
 
+
+def _wikipedia_row_loaders(
+    settings: Settings,
+    remote_files: Mapping[str, tuple[str, ...]],
+) -> tuple[
+    Callable[[str], Iterable[Mapping[str, Any]]],
+    Callable[[str], Iterable[Iterable[Mapping[str, Any]]]],
+]:
     def wikipedia_rows(config: str) -> Iterable[Mapping[str, Any]]:
-        return _wikipedia_rows(settings, config, wikipedia_remote_files)()
+        return _wikipedia_rows(settings, config, remote_files)()
 
     def wikipedia_row_shards(config: str) -> Iterable[Iterable[Mapping[str, Any]]]:
-        return _wikipedia_rows(settings, config, wikipedia_remote_files).shards()
+        return _wikipedia_rows(settings, config, remote_files).shards()
 
+    return wikipedia_rows, wikipedia_row_shards
+
+
+def _website_row_loaders(
+    settings: Settings,
+    remote_files: Mapping[str, tuple[str, ...]],
+) -> tuple[HuggingFaceDatasetRows, Callable[[], Iterable[Iterable[Mapping[str, Any]]]]]:
     website_rows = HuggingFaceDatasetRows(
         HuggingFaceRowConfig(
             dataset_id=settings.website_dataset_id,
@@ -225,13 +238,50 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
             split=settings.website_split,
             config=settings.website_config,
             columns=_WEBSITE_COLUMNS,
-            remote_files=website_remote_files["polygons"],
+            remote_files=remote_files["polygons"],
         )
     )
 
     def website_row_shards() -> Iterable[Iterable[Mapping[str, Any]]]:
         return website_rows.shards()
 
+    return website_rows, website_row_shards
+
+
+def _load_models(
+    settings: Settings,
+) -> tuple[SaTSentenceSplitter, CommonLinguaIdentifier]:
+    logger.info("Loading SaT sentence splitter model")
+    splitter = SaTSentenceSplitter(
+        model_id=settings.sat_model_id,
+        revision=settings.sat_model_revision,
+        tokenizer_id=settings.sat_tokenizer_id,
+        tokenizer_revision=settings.sat_tokenizer_revision,
+        cache_dir=settings.model_cache_dir,
+        batch_size=settings.sat_batch_size,
+        max_workers=settings.sat_workers,
+    )
+    logger.info("Sentence splitter ready (model cache is reusable between runs)")
+    logger.info("Loading CommonLingua English detector model")
+    language_identifier = CommonLinguaIdentifier(
+        model_id=settings.language_model_id,
+        revision=settings.language_model_revision,
+        min_confidence=settings.website_language_min_confidence,
+        cache_dir=settings.model_cache_dir,
+        device=settings.language_model_device,
+    )
+    logger.info("English detector ready (model cache is reusable between runs)")
+    return splitter, language_identifier
+
+
+def _excluded_cells(pool: BoundedCandidatePool) -> frozenset[str]:
+    return _candidate_cells(pool, Source.WIKIPEDIA) | _candidate_cells(pool, Source.WEBSITE)
+
+
+def _collection_targets(
+    pool: BoundedCandidatePool,
+    settings: Settings,
+) -> tuple[int, int]:
     retry_target = _retry_target(settings)
     wikipedia_cells_to_collect = _candidate_cells_to_collect(
         pool,
@@ -255,52 +305,60 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
             "Candidate progress is not finalizable; collecting %d additional website cells",
             website_cells_to_collect,
         )
+    return wikipedia_cells_to_collect, website_cells_to_collect
 
-    logger.info("Loading SaT sentence splitter model")
-    splitter = SaTSentenceSplitter(
-        model_id=settings.sat_model_id,
-        revision=settings.sat_model_revision,
-        tokenizer_id=settings.sat_tokenizer_id,
-        tokenizer_revision=settings.sat_tokenizer_revision,
-        cache_dir=settings.model_cache_dir,
-        batch_size=settings.sat_batch_size,
-        max_workers=settings.sat_workers,
-    )
-    logger.info("Sentence splitter ready (model cache is reusable between runs)")
-    logger.info("Loading CommonLingua English detector model")
-    language_identifier = CommonLinguaIdentifier(
-        model_id=settings.language_model_id,
-        revision=settings.language_model_revision,
-        min_confidence=settings.website_language_min_confidence,
-        cache_dir=settings.model_cache_dir,
-        device=settings.language_model_device,
-    )
-    logger.info("English detector ready (model cache is reusable between runs)")
-    if wikipedia_cells_to_collect == 0:
+
+def _collect_wikipedia_candidates(
+    settings: Settings,
+    pool: BoundedCandidatePool,
+    progress_store: CandidateProgressStore,
+    metadata: Mapping[str, Any],
+    splitter: SaTSentenceSplitter,
+    wikipedia_rows: Callable[[str], Iterable[Mapping[str, Any]]],
+    wikipedia_row_shards: Callable[[str], Iterable[Iterable[Mapping[str, Any]]]],
+    cell_for_location: Callable[[float, float], str],
+    center_of_cell: Callable[[str], tuple[float, float]],
+    cells_to_collect: int,
+) -> None:
+    if cells_to_collect == 0:
         logger.info("Wikipedia candidates already checkpointed; skipping that source scan")
-    else:
-        wikipedia_source = WikipediaCandidateSource(
-            row_loader=wikipedia_rows,
-            row_shards_loader=wikipedia_row_shards,
-            splitter=splitter,
-            cell_for_location=cell_for_location,
-            max_polygons_per_cell=settings.max_polygons_per_cell,
-            max_polygon_rows_per_shard=settings.max_polygon_rows_per_shard,
-            max_section_rows_per_shard=settings.max_section_rows_per_shard,
-            max_text_characters=settings.wikipedia_max_text_characters,
-            max_stream_workers=settings.stream_workers,
-            max_candidates_per_cell=settings.candidate_capacity_per_stratum,
-            candidate_cell_count=settings.candidate_cell_count,
-            center_of_cell=center_of_cell,
-            minimum_candidate_cells=wikipedia_cells_to_collect,
-            excluded_cells=_candidate_cells(pool, Source.WIKIPEDIA) | _candidate_cells(pool, Source.WEBSITE),
-            seed=settings.seed,
-        )
-        logger.info("Collecting Wikipedia candidates from the pinned streamed revisions")
-        _collect_candidates(wikipedia_source.iter_candidates(), pool, progress_store, metadata)
-        logger.info("Wikipedia candidate collection complete")
+        return
+    source = WikipediaCandidateSource(
+        row_loader=wikipedia_rows,
+        row_shards_loader=wikipedia_row_shards,
+        splitter=splitter,
+        cell_for_location=cell_for_location,
+        max_polygons_per_cell=settings.max_polygons_per_cell,
+        max_polygon_rows_per_shard=settings.max_polygon_rows_per_shard,
+        max_section_rows_per_shard=settings.max_section_rows_per_shard,
+        max_text_characters=settings.wikipedia_max_text_characters,
+        max_stream_workers=settings.stream_workers,
+        max_candidates_per_cell=settings.candidate_capacity_per_stratum,
+        candidate_cell_count=settings.candidate_cell_count,
+        center_of_cell=center_of_cell,
+        minimum_candidate_cells=cells_to_collect,
+        excluded_cells=_excluded_cells(pool),
+        seed=settings.seed,
+    )
+    logger.info("Collecting Wikipedia candidates from the pinned streamed revisions")
+    _collect_candidates(source.iter_candidates(), pool, progress_store, metadata)
+    logger.info("Wikipedia candidate collection complete")
 
-    website_source = WebsiteCandidateSource(
+
+def _collect_website_candidates(
+    settings: Settings,
+    pool: BoundedCandidatePool,
+    progress_store: CandidateProgressStore,
+    metadata: Mapping[str, Any],
+    splitter: SaTSentenceSplitter,
+    language_identifier: CommonLinguaIdentifier,
+    website_rows: HuggingFaceDatasetRows,
+    website_row_shards: Callable[[], Iterable[Iterable[Mapping[str, Any]]]],
+    cell_for_location: Callable[[float, float], str],
+    center_of_cell: Callable[[str], tuple[float, float]],
+    cells_to_collect: int,
+) -> None:
+    source = WebsiteCandidateSource(
         row_loader=website_rows,
         splitter=splitter,
         language_identifier=language_identifier,
@@ -309,20 +367,78 @@ def build_workflow(  # pragma: no cover - full startup needs remote datasets and
         center_of_cell=center_of_cell,
         seed=settings.seed,
         max_candidates_per_cell=settings.candidate_capacity_per_stratum,
-        minimum_candidate_cells=website_cells_to_collect,
+        minimum_candidate_cells=cells_to_collect,
         minimum_candidates_per_cell=settings.minimum_website_candidates_per_cell,
         max_rows_per_cell=settings.website_rows_per_cell,
         max_text_characters=settings.website_max_text_characters,
-        excluded_cells=_candidate_cells(pool, Source.WIKIPEDIA) | _candidate_cells(pool, Source.WEBSITE),
+        excluded_cells=_excluded_cells(pool),
         row_shards_loader=website_row_shards,
         max_discovery_rows_per_shard=settings.max_website_discovery_rows_per_shard,
         max_stream_workers=settings.stream_workers,
         require_paragraph=True,
     )
     logger.info("Collecting website candidates from the pinned streamed revision")
-    _collect_candidates(website_source.iter_candidates(), pool, progress_store, metadata)
+    _collect_candidates(source.iter_candidates(), pool, progress_store, metadata)
     logger.info("Website candidate collection complete")
 
+
+def build_workflow(settings: Settings) -> AnnotationWorkflow:
+    logger.info("Starting annotation workflow")
+    cache = _prepare_runtime(settings)
+    pool_store = CandidatePoolStore(settings.candidate_pool_path)
+    progress_store = CandidateProgressStore(settings.candidate_progress_path)
+    metadata = _candidate_pool_metadata(settings)
+    persisted_pool = pool_store.load(metadata)
+    if persisted_pool is not None:
+        logger.info(
+            "Reusable candidate pool found at %s; skipping streamed rows and sentence splitting",
+            settings.candidate_pool_path,
+        )
+        return _workflow(settings, cache, persisted_pool)
+
+    pool = _load_candidate_pool(settings, progress_store, metadata)
+    cell_for_location, center_of_cell = _h3_geometry(settings)
+    resumed_pool = _try_finalize(
+        pool,
+        target_cells_per_source=settings.candidate_pool_cells_per_source,
+        center_of_cell=center_of_cell,
+        minimum_distance_km=settings.minimum_cell_distance_km,
+    )
+    if resumed_pool is not None:
+        logger.info("Candidate progress already satisfies the final pool constraints")
+        pool_store.save(resumed_pool, metadata)
+        return _workflow(settings, cache, resumed_pool)
+
+    wikipedia_remote_files, website_remote_files = _remote_files(settings)
+    wikipedia_rows, wikipedia_row_shards = _wikipedia_row_loaders(settings, wikipedia_remote_files)
+    website_rows, website_row_shards = _website_row_loaders(settings, website_remote_files)
+    wikipedia_cells_to_collect, website_cells_to_collect = _collection_targets(pool, settings)
+    splitter, language_identifier = _load_models(settings)
+    _collect_wikipedia_candidates(
+        settings,
+        pool,
+        progress_store,
+        metadata,
+        splitter,
+        wikipedia_rows,
+        wikipedia_row_shards,
+        cell_for_location,
+        center_of_cell,
+        wikipedia_cells_to_collect,
+    )
+    _collect_website_candidates(
+        settings,
+        pool,
+        progress_store,
+        metadata,
+        splitter,
+        language_identifier,
+        website_rows,
+        website_row_shards,
+        cell_for_location,
+        center_of_cell,
+        website_cells_to_collect,
+    )
     finalized_pool = pool.finalize(
         target_cells_per_source=settings.candidate_pool_cells_per_source,
         center_of_cell=center_of_cell,

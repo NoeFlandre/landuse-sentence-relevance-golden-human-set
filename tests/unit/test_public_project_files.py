@@ -60,14 +60,23 @@ def test_local_model_cache_rule_does_not_hide_source_model_adapters() -> None:
     assert "\nmodels/\n" not in gitignore
 
 
-def test_mutation_gate_includes_storage_modules() -> None:
+def test_mutation_gate_covers_deterministic_sources() -> None:
     with (ROOT / "pyproject.toml").open("rb") as project_file:
         configuration = tomllib.load(project_file)
 
     source_paths = configuration["tool"]["mutmut"]["source_paths"]
 
-    assert "src/landuse_sentence_relevance/domain" in source_paths
-    assert "src/landuse_sentence_relevance/storage" in source_paths
+    assert {
+        "src/landuse_sentence_relevance/domain",
+        "src/landuse_sentence_relevance/storage",
+        "src/landuse_sentence_relevance/sources/validation.py",
+        "src/landuse_sentence_relevance/sources/website_text.py",
+        "src/landuse_sentence_relevance/sources/website_discovery.py",
+    }.issubset(source_paths)
+
+    selected_tests = configuration["tool"]["mutmut"]["pytest_add_cli_args_test_selection"]
+    assert "tests/unit/sources/test_website_helpers.py" in selected_tests
+    assert "tests/unit/test_models.py" in selected_tests
 
 
 def test_pytest_pythonpath_leaves_mutmut_source_precedence_intact() -> None:
@@ -89,3 +98,16 @@ def test_mutation_gate_copies_qa_helpers_into_isolated_test_tree() -> None:
         configuration = tomllib.load(project_file)
 
     assert "scripts" in configuration["tool"]["mutmut"]["also_copy"]
+
+
+def test_source_distribution_is_bounded_to_project_files() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    sdist = configuration["tool"]["hatch"]["build"]["targets"]["sdist"]
+
+    assert "src" in sdist["only-include"]
+    assert "tmp/**" in sdist["exclude"]
+    assert "uv-environment/**" in sdist["exclude"]
+    assert "runtime-cache/**" in sdist["exclude"]
+    assert "site/**" in sdist["exclude"]

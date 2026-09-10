@@ -4,6 +4,15 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+QUALITY_DIRECTORIES = ("src", "tests", "scripts")
+
+
+def quality_paths(project_root: Path = Path(".")) -> tuple[str, ...]:
+    """Return configured quality roots that exist in this checkout."""
+
+    return tuple(directory for directory in QUALITY_DIRECTORIES if (project_root / directory).is_dir())
 
 
 def run_step(name: str, command: list[str], environment: dict[str, str]) -> None:
@@ -20,10 +29,11 @@ def main() -> int:
     environment = os.environ.copy()
     environment["PYTHONHASHSEED"] = "0"
     environment["MUTMUT_MAX_CHILDREN"] = "1"
+    paths = list(quality_paths())
     run_step("lock", ["uv", "lock", "--check"], environment)
-    run_step("format", ["uv", "run", "ruff", "format", "--check", "src", "tests", "scripts"], environment)
-    run_step("ruff", ["uv", "run", "ruff", "check", "src", "tests", "scripts"], environment)
-    run_step("ty", ["uv", "run", "ty", "check", "src", "tests", "scripts"], environment)
+    run_step("format", ["uv", "run", "ruff", "format", "--check", *paths], environment)
+    run_step("ruff", ["uv", "run", "ruff", "check", *paths], environment)
+    run_step("ty", ["uv", "run", "ty", "check", *paths], environment)
     run_step(
         "tests and coverage",
         [

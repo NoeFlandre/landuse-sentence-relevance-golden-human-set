@@ -33,4 +33,8 @@ It runs, in order:
 5. a pinned-revision streaming smoke check; and
 6. a Docker build.
 
+Mutation testing targets the deterministic domain, storage, validation, and website-selection modules with their focused unit tests. The full suite, streaming smoke test, and CI container check cover the model, remote, and application-composition boundaries.
+
 The gauntlet fixes `PYTHONHASHSEED=0`, serializes mutmut with one worker, and uses pinned upstream revisions. For offline local checks, `--skip-network --skip-docker` skips only the remote and container steps.
+
+Docker is intentionally CI-only on the development Mac.

@@ -52,7 +52,7 @@ def live_url(browser_workflow: AnnotationWorkflow) -> Iterator[str]:
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.2):

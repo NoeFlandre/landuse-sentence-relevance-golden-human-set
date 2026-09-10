@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol
 
@@ -28,10 +30,20 @@ class WebWorkflow(Protocol):
 
     def schedule_publish(self) -> None: ...
 
+    def close(self) -> None: ...
+
 
 def create_app(workflow: WebWorkflow) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
-    app = FastAPI(title="Land-use sentence relevance annotation")
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            workflow.close()
+
+    app = FastAPI(title="Land-use sentence relevance annotation", lifespan=lifespan)
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:

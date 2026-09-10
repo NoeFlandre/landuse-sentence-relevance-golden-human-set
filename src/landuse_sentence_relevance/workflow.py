@@ -9,7 +9,7 @@ from threading import RLock
 from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
 from landuse_sentence_relevance.domain.selection import select_final_annotations
-from landuse_sentence_relevance.storage.publisher import DatasetPublisher
+from landuse_sentence_relevance.storage.publisher import DatasetPublicationError, DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,7 @@ class AnnotationWorkflow:
         )
         self._publish_future: Future[None] | None = None
         self._publish_requested = False
+        self._closed = False
         self._annotations = store.load()
         self._published = False
         logger.info("Loaded %d saved annotations; resuming the annotation session", len(self._annotations))
@@ -130,7 +131,7 @@ class AnnotationWorkflow:
             snapshot = tuple(self._annotations.values())
         try:
             published = self._publisher.publish_if_ready(snapshot)
-        except Exception:
+        except DatasetPublicationError:
             logger.exception("Dataset upload failed; local annotations remain saved")
             return False
         with self._lock:
@@ -141,9 +142,18 @@ class AnnotationWorkflow:
 
     def schedule_publish(self) -> None:
         with self._lock:
+            if self._closed:
+                raise RuntimeError("workflow is closed")
             self._publish_requested = True
             if self._publish_future is None or self._publish_future.done():
                 self._publish_future = self._publish_executor.submit(self._drain_publish_requests)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        self._publish_executor.shutdown(wait=True)
 
     def _drain_publish_requests(self) -> None:
         while True:

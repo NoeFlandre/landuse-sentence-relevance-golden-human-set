@@ -14,6 +14,7 @@ class FakeWorkflow:
     calls: list[tuple[str, Label]]
     annotations: list[Annotation] = field(default_factory=list)
     schedule_calls: int = 0
+    close_calls: int = 0
 
     def current_candidate(self) -> Candidate:
         return self.candidate
@@ -54,6 +55,9 @@ class FakeWorkflow:
 
     def schedule_publish(self) -> None:
         self.schedule_calls += 1
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 def test_ui_shows_sentence_minimal_metadata_and_two_actions() -> None:
@@ -188,3 +192,12 @@ def test_health_endpoint_is_available() -> None:
     client = TestClient(create_app(FakeWorkflow(make_candidate(), [])))
 
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_ui_closes_the_workflow_when_the_server_lifespan_ends() -> None:
+    workflow = FakeWorkflow(make_candidate(), [])
+
+    with TestClient(create_app(workflow)):
+        pass
+
+    assert workflow.close_calls == 1

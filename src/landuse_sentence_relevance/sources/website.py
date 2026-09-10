@@ -1,18 +1,13 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Callable, Iterable, Mapping
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-from itertools import batched, repeat
+from itertools import batched
 from typing import Any
 
 from landuse_sentence_relevance.domain.cell_quota import CellQuota
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.sentence_selection import (
-    SentencePart,
-    candidate_sentence_parts,
     first_prioritized_sentence,
     prioritize_sentences,
 )
@@ -29,50 +24,47 @@ from landuse_sentence_relevance.sources.validation import (
     validate_candidate_cell_settings as _validate_candidate_cell_settings,
 )
 from landuse_sentence_relevance.sources.validation import validate_optional_limit as _validate_optional_limit
+from landuse_sentence_relevance.sources.website_discovery import (
+    DiscoveryRow,
+    RowShardsLoader,
+    _bounded_candidates,
+    _budgeted_rows,
+    _candidate_cells,
+    _counts_by_cell,
+    _discovery_row_rounds,
+    _DiscoveryScan,
+    _ranked_discovery_rows,
+    _scan_candidate_rows,
+    _scan_candidate_shards,
+    _select_discovery_rows,
+    _source_budget_filled,
+)
+from landuse_sentence_relevance.sources.website_text import (
+    WEBSITE_FIELD_SPECS,
+    FieldSpec,
+    Location,
+    _bounded_text,
+    _candidate_part_groups,
+    _field_text,
+    _field_url,
+    _FieldWork,
+    _is_contextual_text,
+    _location_from_row,
+    _pending_field_indexes,
+    _select_batch_parts,
+)
 
-Location = tuple[str, float, float]
-FieldSpec = tuple[str, str]
-DiscoveryRow = tuple[str, Mapping[str, Any]]
-EligibleRow = tuple[Mapping[str, Any], str]
-RowShardsLoader = Callable[[], Iterable[Iterable[Mapping[str, Any]]]]
 logger = logging.getLogger(__name__)
 _WEBSITE_BATCH_SIZE = 32
-_LANGUAGE_SELECTION_BATCH_SIZE = 8
-_CONTEXTUAL_BOUNDARY_PATTERN = re.compile(r"[.!?](?:[\"')\]]+)?(?=\s|$)")
-_MIN_CONTEXTUAL_BOUNDARIES = 2
 _DISCOVERY_PREFILTER_OVERSAMPLE_FACTOR = 2
 _DISCOVERY_PREFILTER_ROWS_PER_ROUND = 1
-
-
-@dataclass(frozen=True, slots=True)
-class _FieldWork:
-    row_index: int
-    row: Mapping[str, Any]
-    polygon_id: str
-    latitude: float
-    longitude: float
-    cell: str
-    text_field: str
-    url_field: str
-    website_url: str | None
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
-class _DiscoveryScan:
-    cells: frozenset[str]
-    rows_seen: int
-    rows: tuple[DiscoveryRow, ...]
-    complete: bool
+EligibleRow = tuple[Mapping[str, Any], str]
 
 
 class WebsiteCandidateSource:
     """Stream both OSM website text fields and retain only English sentences."""
 
-    _FIELD_SPECS: tuple[FieldSpec, ...] = (
-        ("website_text", "website"),
-        ("contact_website_text", "contact_website"),
-    )
+    _FIELD_SPECS = WEBSITE_FIELD_SPECS
 
     def __init__(
         self,
@@ -955,394 +947,3 @@ class WebsiteCandidateSource:
             region=row.get("region"),
             source_url=website_url,
         )
-
-
-def _location_from_row(row: Mapping[str, Any]) -> Location | None:
-    polygon_id = row.get("polygon_id") or row.get("osm_id")
-    latitude = row.get("lat")
-    longitude = row.get("lon")
-    if polygon_id is None or latitude is None or longitude is None:
-        return None
-    return str(polygon_id), float(latitude), float(longitude)
-
-
-def _field_text(row: Mapping[str, Any], field: str) -> str | None:
-    text = row.get(field)
-    return text.strip() if isinstance(text, str) and text.strip() else None
-
-
-def _field_url(row: Mapping[str, Any], field: str) -> str | None:
-    url = row.get(field)
-    return url if isinstance(url, str) else None
-
-
-def _candidate_part_groups(
-    work: tuple[_FieldWork, ...],
-    sentence_groups: Iterable[Iterable[str]],
-    seed: str,
-) -> tuple[tuple[SentencePart, ...], ...]:
-    return tuple(
-        candidate_sentence_parts(
-            sentences,
-            seed=f"{seed}:{field.polygon_id}:{field.text_field}",
-        )
-        for field, sentences in zip(work, sentence_groups, strict=True)
-    )
-
-
-def _select_batch_parts(
-    part_groups: tuple[tuple[SentencePart, ...], ...],
-    language_identifier: BatchLanguageIdentifier,
-) -> tuple[SentencePart | None, ...]:
-    pending = list(part_groups)
-    selected: list[SentencePart | None] = [None] * len(part_groups)
-    while active_groups := _language_selection_groups(pending, selected):
-        texts = tuple(part.text for _, parts in active_groups for part in parts)
-        accepted = tuple(language_identifier.is_english_many(texts))
-        _apply_language_selection_round(pending, selected, active_groups, accepted)
-    return tuple(selected)
-
-
-def _language_selection_groups(
-    pending: list[tuple[SentencePart, ...]],
-    selected: list[SentencePart | None],
-) -> tuple[tuple[int, tuple[SentencePart, ...]], ...]:
-    groups: list[tuple[int, tuple[SentencePart, ...]]] = []
-    for index, parts in enumerate(pending):
-        if selected[index] is not None:
-            continue
-        first_batch = next(batched(parts, _LANGUAGE_SELECTION_BATCH_SIZE), ())
-        if first_batch:
-            groups.append((index, first_batch))
-    return tuple(groups)
-
-
-def _apply_language_selection_round(
-    pending: list[tuple[SentencePart, ...]],
-    selected: list[SentencePart | None],
-    active_groups: tuple[tuple[int, tuple[SentencePart, ...]], ...],
-    accepted: tuple[bool, ...],
-) -> None:
-    offset = 0
-    for index, parts in active_groups:
-        offset = _apply_language_group(pending, selected, index, parts, accepted, offset)
-
-
-def _apply_language_group(
-    pending: list[tuple[SentencePart, ...]],
-    selected: list[SentencePart | None],
-    index: int,
-    parts: tuple[SentencePart, ...],
-    accepted: tuple[bool, ...],
-    offset: int,
-) -> int:
-    flags = accepted[offset : offset + len(parts)]
-    selected_part = _first_accepted_part(parts, flags)
-    selected[index] = selected_part
-    pending[index] = () if selected_part is not None else pending[index][len(parts) :]
-    return offset + len(parts)
-
-
-def _selected_parts(
-    part_groups: tuple[tuple[SentencePart, ...], ...],
-    accepted: tuple[bool, ...],
-) -> tuple[SentencePart | None, ...]:
-    selected: list[SentencePart | None] = []
-    offset = 0
-    for parts in part_groups:
-        flags = accepted[offset : offset + len(parts)]
-        selected.append(_first_accepted_part(parts, flags))
-        offset += len(parts)
-    return tuple(selected)
-
-
-def _first_accepted_part(
-    parts: tuple[SentencePart, ...],
-    accepted: tuple[bool, ...],
-) -> SentencePart | None:
-    return next(
-        (part for part, is_accepted in zip(parts, accepted, strict=True) if is_accepted),
-        None,
-    )
-
-
-def _bounded_text(text: str, max_characters: int | None) -> str:
-    return text if max_characters is None else text[:max_characters]
-
-
-def _pending_field_indexes(
-    pending_indexes: tuple[int, ...],
-    candidates: list[list[Candidate]],
-) -> tuple[int, ...]:
-    return tuple(index for index in pending_indexes if not candidates[index])
-
-
-def _counts_by_cell(candidates: Iterable[Candidate]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for candidate in candidates:
-        counts[candidate.h3_cell] = counts.get(candidate.h3_cell, 0) + 1
-    return counts
-
-
-def _candidate_cells(candidates: Iterable[Candidate]) -> set[str]:
-    return {candidate.h3_cell for candidate in candidates}
-
-
-def _compact_row(row: Mapping[str, Any], max_text_characters: int | None) -> Mapping[str, Any]:
-    fields = {
-        field: row.get(field)
-        for field in (
-            "polygon_id",
-            "osm_id",
-            "lat",
-            "lon",
-            "name",
-            "region",
-            "website",
-            "contact_website",
-        )
-    }
-    for text_field, _ in WebsiteCandidateSource._FIELD_SPECS:
-        text = _field_text(row, text_field)
-        if text is not None:
-            fields[text_field] = _bounded_text(text, max_text_characters)
-    return fields
-
-
-def _has_website_text(row: Mapping[str, Any]) -> bool:
-    return any(_field_text(row, field) is not None for field, _ in WebsiteCandidateSource._FIELD_SPECS)
-
-
-def _is_contextual_text(text: str) -> bool:
-    return len(_CONTEXTUAL_BOUNDARY_PATTERN.findall(text)) >= _MIN_CONTEXTUAL_BOUNDARIES
-
-
-def _scan_candidate_rows(
-    rows: Iterable[Mapping[str, Any]],
-    candidate_cell: Callable[[Mapping[str, Any]], str | None],
-    rows_per_cell: int | None,
-    max_rows: int | None,
-    max_text_characters: int | None,
-    progress_label: str,
-) -> _DiscoveryScan:
-    cells: set[str] = set()
-    discovery_rows: list[DiscoveryRow] = []
-    row_counts: dict[str, int] = {}
-    rows_seen = 0
-    for row in rows:
-        rows_seen += 1
-        log_stream_progress(logger, progress_label, rows_seen)
-        cell = candidate_cell(row)
-        if cell is not None:
-            cells.add(cell)
-            discovery = _discovery_row(row, cell, row_counts, rows_per_cell, max_text_characters)
-            if discovery is not None:
-                discovery_rows.append(discovery)
-        if _scan_limit_reached(rows_seen, max_rows):
-            break
-    return _DiscoveryScan(
-        cells=frozenset(cells),
-        rows_seen=rows_seen,
-        rows=tuple(discovery_rows),
-        complete=not _scan_limit_reached(rows_seen, max_rows),
-    )
-
-
-def _discovery_row(
-    row: Mapping[str, Any],
-    cell: str,
-    row_counts: dict[str, int],
-    rows_per_cell: int | None,
-    max_text_characters: int | None,
-) -> DiscoveryRow | None:
-    if rows_per_cell is not None and row_counts.get(cell, 0) >= rows_per_cell:
-        return None
-    row_counts[cell] = row_counts.get(cell, 0) + 1
-    return cell, _compact_row(row, max_text_characters)
-
-
-def _scan_limit_reached(rows_seen: int, max_rows: int | None) -> bool:
-    return max_rows is not None and rows_seen >= max_rows
-
-
-def _scan_candidate_shards(
-    streams: tuple[Iterable[Mapping[str, Any]], ...],
-    candidate_cell: Callable[[Mapping[str, Any]], str | None],
-    rows_per_cell: int | None,
-    max_rows: int | None,
-    max_text_characters: int | None,
-    max_workers: int,
-) -> _DiscoveryScan:
-    if not streams:
-        return _DiscoveryScan(cells=frozenset(), rows_seen=0, rows=(), complete=True)
-    if len(streams) == 1:
-        results = (
-            _scan_candidate_rows(
-                streams[0],
-                candidate_cell,
-                rows_per_cell,
-                max_rows,
-                max_text_characters,
-                "Website cell discovery shard 1",
-            ),
-        )
-    else:
-        arguments = (
-            streams,
-            repeat(candidate_cell),
-            repeat(rows_per_cell),
-            repeat(max_rows),
-            repeat(max_text_characters),
-            (f"Website cell discovery shard {index + 1}" for index in range(len(streams))),
-        )
-        with ThreadPoolExecutor(
-            max_workers=min(max_workers, len(streams)),
-            thread_name_prefix="website-discovery",
-        ) as executor:
-            results = executor.map(_scan_candidate_rows, *arguments)
-    return _merge_candidate_scan_results(results)
-
-
-def _merge_candidate_scan_results(
-    results: Iterable[_DiscoveryScan],
-) -> _DiscoveryScan:
-    cells: set[str] = set()
-    discovery_rows: list[DiscoveryRow] = []
-    rows_seen = 0
-    complete = True
-    for result in results:
-        cells.update(result.cells)
-        rows_seen += result.rows_seen
-        discovery_rows.extend(result.rows)
-        complete = complete and result.complete
-    return _DiscoveryScan(
-        cells=frozenset(cells),
-        rows_seen=rows_seen,
-        rows=tuple(discovery_rows),
-        complete=complete,
-    )
-
-
-def _select_discovery_rows(
-    rows: Iterable[DiscoveryRow],
-    max_rows_per_cell: int,
-) -> tuple[Mapping[str, Any], ...]:
-    return _interleave_discovery_rows(_ranked_discovery_rows(rows, max_rows_per_cell))
-
-
-def _ranked_discovery_rows(
-    rows: Iterable[DiscoveryRow],
-    max_rows_per_cell: int,
-) -> tuple[tuple[Mapping[str, Any], ...], ...]:
-    rows_by_cell: dict[str, list[Mapping[str, Any]]] = {}
-    for cell, row in rows:
-        rows_by_cell.setdefault(cell, []).append(row)
-    return tuple(
-        tuple(sorted(cell_rows, key=_discovery_score, reverse=True)[:max_rows_per_cell])
-        for cell_rows in rows_by_cell.values()
-    )
-
-
-def _discovery_row_rounds(
-    ranked_rows: tuple[tuple[Mapping[str, Any], ...], ...],
-    rows_per_round: int,
-) -> Iterable[tuple[Mapping[str, Any], ...]]:
-    max_rows = max((len(cell_rows) for cell_rows in ranked_rows), default=0)
-    for offset in range(0, max_rows, rows_per_round):
-        yield _interleave_discovery_rows(
-            tuple(cell_rows[offset : offset + rows_per_round] for cell_rows in ranked_rows)
-        )
-
-
-def _interleave_discovery_rows(
-    ranked_rows: tuple[tuple[Mapping[str, Any], ...], ...],
-) -> tuple[Mapping[str, Any], ...]:
-    selected: list[Mapping[str, Any]] = []
-    for row_index in range(max((len(cell_rows) for cell_rows in ranked_rows), default=0)):
-        for cell_rows in ranked_rows:
-            if row_index < len(cell_rows):
-                selected.append(cell_rows[row_index])
-    return tuple(selected)
-
-
-def _discovery_score(row: Mapping[str, Any]) -> tuple[int, int]:
-    texts = _discovery_texts(row)
-    return _boundary_count(texts), sum(len(text) for text in texts)
-
-
-def _discovery_texts(row: Mapping[str, Any]) -> tuple[str, ...]:
-    return tuple(
-        text
-        for text_field, _ in WebsiteCandidateSource._FIELD_SPECS
-        if (text := _field_text(row, text_field)) is not None
-    )
-
-
-def _boundary_count(texts: Iterable[str]) -> int:
-    return sum(sum(text.count(marker) for marker in ".!?") for text in texts)
-
-
-def _budgeted_rows(
-    row_loader: Callable[[], Iterable[Mapping[str, Any]]],
-    candidate_counts: Mapping[str, int],
-    candidate_quota: CellQuota | None,
-    minimum_candidate_cells: int | None,
-    row_counts: Mapping[str, int],
-    row_quota: CellQuota | None,
-) -> Iterable[Mapping[str, Any]]:
-    rows = iter(row_loader())
-    while not _source_budget_filled(
-        candidate_counts,
-        candidate_quota,
-        minimum_candidate_cells,
-        row_counts,
-        row_quota,
-    ):
-        try:
-            yield next(rows)
-        except StopIteration:
-            return
-
-
-def _source_budget_filled(
-    candidate_counts: Mapping[str, int],
-    candidate_quota: CellQuota | None,
-    minimum_candidate_cells: int | None,
-    row_counts: Mapping[str, int],
-    row_quota: CellQuota | None,
-) -> bool:
-    if candidate_quota is not None:
-        return _budget_reached(candidate_quota, candidate_counts, minimum_candidate_cells)
-    return _budget_reached(
-        row_quota,
-        row_counts,
-        minimum_candidate_cells,
-    )
-
-
-def _budget_reached(
-    quota: CellQuota | None,
-    counts: Mapping[str, int],
-    target_cells: int | None,
-) -> bool:
-    return (
-        quota is not None
-        and target_cells is not None
-        and quota.is_reached(counts, counts, target_cells=target_cells)
-    )
-
-
-def _bounded_candidates(
-    candidates: Iterable[Candidate],
-    candidate_counts: dict[str, int],
-    candidate_quota: CellQuota | None,
-    cell: str,
-) -> Iterable[Candidate]:
-    iterator = iter(candidates)
-    while candidate_quota is None or not candidate_quota.is_full(cell, candidate_counts):
-        try:
-            candidate = next(iterator)
-        except StopIteration:
-            return
-        candidate_counts[candidate.h3_cell] = candidate_counts.get(candidate.h3_cell, 0) + 1
-        yield candidate

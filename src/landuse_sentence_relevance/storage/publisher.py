@@ -12,6 +12,10 @@ from landuse_sentence_relevance.domain.selection import select_final_annotations
 logger = logging.getLogger(__name__)
 
 
+class DatasetPublicationError(RuntimeError):
+    """Raised when the external dataset publication boundary fails."""
+
+
 class DatasetUploader(Protocol):
     """Upload a prepared public dataset to the configured Hub repository."""
 
@@ -57,6 +61,11 @@ class DatasetPublisher:
                 len(selected),
                 self._dataset_id,
             )
+            self._publish_selected(selected)
+            return True
+
+    def _publish_selected(self, selected: tuple[Annotation, ...]) -> None:
+        try:
             if self._prepare is not None:
                 logger.info("Preparing the disposable runtime cache for upload")
                 self._prepare()
@@ -71,7 +80,8 @@ class DatasetPublisher:
             if self._cleanup is not None:
                 logger.info("Removing disposable runtime cache after successful upload")
                 self._cleanup()
-            return True
+        except Exception as error:
+            raise DatasetPublicationError(str(error)) from error
 
     def _upload_to_hub(
         self,

@@ -1,5 +1,5 @@
 import logging
-from threading import Event
+from threading import Event, Thread
 from typing import cast
 
 import pytest
@@ -7,7 +7,7 @@ import pytest
 import landuse_sentence_relevance.workflow as workflow_module
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
-from landuse_sentence_relevance.storage.publisher import DatasetPublisher
+from landuse_sentence_relevance.storage.publisher import DatasetPublicationError, DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
 from landuse_sentence_relevance.workflow import (
     AnnotationWorkflow,
@@ -127,7 +127,7 @@ def test_deferred_publisher_failure_keeps_the_local_edit(tmp_path) -> None:
 
     class FailingPublisher:
         def publish_if_ready(self, annotations) -> bool:
-            raise RuntimeError("upload unavailable")
+            raise DatasetPublicationError("upload unavailable")
 
     workflow = AnnotationWorkflow(
         pool=FinalizedCandidatePool(
@@ -179,6 +179,54 @@ def test_scheduled_publication_returns_before_upload_finishes(tmp_path) -> None:
     assert not upload_finished.is_set()
     release_upload.set()
     assert upload_finished.wait(timeout=2)
+
+
+def test_workflow_close_waits_for_scheduled_publication_and_rejects_new_work(tmp_path) -> None:
+    rows = make_annotations()[:2]
+    upload_started = Event()
+    upload_finished = Event()
+    release_upload = Event()
+
+    class BlockingPublisher:
+        calls = 0
+
+        def publish_if_ready(self, annotations) -> bool:
+            self.calls += 1
+            if self.calls == 1:
+                return False
+            upload_started.set()
+            release_upload.wait(timeout=2)
+            upload_finished.set()
+            return False
+
+    workflow = AnnotationWorkflow(
+        pool=FinalizedCandidatePool(
+            tuple(row.candidate for row in rows),
+            tuple(row.candidate.h3_cell for row in rows),
+        ),
+        store=AnnotationStore(tmp_path / "annotations.jsonl"),
+        publisher=cast(DatasetPublisher, BlockingPublisher()),
+        defer_publish=True,
+    )
+    workflow.schedule_publish()
+
+    assert upload_started.wait(timeout=2)
+    close_finished = Event()
+
+    def close_workflow() -> None:
+        workflow.close()
+        close_finished.set()
+
+    closer = Thread(target=close_workflow)
+    closer.start()
+    assert not close_finished.wait(timeout=0.1)
+    release_upload.set()
+    assert close_finished.wait(timeout=2)
+    closer.join(timeout=2)
+
+    assert upload_finished.is_set()
+    with pytest.raises(RuntimeError, match="closed"):
+        workflow.schedule_publish()
 
 
 def test_workflow_removes_a_saved_annotation_and_updates_metrics(tmp_path) -> None:

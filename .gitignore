@@ -6,6 +6,7 @@ __pycache__/
 .coverage
 coverage.json
 htmlcov/
+site/
 mutants/
 state/
 /models/
@@ -25,6 +26,7 @@ state/
 /runtime-cache/
 /tmp/
 /uv-cache/
+/uv-cache-quality/
 /uv-cache-retry/
 /uv-environment/
 /uv-python/

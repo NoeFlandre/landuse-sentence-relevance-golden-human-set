@@ -48,6 +48,40 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/landuse_sentence_relevance"]
 
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src",
+    "tests",
+    "scripts",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CITATION.cff",
+    "Dockerfile",
+    ".dockerignore",
+    "mkdocs.yml",
+    "pyproject.toml",
+    "uv.lock",
+]
+exclude = [
+    "data/**",
+    "dist/**",
+    "site/**",
+    "models/**",
+    "mutants/**",
+    "tmp/**",
+    "uv-cache*/**",
+    "uv-environment/**",
+    "uv-python/**",
+    "python-cache/**",
+    "runtime-cache/**",
+    "huggingface-auth/**",
+    "xdg-cache/**",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+]
+
 [tool.uv]
 default-groups = ["dev"]
 required-version = "0.11.16"
@@ -77,10 +111,6 @@ pythonpath = ["."]
 [tool.coverage.run]
 branch = true
 source = ["landuse_sentence_relevance"]
-omit = [
-    "*/bootstrap.py",
-    "*/commonlingua_model.py",
-]
 
 [tool.coverage.report]
 fail_under = 95
@@ -91,6 +121,8 @@ source_paths = [
     "src/landuse_sentence_relevance/domain",
     "src/landuse_sentence_relevance/storage",
     "src/landuse_sentence_relevance/sources/validation.py",
+    "src/landuse_sentence_relevance/sources/website_text.py",
+    "src/landuse_sentence_relevance/sources/website_discovery.py",
 ]
 also_copy = ["src/landuse_sentence_relevance", "scripts"]
 on_dependency_change = "rerun"
@@ -99,6 +131,14 @@ pytest_add_cli_args = [
     "--ignore=tests/unit/test_public_project_files.py",
 ]
 pytest_add_cli_args_test_selection = [
-    "--ignore=tests/acceptance",
-    "--ignore=tests/unit/test_public_project_files.py",
+    "tests/unit/domain",
+    "tests/unit/sources/test_validation.py",
+    "tests/unit/sources/test_website.py",
+    "tests/unit/sources/test_website_helpers.py",
+    "tests/unit/storage",
+    "tests/unit/test_models.py",
+    "tests/unit/test_constraints.py",
+    "tests/unit/test_sampling.py",
+    "tests/unit/test_selection.py",
+    "tests/unit/test_stratification.py",
 ]

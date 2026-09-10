@@ -1,4 +1,5 @@
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
@@ -50,6 +51,11 @@ def test_candidate_rejects_invalid_values(field: str, value: str) -> None:
 def test_candidate_error_identifies_an_empty_candidate_id() -> None:
     with pytest.raises(ValueError, match=r"^candidate_id must be a non-empty string$"):
         replace(make_candidate(), candidate_id=" ")
+
+
+def test_candidate_rejects_non_string_sentence_values() -> None:
+    with pytest.raises(ValueError, match="non-empty string"):
+        replace(make_candidate(), sentence=cast(str, 42))
 
 
 def test_candidate_stratum_is_source_and_cell() -> None:
