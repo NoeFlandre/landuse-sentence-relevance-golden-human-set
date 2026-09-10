@@ -2,7 +2,7 @@
 
 This project builds a 100-sentence human golden set through a small local UI.
 
-The V2 app streams two public Hugging Face datasets, keeps English sentences from inside source text blocks when available, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The V1 authoritative human-annotated benchmark is `results/annotations/benchmark/v1-human-annotated.csv`; all V2 artifacts are organized under `results/`, and the layout is listed in [Results](results.md).
+The V2 app streams two public Hugging Face datasets, keeps English sentences from inside source text blocks when available, and presents unique-cell candidates selected across the world with deterministic H3 maximin spacing. One human annotator assigns Yes or No relevance labels. The benchmark to use is `data/benchmark/v2-adjudicated.csv`, the human V2 set with its three-rater disagreements adjudicated. Every data file is listed in the [Data catalogue](results.md).
 
 ## Run locally
 

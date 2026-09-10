@@ -10,7 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from landuse_sentence_relevance.analysis.annotation_csv import read_rater_labels, read_sentence_context
+from landuse_sentence_relevance.analysis.adjudication import (
+    AdjudicationError,
+    adjudicated_labels,
+    adjudication_summary,
+    read_verdicts,
+)
+from landuse_sentence_relevance.analysis.annotation_csv import (
+    SENTENCE_COLUMN,
+    read_rater_labels,
+    read_sentence_context,
+    read_table,
+)
 from landuse_sentence_relevance.analysis.disagreement_review import (
     CONTEXT_COLUMNS,
     review_header,
@@ -27,7 +38,9 @@ GPT_CSV = Path("results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-ex
 CLAUDE_CSV = Path("results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv")
 
 DEFAULT_OUTPUT_DIRECTORY = Path("results/analysis/interrater")
-DEFAULT_REVIEW_CSV = Path("docs/data/interrater-disagreements.csv")
+DEFAULT_REVIEW_CSV = Path("data/interrater/disagreements.csv")
+DEFAULT_ADJUDICATION_CSV = Path("data/interrater/adjudication.csv")
+DEFAULT_BENCHMARK_CSV = Path("data/benchmark/v2-adjudicated.csv")
 
 JSON_FILENAME = "agreement.json"
 
@@ -91,6 +104,30 @@ def build_review_rows(
     return review_header(names, CONTEXT_COLUMNS), rows
 
 
+def build_adjudication(
+    sources: Sequence[RaterSource], adjudication: Path
+) -> tuple[dict[str, Any], tuple[str, ...], list[dict[str, str]]]:
+    """Summarise the adjudication and rebuild the human benchmark from its verdicts.
+
+    The benchmark keeps the human file's own columns and row order. Every removed
+    sentence is dropped and every adjudicated label replaces the human's original.
+    """
+
+    raters = _read_raters(sources)
+    sentences = aligned_sentences(raters)
+    verdicts = read_verdicts(adjudication)
+    summary = adjudication_summary(raters, sentences, verdicts)
+    resolved = adjudicated_labels(raters, sentences, verdicts)
+    label_column = sources[0].label_column
+    header, source_rows = read_table(sources[0].path)
+    rows = [
+        {**row, label_column: resolved[row[SENTENCE_COLUMN]]}
+        for row in source_rows
+        if row[SENTENCE_COLUMN] in resolved
+    ]
+    return summary, header, rows
+
+
 def write_report(report: dict[str, Any], directory: Path) -> Path:
     """Write the deterministic machine-readable JSON report."""
 
@@ -100,8 +137,8 @@ def write_report(report: dict[str, Any], directory: Path) -> Path:
     return json_path
 
 
-def write_review_csv(header: Sequence[str], rows: Sequence[Mapping[str, str]], path: Path) -> Path:
-    """Write one CSV row per disagreement, ready to open in a spreadsheet."""
+def _write_csv(header: Sequence[str], rows: Sequence[Mapping[str, str]], path: Path) -> Path:
+    """Write a deterministic CSV with the given header and rows."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -109,6 +146,18 @@ def write_review_csv(header: Sequence[str], rows: Sequence[Mapping[str, str]], p
         writer.writeheader()
         writer.writerows(rows)
     return path
+
+
+def write_review_csv(header: Sequence[str], rows: Sequence[Mapping[str, str]], path: Path) -> Path:
+    """Write one CSV row per disagreement, ready to open in a spreadsheet."""
+
+    return _write_csv(header, rows, path)
+
+
+def write_benchmark_csv(header: Sequence[str], rows: Sequence[Mapping[str, str]], path: Path) -> Path:
+    """Write the adjudicated benchmark, one row per surviving sentence."""
+
+    return _write_csv(header, rows, path)
 
 
 def _summary(report: dict[str, Any]) -> str:
@@ -126,6 +175,11 @@ def _summary(report: dict[str, Any]) -> str:
         f"({three['unanimous_agreement']:.4f}), Fleiss kappa {three['fleiss_kappa']:.4f}"
     )
     lines.append(f"disagreements: {len(report['disagreements'])}")
+    adjudication = report["adjudication"]
+    lines.append(
+        f"adjudicated: {adjudication['adjudicated']}, removed: {adjudication['removed']}, "
+        f"final rows: {adjudication['final_rows']}"
+    )
     return "\n".join(lines)
 
 
@@ -136,6 +190,8 @@ def _parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--claude", type=Path, default=CLAUDE_CSV)
     parser.add_argument("--output-directory", type=Path, default=DEFAULT_OUTPUT_DIRECTORY)
     parser.add_argument("--review-csv", type=Path, default=DEFAULT_REVIEW_CSV)
+    parser.add_argument("--adjudication", type=Path, default=DEFAULT_ADJUDICATION_CSV)
+    parser.add_argument("--benchmark-csv", type=Path, default=DEFAULT_BENCHMARK_CSV)
     return parser.parse_args(argv)
 
 
@@ -149,14 +205,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         report = build_report(sources)
         header, rows = build_review_rows(sources)
+        summary, benchmark_header, benchmark_rows = build_adjudication(sources, arguments.adjudication)
     except InterraterDataError as error:
         print(f"interrater validation failed: {error}", file=sys.stderr)
         return 1
+    except AdjudicationError as error:
+        print(f"adjudication failed: {error}", file=sys.stderr)
+        return 1
+    report["adjudication"] = summary
     json_path = write_report(report, arguments.output_directory)
     review_path = write_review_csv(header, rows, arguments.review_csv)
+    benchmark_path = write_benchmark_csv(benchmark_header, benchmark_rows, arguments.benchmark_csv)
     print(_summary(report))
-    print(f"wrote {json_path}")
-    print(f"wrote {review_path}")
+    for written in (json_path, review_path, benchmark_path):
+        print(f"wrote {written}")
     return 0
 
 

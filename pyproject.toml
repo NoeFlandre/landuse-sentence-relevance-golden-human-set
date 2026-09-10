@@ -51,6 +51,7 @@ packages = ["src/landuse_sentence_relevance"]
 [tool.hatch.build.targets.sdist]
 only-include = [
     "src",
+    "data",
     "tests",
     "scripts",
     "docs",
@@ -64,7 +65,6 @@ only-include = [
     "uv.lock",
 ]
 exclude = [
-    "data/**",
     "dist/**",
     "site/**",
     "models/**",

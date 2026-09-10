@@ -1,0 +1,3 @@
+sentence,label,source,region,polygon_name,source_url
+A field.,yes,wikipedia,fiji,Rabi,https://example.invalid/field
+A meeting.,no,wikipedia,fiji,Rabi,https://example.invalid/meeting

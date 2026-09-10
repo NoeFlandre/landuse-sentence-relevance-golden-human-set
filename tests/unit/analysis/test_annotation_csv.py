@@ -10,6 +10,7 @@ from landuse_sentence_relevance.analysis.annotation_csv import (
     SENTENCE_COLUMN,
     read_rater_labels,
     read_sentence_context,
+    read_table,
 )
 from landuse_sentence_relevance.analysis.interrater import InterraterDataError
 
@@ -154,3 +155,55 @@ def test_read_sentence_context_rejects_a_file_without_rows(tmp_path: Path) -> No
 
     with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} has no rows$"):
         read_sentence_context(path, ("source",))
+
+
+def test_read_table_returns_the_original_header_and_row_order(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "human.csv", CONTEXT_CSV)
+
+    header, rows = read_table(path)
+
+    assert header == ("sentence", "label", "source", "region")
+    assert [row["sentence"] for row in rows] == ["A field.", "A road."]
+    assert rows[0] == {"sentence": "A field.", "label": "yes", "source": "wikipedia", "region": "fiji"}
+
+
+def test_read_table_rejects_a_file_without_the_sentence_column(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "bad.csv", "text,label\nA field.,yes\n")
+
+    with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} is missing column 'sentence'$"):
+        read_table(path)
+
+
+def test_read_table_rejects_a_truncated_row(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "short.csv", "sentence,label\nA field.\n")
+
+    with pytest.raises(
+        InterraterDataError,
+        match=rf"^{re.escape(str(path))} has a row missing one of \['sentence', 'label'\]$",
+    ):
+        read_table(path)
+
+
+def test_read_table_opens_the_file_as_utf8_without_newline_translation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write_csv(tmp_path / "human.csv", CONTEXT_CSV)
+    recorded: list[dict[str, Any]] = []
+    original_open = Path.open
+
+    def record_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+        recorded.append(dict(kwargs))
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", record_open)
+
+    read_table(path)
+
+    assert recorded == [{"newline": "", "encoding": "utf-8"}]
+
+
+def test_read_table_rejects_a_file_without_rows(tmp_path: Path) -> None:
+    path = write_csv(tmp_path / "header.csv", "sentence,label\n")
+
+    with pytest.raises(InterraterDataError, match=rf"^{re.escape(str(path))} has no rows$"):
+        read_table(path)

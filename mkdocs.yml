@@ -21,9 +21,8 @@ nav:
   - Overview: index.md
   - Data sources: data-sources.md
   - Annotation: annotation.md
-  - Results: results.md
+  - Data catalogue: results.md
   - LLM labeling: llm-labeling.md
-  - Interrater agreement (summary): interrater-agreement-summary.md
   - Interrater agreement: interrater-agreement.md
   - QA: qa.md
   - Licensing: licensing.md

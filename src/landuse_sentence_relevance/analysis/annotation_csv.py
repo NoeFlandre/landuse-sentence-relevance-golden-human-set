@@ -58,3 +58,16 @@ def read_sentence_context(path: Path, columns: Sequence[str]) -> dict[str, dict[
     if not context:
         raise InterraterDataError(f"{path} has no rows")
     return context
+
+
+def read_table(path: Path) -> tuple[tuple[str, ...], list[dict[str, str]]]:
+    """Read a whole CSV, keeping its original column order and row order."""
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        header = tuple(reader.fieldnames or ())
+        _validate_columns(path, header, ())
+        rows = [_row_mapping(path, row, header) for row in reader]
+    if not rows:
+        raise InterraterDataError(f"{path} has no rows")
+    return header, rows
