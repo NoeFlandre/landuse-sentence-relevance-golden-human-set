@@ -1,5 +1,7 @@
+import csv
 import os
 import tomllib
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
@@ -133,3 +135,27 @@ def test_gauntlet_passes_the_worker_count_to_mutmut_and_its_environment() -> Non
     assert '"--mutation-workers"' in source
     assert '["uv", "run", "mutmut", "run", "--max-children", workers]' in source
     assert 'environment["MUTMUT_MAX_CHILDREN"] = workers' in source
+
+
+def test_committed_adjudicated_benchmark_is_the_complete_final_export() -> None:
+    benchmark = ROOT / "data/benchmark/v2-adjudicated.csv"
+
+    with benchmark.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+
+    assert reader.fieldnames == [
+        "sentence",
+        "label",
+        "polygon_name",
+        "h3_cell",
+        "latitude",
+        "longitude",
+        "source",
+        "region",
+        "source_url",
+    ]
+    assert len(rows) == 154
+    assert Counter(row["label"] for row in rows) == {"yes": 80, "no": 74}
+    assert Counter(row["source"] for row in rows) == {"wikipedia": 100, "website": 54}
+    assert len({row["sentence"] for row in rows}) == 154

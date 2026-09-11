@@ -166,6 +166,7 @@ def test_main_writes_the_report_and_the_review_csv(
 ) -> None:
     directory = tmp_path / "report"
     review = tmp_path / "review" / "disagreements.csv"
+    benchmark = tmp_path / "benchmark.csv"
 
     exit_code = main(
         [
@@ -181,6 +182,8 @@ def test_main_writes_the_report_and_the_review_csv(
             str(review),
             "--adjudication",
             str(adjudication),
+            "--benchmark-csv",
+            str(benchmark),
         ]
     )
 
@@ -189,6 +192,7 @@ def test_main_writes_the_report_and_the_review_csv(
     assert exit_code == 0
     assert (directory / "agreement.json").is_file()
     assert review.is_file()
+    assert benchmark.is_file()
     assert "matched rows: 3" in output
     assert "disagreements: 2" in output
 

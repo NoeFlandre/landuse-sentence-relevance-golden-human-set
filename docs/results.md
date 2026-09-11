@@ -19,6 +19,8 @@ It carries the same nine columns as the human export it was built from — `sent
 
 It is regenerated, never hand-edited: `scripts/interrater_agreement.py` rebuilds it from the three rater exports plus `data/interrater/adjudication.csv`. See [Interrater agreement](interrater-agreement.md) for the method.
 
+This is the only final-benchmark copy; generated analysis outputs do not duplicate it.
+
 ## Interrater review tables
 
 Committed, one row per sentence the three raters did not agree on.

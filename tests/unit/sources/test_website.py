@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Iterable
+from threading import Thread
 
 import pytest
 
@@ -232,9 +233,22 @@ def test_batch_language_selection_stops_after_the_first_accepted_sentence() -> N
         SentencePart(8, "EN fallback"),
     )
 
-    selected = _select_batch_parts((first_group, second_group), language_identifier)
+    selected: list[tuple[SentencePart | None, ...]] = []
+    errors: list[Exception] = []
 
-    assert selected == (first_group[0], second_group[-1])
+    def select() -> None:
+        try:
+            selected.append(_select_batch_parts((first_group, second_group), language_identifier))
+        except Exception as error:
+            errors.append(error)
+
+    worker = Thread(target=select, daemon=True)
+    worker.start()
+    worker.join(timeout=1)
+
+    assert not worker.is_alive(), "batch language selection did not terminate"
+    assert errors == []
+    assert selected == [(first_group[0], second_group[-1])]
     assert language_identifier.batch_calls == [
         tuple(part.text for part in first_group) + tuple(part.text for part in second_group[:8]),
         (second_group[-1].text,),
