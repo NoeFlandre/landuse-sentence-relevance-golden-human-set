@@ -8,9 +8,9 @@ from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.sentence_selection import SentencePart
 from landuse_sentence_relevance.sources.website import (
     WebsiteCandidateSource,
-    _select_batch_parts,
     _select_discovery_rows,
 )
+from landuse_sentence_relevance.sources.website_text import _select_batch_parts
 
 
 class FakeSplitter:

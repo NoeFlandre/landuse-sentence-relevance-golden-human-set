@@ -118,6 +118,7 @@ source_paths = [
     "src/landuse_sentence_relevance/sources/validation.py",
     "src/landuse_sentence_relevance/sources/website_text.py",
     "src/landuse_sentence_relevance/sources/website_discovery.py",
+    "src/landuse_sentence_relevance/sources/website_candidates.py",
 ]
 also_copy = ["src/landuse_sentence_relevance", "scripts"]
 on_dependency_change = "rerun"
@@ -137,6 +138,7 @@ pytest_add_cli_args_test_selection = [
     "tests/unit/domain",
     "tests/unit/sources/test_validation.py",
     "tests/unit/sources/test_website.py",
+    "tests/unit/sources/test_website_candidates.py",
     "tests/unit/sources/test_website_helpers.py",
     "tests/unit/storage",
     "tests/unit/test_models.py",
