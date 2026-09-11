@@ -50,8 +50,35 @@ def quality_paths(project_root: Path = Path(".")) -> tuple[str, ...]:
     return tuple(directory for directory in QUALITY_DIRECTORIES if (project_root / directory).is_dir())
 
 
+def test_steps() -> tuple[tuple[str, list[str]], ...]:
+    """Return the deterministic test suites in their required execution order."""
+
+    coverage = ["--cov=landuse_sentence_relevance", "--cov-report=", "--cov-fail-under=0"]
+    return (
+        ("unit tests", ["uv", "run", "pytest", "tests/unit", "-q", *coverage]),
+        (
+            "property tests",
+            ["uv", "run", "pytest", "tests/property", "-q", "--cov-append", *coverage],
+        ),
+        (
+            "acceptance tests",
+            [
+                "uv",
+                "run",
+                "pytest",
+                "tests/acceptance",
+                "-q",
+                "--cov-append",
+                "--cov=landuse_sentence_relevance",
+                "--cov-report=term-missing",
+                "--cov-report=json:coverage.json",
+            ],
+        ),
+    )
+
+
 def run_step(name: str, command: list[str], environment: dict[str, str]) -> None:
-    print(f"\n== {name} ==")
+    print(f"\n== {name} ==", flush=True)
     subprocess.run(command, check=True, env=environment)
 
 
@@ -76,21 +103,10 @@ def main() -> int:
     run_step("format", ["uv", "run", "ruff", "format", "--check", *paths], environment)
     run_step("ruff", ["uv", "run", "ruff", "check", *paths], environment)
     run_step("ty", ["uv", "run", "ty", "check", *paths], environment)
-    run_step(
-        "tests and coverage",
-        [
-            "uv",
-            "run",
-            "pytest",
-            "tests/unit",
-            "tests/acceptance",
-            "-q",
-            "--cov=landuse_sentence_relevance",
-            "--cov-report=term-missing",
-            "--cov-report=json:coverage.json",
-        ],
-        environment,
-    )
+    for name, command in test_steps():
+        run_step(name, command, environment)
+    run_step("coverage", ["uv", "run", "python", "scripts/check_coverage.py"], environment)
+    run_step("architecture checks", ["uv", "run", "python", "scripts/check_architecture.py"], environment)
     run_step("crap", ["uv", "run", "python", "scripts/check_crap.py"], environment)
     try:
         with mutation_lock(mutation_lock_path()):
@@ -101,6 +117,16 @@ def main() -> int:
     except MutationGateBusyError as error:
         print(f"\n{error}", file=sys.stderr)
         return 2
+    run_step(
+        "package",
+        ["uv", "build", "--wheel", "--sdist", "--out-dir", "state/qa-dist"],
+        environment,
+    )
+    run_step(
+        "documentation",
+        ["uv", "run", "mkdocs", "build", "--strict", "--clean", "--site-dir", "state/qa-site"],
+        environment,
+    )
     if not args.skip_network:
         run_step("streaming smoke", ["uv", "run", "python", "scripts/streaming_smoke.py"], environment)
     if not args.skip_docker:
@@ -109,6 +135,7 @@ def main() -> int:
             ["docker", "build", "--tag", "landuse-sentence-relevance-golden-human-set:qa", "."],
             environment,
         )
+    run_step("diff check", ["git", "diff", "--check"], environment)
     print("\nGAUNTLET PASSED")
     return 0
 

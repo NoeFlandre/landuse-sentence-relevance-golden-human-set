@@ -25,5 +25,10 @@ nav:
   - LLM labeling: llm-labeling.md
   - LLM evaluation rounds: llm-evaluation-rounds.md
   - Interrater agreement: interrater-agreement.md
-  - QA: qa.md
+  - Engineering:
+      - QA: qa.md
+      - Architecture decisions:
+          - Quality gauntlet: adr/0001-quality-gauntlet.md
+          - Layered architecture: adr/0002-layered-architecture.md
+      - Technical debt: technical-debt.md
   - Licensing: licensing.md

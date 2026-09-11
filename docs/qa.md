@@ -1,42 +1,43 @@
 # QA procedure
 
-## Gherkin and the UI
+## Test behavior in Gherkin
 
-Gherkin is a short, readable test language with `Given`, `When`, and `Then` sentences. It describes the behavior a user should see; it is not a replacement for Python tests.
+Gherkin uses short `Given`, `When`, and `Then` statements to describe behavior a person can observe. This project drives the text UI with a real Playwright browser, so the feature checks the complete request, save, and next-candidate flow rather than only calling Python functions.
 
-This project uses a Gherkin feature with a real Playwright browser. It checks that:
-
-```gherkin
-Given the annotator has a current sentence
-When the annotator chooses Yes or No
-Then the label is saved and the next sentence is shown
-```
-
-The feature is at `tests/acceptance/features/annotation.feature`. Its step definitions start the local app and drive the browser, so the test covers the text UI rather than only calling Python functions.
+The feature is at `tests/acceptance/features/annotation.feature`; its step definitions start the local app and drive the browser.
 
 ## Deterministic gauntlet
 
-Run the complete gate with:
+Run the local gate from the Seagate checkout with:
 
 ```bash
-./scripts/uv-seagate run python scripts/gauntlet.py --skip-docker
+./scripts/uv-seagate run python scripts/gauntlet.py --skip-network --skip-docker
 ```
 
-The local command keeps UV and test scratch data on the Seagate drive. CI runs the same gauntlet with ordinary `uv` commands on its own ephemeral runner.
+CI runs the same command without skip flags. The local command keeps UV, model, test, build, documentation, and mutation state under the Seagate `state/` directory. Docker and Hugging Face network access are intentionally CI-only on the development Mac.
 
-It runs, in order:
+The fixed order is:
 
-1. locked dependency check, Ruff format, Ruff lint, and TY;
-2. unit and browser acceptance tests with at least 95% coverage;
-3. CRAP score checking with a strict limit below 6;
-4. mutation testing with zero survivors;
-5. a pinned-revision streaming smoke check; and
-6. a Docker build.
+1. record a pre-change baseline;
+2. verify the lockfile, Ruff formatting, Ruff lint, and TY;
+3. run unit tests, Hypothesis property tests, and Gherkin/Playwright acceptance tests while accumulating coverage;
+4. enforce at least 95% line coverage and 90% branch coverage;
+5. check dependency boundaries and circular imports;
+6. enforce CRAP below 6;
+7. run mutation testing and reject every survivor, timeout, or untested mutant;
+8. build the wheel and source distribution and build MkDocs in strict mode;
+9. run the pinned Hugging Face streaming smoke test and Docker build in CI; and
+10. run the Git diff whitespace check, followed by human diff review.
 
-Mutation testing targets the deterministic domain, storage, validation, and website-selection modules with their focused unit tests. The full suite, streaming smoke test, and CI container check cover the model, remote, and application-composition boundaries.
+The baseline is a process checkpoint before editing. The executable gate starts at the lock check because a dirty working tree is expected while developing a change.
 
-The gauntlet fixes `PYTHONHASHSEED=0` and uses pinned upstream revisions. Mutation testing runs one worker per core, because each mutant is scored independently and the verdict does not depend on how many run at once; `--mutation-workers N` pins the count when a run needs to be constrained. For offline local checks, `--skip-network --skip-docker` skips only the remote and container steps.
+Run focused stages directly when iterating:
 
-The Seagate wrapper keeps mutation state, caches, and scratch files on the external drive. The gauntlet takes a nonblocking lock at `PROJECT_STATE_ROOT/mutation.lock`, so a second run exits immediately instead of competing for HDD I/O. Mutmut ignores cache invalidation only for `mkdocs.yml`, `.github/`, `Dockerfile`, `CITATION.cff`, and `scripts/uv-seagate`; source, tests, dependencies, and runtime configuration remain invalidators.
+```bash
+./scripts/uv-seagate run pytest tests/unit -q
+./scripts/uv-seagate run pytest tests/property -q
+./scripts/uv-seagate run pytest tests/acceptance -m acceptance -q
+./scripts/uv-seagate run python scripts/check_architecture.py
+```
 
-Docker is intentionally CI-only on the development Mac.
+The quality gate fixes `PYTHONHASHSEED=0`, uses pinned upstream revisions, and uses deterministic Hypothesis settings. Mutation testing is protected by a nonblocking lock at `PROJECT_STATE_ROOT/mutation.lock`, so concurrent runs fail fast instead of competing for HDD I/O.
