@@ -1,3 +1,6 @@
+import sys
+from types import ModuleType
+
 from landuse_sentence_relevance.models.language_identifier import (
     CommonLinguaIdentifier,
     LanguagePrediction,
@@ -73,7 +76,6 @@ def test_sentence_splitter_parallelizes_sub_batches_without_reordering_results()
 
 def test_sentence_splitter_loads_the_base_sat_model_without_an_adapter(monkeypatch) -> None:
     import huggingface_hub
-    import wtpsplit
 
     calls = []
 
@@ -83,7 +85,9 @@ def test_sentence_splitter_loads_the_base_sat_model_without_an_adapter(monkeypat
         def __init__(self, model_name: str, **kwargs) -> None:
             calls.append((model_name, kwargs))
 
-    monkeypatch.setattr(wtpsplit, "SaT", FakeSaT)
+    fake_wtpsplit = ModuleType("wtpsplit")
+    fake_wtpsplit.__dict__["SaT"] = FakeSaT
+    monkeypatch.setitem(sys.modules, "wtpsplit", fake_wtpsplit)
 
     SaTSentenceSplitter._load_model(
         model_id="segment-any-text/sat-12l-sm",
