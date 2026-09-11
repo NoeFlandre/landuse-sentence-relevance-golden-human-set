@@ -355,6 +355,63 @@ def test_append_next_source_cell_passes_distance_cache_to_selection(
     assert received == [nearest_distances]
 
 
+def test_append_next_source_cell_passes_all_selection_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
+    selected_by_source = {source: [] for source in Source}
+    selected_cells: list[str] = []
+    centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
+    nearest_distances = {"wiki": 100.0}
+    conflict_counts = {"wiki": 0}
+    received: tuple[object, ...] | None = None
+
+    def capture_next_cell(
+        candidates: list[str],
+        selected: list[str],
+        candidate_centers: dict[str, tuple[float, float]],
+        received_seed: str,
+        distances: dict[str, float] | None,
+        received_conflicts: dict[str, int] | None,
+    ) -> str:
+        nonlocal received
+        received = (
+            candidates,
+            list(selected),
+            candidate_centers,
+            received_seed,
+            distances,
+            received_conflicts,
+        )
+        return candidates[0]
+
+    monkeypatch.setattr(stratification, "_next_source_cell", capture_next_cell)
+
+    _append_next_source_cell(
+        Source.WIKIPEDIA,
+        available,
+        selected_by_source,
+        selected_cells,
+        centers,
+        target_count=1,
+        minimum_distance_km=0.0,
+        seed="distinct-seed",
+        nearest_distances=nearest_distances,
+        conflict_counts=conflict_counts,
+    )
+
+    assert received == (
+        ["wiki"],
+        [],
+        centers,
+        "distinct-seed",
+        nearest_distances,
+        conflict_counts,
+    )
+    assert selected_by_source[Source.WIKIPEDIA] == ["wiki"]
+    assert selected_cells == ["wiki"]
+
+
 def test_conflict_ties_use_the_requested_seed() -> None:
     centers = {"a": (0.0, 0.0), "b": (0.0, 1.0)}
     conflicts = {"a": 0, "b": 0}

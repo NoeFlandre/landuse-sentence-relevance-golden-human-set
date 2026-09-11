@@ -16,9 +16,9 @@ All three agree on 127/158 (80.4%), Fleiss' kappa 0.73. The 31 remaining sentenc
 
 | Rater | Source | Label column |
 | --- | --- | --- |
-| `human` | `results/annotations/benchmark/v2-wikipedia-website-combined.csv` | `label` |
-| `gpt` | `results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-extra-high-2026-09-10.csv` | `llm_label` |
-| `claude` | `results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv` | `llm_label` |
+| `human` | `results/evaluations/round-01/human.csv` | `label` |
+| `gpt` | `results/evaluations/round-01/outputs/gpt.csv` | `llm_label` |
+| `claude` | `results/evaluations/round-01/outputs/claude.csv` | `llm_label` |
 
 The analysis reads all three files and never writes to them.
 
@@ -135,7 +135,7 @@ The result is `data/benchmark/v2-adjudicated.csv`: the human export with 4 rows 
 | --- | --- | --- |
 | [`data/interrater/disagreements.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/disagreements.csv) | yes | One row per non-unanimous sentence, generated |
 | [`data/interrater/adjudication.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/adjudication.csv) | yes | The same rows plus the hand-assigned `final_label`; the only hand-edited file here |
-| `results/analysis/interrater/agreement.json` | no | Full machine-readable report: matched rows, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, the adjudication summary, and a `sources` block with each input path, label column, row count, and SHA-256 |
+| `results/evaluations/round-01/analysis/agreement.json` | no | Full machine-readable report: matched rows, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, the adjudication summary, and a `sources` block with each input path, label column, row count, and SHA-256 |
 | [`data/benchmark/v2-adjudicated.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/benchmark/v2-adjudicated.csv) | yes | The 154-row final benchmark: the human export's own nine columns, with removed rows dropped and adjudicated labels applied |
 
 Committed tables live under `data/`; raw and intermediate artifacts stay under `results/` on the Seagate drive. See the [Data catalogue](results.md) for every file in the project.

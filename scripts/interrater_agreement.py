@@ -33,11 +33,12 @@ from landuse_sentence_relevance.analysis.interrater import (
     interrater_report,
 )
 
-BENCHMARK_CSV = Path("results/annotations/benchmark/v2-wikipedia-website-combined.csv")
-GPT_CSV = Path("results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-extra-high-2026-09-10.csv")
-CLAUDE_CSV = Path("results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv")
+ROUND_ONE_DIRECTORY = Path("results/evaluations/round-01")
+BENCHMARK_CSV = ROUND_ONE_DIRECTORY / "human.csv"
+GPT_CSV = ROUND_ONE_DIRECTORY / "outputs/gpt.csv"
+CLAUDE_CSV = ROUND_ONE_DIRECTORY / "outputs/claude.csv"
 
-DEFAULT_OUTPUT_DIRECTORY = Path("results/analysis/interrater")
+DEFAULT_OUTPUT_DIRECTORY = ROUND_ONE_DIRECTORY / "analysis"
 DEFAULT_REVIEW_CSV = Path("data/interrater/disagreements.csv")
 DEFAULT_ADJUDICATION_CSV = Path("data/interrater/adjudication.csv")
 DEFAULT_BENCHMARK_CSV = Path("data/benchmark/v2-adjudicated.csv")

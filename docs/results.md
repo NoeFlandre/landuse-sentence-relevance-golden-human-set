@@ -32,15 +32,15 @@ Committed, one row per sentence the three raters did not agree on.
 
 ## Rater inputs
 
-The three labelled copies of the same 158 sentences that the agreement analysis compares. Drive-only.
+Round 1's three labelled copies of the same 158 sentences. Drive-only; future rounds use the numbered structure in [LLM evaluation rounds](llm-evaluation-rounds.md).
 
 | Path | Rater | Label column |
 | --- | --- | --- |
-| `results/annotations/benchmark/v2-wikipedia-website-combined.csv` | human annotator | `label` |
-| `results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-extra-high-2026-09-10.csv` | GPT 5.6 Extra High | `llm_label` |
-| `results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv` | Claude Opus 5 Extra | `llm_label` |
+| `results/evaluations/round-01/human.csv` | human annotator | `label` |
+| `results/evaluations/round-01/outputs/gpt.csv` | GPT 5.6 Extra High | `llm_label` |
+| `results/evaluations/round-01/outputs/claude.csv` | Claude Opus 5 Extra | `llm_label` |
 
-The two machine runs and their shared prompt are recorded in [LLM labeling](llm-labeling.md).
+The two machine runs and their shared prompt are recorded in [LLM labeling](llm-labeling.md); the repeatable workflow is in [LLM evaluation rounds](llm-evaluation-rounds.md).
 
 ## Working artifacts
 
@@ -48,11 +48,11 @@ Drive-only. Historical or intermediate; none of these is a benchmark.
 
 | Path | Contents |
 | --- | --- |
-| `results/analysis/interrater/agreement.json` | Generated. The full agreement report: matched rows, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, the adjudication summary, and each input's path, row count, and SHA-256 |
+| `results/evaluations/round-01/analysis/agreement.json` | Generated. The full agreement report: matched rows, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, the adjudication summary, and each input's path, row count, and SHA-256 |
 | `results/annotations/benchmark/v1-human-annotated.csv` | The 100-row V1 human set, superseded by the V2 adjudicated benchmark |
 | `results/annotations/benchmark/v2-wikipedia.csv` | The 100 Wikipedia rows before they were combined |
 | `results/annotations/benchmark/v2-website-balanced-58.csv` | The 58 website rows before they were combined, balanced 29 Yes / 29 No |
-| `results/annotations/unlabeled/` | The same exports before labelling; the input given to the two models |
+| `results/evaluations/round-01/` | Complete historical Round 1 snapshot: prompt, input, benchmark, model outputs, manifest, and analysis |
 | `results/annotations/sessions/` | Resumable JSONL annotation sessions for the V1 and V2 runs |
 | `results/candidates/v1/pool.json` | Historical V1 candidate bank |
 | `results/candidates/v2/pool.json` | 512 reusable V2 candidates, 256 per source |

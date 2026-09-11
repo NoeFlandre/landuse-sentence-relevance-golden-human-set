@@ -49,17 +49,13 @@ def sources(tmp_path: Path) -> tuple[RaterSource, ...]:
 def test_default_sources_point_at_the_human_benchmark_and_both_llm_runs() -> None:
     assert [source.name for source in DEFAULT_SOURCES] == ["human", "gpt", "claude"]
     assert [source.label_column for source in DEFAULT_SOURCES] == ["label", "llm_label", "llm_label"]
-    assert DEFAULT_SOURCES[0].path == Path("results/annotations/benchmark/v2-wikipedia-website-combined.csv")
-    assert DEFAULT_SOURCES[1].path == Path(
-        "results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-extra-high-2026-09-10.csv"
-    )
-    assert DEFAULT_SOURCES[2].path == Path(
-        "results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv"
-    )
+    assert DEFAULT_SOURCES[0].path == Path("results/evaluations/round-01/human.csv")
+    assert DEFAULT_SOURCES[1].path == Path("results/evaluations/round-01/outputs/gpt.csv")
+    assert DEFAULT_SOURCES[2].path == Path("results/evaluations/round-01/outputs/claude.csv")
 
 
 def test_default_output_directory_is_the_machine_readable_analysis_folder() -> None:
-    assert Path("results/analysis/interrater") == DEFAULT_OUTPUT_DIRECTORY
+    assert Path("results/evaluations/round-01/analysis") == DEFAULT_OUTPUT_DIRECTORY
 
 
 def test_default_review_csv_lives_in_the_committed_data_tree() -> None:

@@ -19,6 +19,7 @@ def test_seagate_uv_routes_project_state_to_the_external_drive(tmp_path: Path) -
         "#!/bin/sh\n"
         "printf 'UV_CACHE_DIR=%s\\n' \"$UV_CACHE_DIR\"\n"
         "printf 'UV_PROJECT_ENVIRONMENT=%s\\n' \"$UV_PROJECT_ENVIRONMENT\"\n"
+        "printf 'PROJECT_STATE_ROOT=%s\\n' \"$PROJECT_STATE_ROOT\"\n"
         "printf 'TMPDIR=%s\\n' \"$TMPDIR\"\n"
         "printf 'XDG_CACHE_HOME=%s\\n' \"$XDG_CACHE_HOME\"\n"
         "printf 'PYTHONPYCACHEPREFIX=%s\\n' \"$PYTHONPYCACHEPREFIX\"\n"
@@ -41,6 +42,7 @@ def test_seagate_uv_routes_project_state_to_the_external_drive(tmp_path: Path) -
     for variable in (
         "UV_CACHE_DIR",
         "UV_PROJECT_ENVIRONMENT",
+        "PROJECT_STATE_ROOT",
         "TMPDIR",
         "XDG_CACHE_HOME",
         "PYTHONPYCACHEPREFIX",
@@ -66,6 +68,7 @@ def test_seagate_uv_routes_project_state_to_the_external_drive(tmp_path: Path) -
     assert values == {
         "UV_CACHE_DIR": str(data_root / "state/uv-cache"),
         "UV_PROJECT_ENVIRONMENT": str(data_root / "state/uv-environment"),
+        "PROJECT_STATE_ROOT": str(data_root / "state"),
         "TMPDIR": str(data_root / "state/tmp"),
         "XDG_CACHE_HOME": str(data_root / "state/xdg-cache"),
         "PYTHONPYCACHEPREFIX": str(data_root / "state/python-cache"),

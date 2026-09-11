@@ -2,16 +2,18 @@
 
 This page records two machine-labeled copies of the V2 combined results. They are separate from the human benchmark and do not replace human annotations.
 
+This is the historical Round 1 record. Its complete snapshot is under results/evaluations/round-01/; use [LLM evaluation rounds](llm-evaluation-rounds.md) for every new prompt iteration.
+
 ## Runs
 
 Both runs used the shared prompt below, the same 158-row input, and web search disabled.
 
 | Run | Model | Time | Output | Labels | Output SHA-256 |
 | --- | --- | --- | --- | --- | --- |
-| GPT | GPT 5.6 Extra High | 2026-09-10 10:09 Europe/Paris | `results/annotations/llm/v2-wikipedia-website-combined-gpt-5.6-extra-high-2026-09-10.csv` | 96 `yes`, 62 `no` | `0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec` |
-| Claude | Claude Opus 5 Extra | 2026-09-10 10:14 Europe/Paris | `results/annotations/llm/v2-wikipedia-website-combined-claude-opus-5-extra-2026-09-10.csv` | 96 `yes`, 62 `no` | `8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2` |
+| GPT | GPT 5.6 Extra High | 2026-09-10 10:09 Europe/Paris | `results/evaluations/round-01/outputs/gpt.csv` | 96 `yes`, 62 `no` | `0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec` |
+| Claude | Claude Opus 5 Extra | 2026-09-10 10:14 Europe/Paris | `results/evaluations/round-01/outputs/claude.csv` | 96 `yes`, 62 `no` | `8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2` |
 
-The input is `results/annotations/unlabeled/v2-wikipedia-website-combined.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
+The input is `results/evaluations/round-01/input.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
 
 The two outputs agree on 146 of 158 rows and disagree on 12. Agreement with the human benchmark is quantified in [Interrater agreement](interrater-agreement.md). This is recorded for review; neither output is silently selected as ground truth. Neither machine file is a benchmark. The benchmark is `data/benchmark/v2-adjudicated.csv`, built by adjudicating the disagreements between these two runs and the human annotator.
 
@@ -29,4 +31,4 @@ Output only the lowercase token yes or no.
 TARGET SENTENCE: {}
 ```
 
-Any later run must use a new dated artifact and record its model, prompt, input hash, output hash, and row-level validation separately.
+Round 1 is immutable. Any later run must use a new numbered round and record its model, prompt, input hash, output hash, and row-level validation separately; follow [LLM evaluation rounds](llm-evaluation-rounds.md).

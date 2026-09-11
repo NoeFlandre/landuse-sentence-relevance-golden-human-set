@@ -23,6 +23,7 @@ nav:
   - Annotation: annotation.md
   - Data catalogue: results.md
   - LLM labeling: llm-labeling.md
+  - LLM evaluation rounds: llm-evaluation-rounds.md
   - Interrater agreement: interrater-agreement.md
   - QA: qa.md
   - Licensing: licensing.md

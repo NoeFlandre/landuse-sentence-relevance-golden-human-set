@@ -121,6 +121,13 @@ source_paths = [
 ]
 also_copy = ["src/landuse_sentence_relevance", "scripts"]
 on_dependency_change = "rerun"
+cache_invalidation_exclude = [
+    "mkdocs.yml",
+    ".github/*",
+    "Dockerfile",
+    "CITATION.cff",
+    "scripts/uv-seagate",
+]
 pytest_add_cli_args = [
     "--ignore=tests/acceptance",
     "--ignore=tests/unit/test_public_project_files.py",

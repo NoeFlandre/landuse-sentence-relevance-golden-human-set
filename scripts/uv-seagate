@@ -13,6 +13,7 @@ if [ ! -d "$data_root" ]; then
     exit 2
 fi
 
+export PROJECT_STATE_ROOT="$state_root"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$state_root/uv-cache}"
 export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$state_root/uv-python}"
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$state_root/uv-environment}"

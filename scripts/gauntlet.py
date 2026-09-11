@@ -1,12 +1,41 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 QUALITY_DIRECTORIES = ("src", "tests", "scripts")
+
+
+class MutationGateBusyError(RuntimeError):
+    """Raised when another mutation gate already owns the project lock."""
+
+
+def mutation_lock_path() -> Path:
+    """Return the lock path in the configured project state directory."""
+
+    return Path(os.environ.get("PROJECT_STATE_ROOT") or "state") / "mutation.lock"
+
+
+@contextmanager
+def mutation_lock(path: Path) -> Iterator[None]:
+    """Hold a nonblocking process lock for the mutation result tree."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise MutationGateBusyError(f"mutation gate already running: {path}") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def default_mutation_workers() -> int:
@@ -63,8 +92,15 @@ def main() -> int:
         environment,
     )
     run_step("crap", ["uv", "run", "python", "scripts/check_crap.py"], environment)
-    run_step("mutation", ["uv", "run", "mutmut", "run", "--max-children", workers], environment)
-    run_step("zero surviving mutants", ["uv", "run", "python", "scripts/check_mutants.py"], environment)
+    try:
+        with mutation_lock(mutation_lock_path()):
+            run_step("mutation", ["uv", "run", "mutmut", "run", "--max-children", workers], environment)
+            run_step(
+                "zero surviving mutants", ["uv", "run", "python", "scripts/check_mutants.py"], environment
+            )
+    except MutationGateBusyError as error:
+        print(f"\n{error}", file=sys.stderr)
+        return 2
     if not args.skip_network:
         run_step("streaming smoke", ["uv", "run", "python", "scripts/streaming_smoke.py"], environment)
     if not args.skip_docker:

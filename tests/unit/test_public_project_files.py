@@ -19,6 +19,13 @@ def test_mkdocs_configuration_is_strict_and_has_public_navigation() -> None:
     assert "QA: qa.md" in configuration
 
 
+def test_llm_evaluation_round_workflow_is_publicly_documented() -> None:
+    configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+
+    assert "LLM evaluation rounds: llm-evaluation-rounds.md" in configuration
+    assert (ROOT / "docs/llm-evaluation-rounds.md").is_file()
+
+
 def test_pages_workflow_builds_strictly_and_deploys_with_least_privilege() -> None:
     workflow = (ROOT / ".github/workflows/docs.yml").read_text(encoding="utf-8")
 
@@ -98,6 +105,19 @@ def test_mutation_gate_rebuilds_results_when_project_dependencies_change() -> No
         configuration = tomllib.load(project_file)
 
     assert configuration["tool"]["mutmut"]["on_dependency_change"] == "rerun"
+
+
+def test_mutation_cache_ignores_non_runtime_project_files() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    assert configuration["tool"]["mutmut"]["cache_invalidation_exclude"] == [
+        "mkdocs.yml",
+        ".github/*",
+        "Dockerfile",
+        "CITATION.cff",
+        "scripts/uv-seagate",
+    ]
 
 
 def test_mutation_gate_copies_qa_helpers_into_isolated_test_tree() -> None:

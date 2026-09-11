@@ -252,7 +252,7 @@ def test_multiple_discovery_shards_honor_worker_and_cell_limits(
         rows_per_cell=1,
         max_rows=2,
         max_text_characters=5,
-        max_workers=2,
+        max_workers=3,
     )
 
     assert observed["max_workers"] == 2

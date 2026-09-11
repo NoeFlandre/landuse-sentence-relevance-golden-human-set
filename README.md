@@ -19,6 +19,8 @@ If no Hugging Face login is available, authenticate once with the persistent pro
 
 The terminal reports model loading, streamed-source checkpoints, candidate-pool readiness, saved-label progress, and upload/cleanup. It never logs sentence text or raw rows. The login is kept separately so normal restarts and later sessions do not require another login; model and data caches remain disposable.
 
+Prompt-tuning rounds for GPT and Claude are prepared, hashed, and evaluated independently; see [LLM evaluation rounds](docs/llm-evaluation-rounds.md).
+
 The app streams public source rows and keeps the candidate bank and annotations on the Seagate project drive. See the [project documentation](https://noeflandre.github.io/landuse-sentence-relevance-golden-human-set/) for the source revisions, annotation contract, licenses, and QA gauntlet.
 
 ## License

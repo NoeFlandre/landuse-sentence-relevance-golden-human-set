@@ -37,4 +37,6 @@ Mutation testing targets the deterministic domain, storage, validation, and webs
 
 The gauntlet fixes `PYTHONHASHSEED=0` and uses pinned upstream revisions. Mutation testing runs one worker per core, because each mutant is scored independently and the verdict does not depend on how many run at once; `--mutation-workers N` pins the count when a run needs to be constrained. For offline local checks, `--skip-network --skip-docker` skips only the remote and container steps.
 
+The Seagate wrapper keeps mutation state, caches, and scratch files on the external drive. The gauntlet takes a nonblocking lock at `PROJECT_STATE_ROOT/mutation.lock`, so a second run exits immediately instead of competing for HDD I/O. Mutmut ignores cache invalidation only for `mkdocs.yml`, `.github/`, `Dockerfile`, `CITATION.cff`, and `scripts/uv-seagate`; source, tests, dependencies, and runtime configuration remain invalidators.
+
 Docker is intentionally CI-only on the development Mac.
