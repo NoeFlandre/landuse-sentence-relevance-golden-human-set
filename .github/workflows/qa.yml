@@ -19,7 +19,7 @@ jobs:
           version-file: pyproject.toml
           python-version: "3.12"
       - name: Install locked dependencies
-        run: uv sync --locked --extra models
+        run: uv sync --locked
       - name: Install acceptance browser
         run: uv run playwright install --with-deps chromium
       - name: Run full QA gauntlet

@@ -42,10 +42,11 @@ def test_qa_workflow_installs_the_browser_used_by_acceptance_tests() -> None:
     assert "uv run playwright install --with-deps chromium" in workflow
 
 
-def test_qa_workflow_installs_model_dependencies_used_by_model_tests() -> None:
+def test_qa_workflow_keeps_optional_model_dependencies_inside_docker_only() -> None:
     workflow = (ROOT / ".github/workflows/qa.yml").read_text(encoding="utf-8")
 
-    assert "uv sync --locked --extra models" in workflow
+    assert "uv sync --locked" in workflow
+    assert "uv sync --locked --extra models" not in workflow
 
 
 def test_docker_image_uses_locked_uv_dependencies_without_source_data() -> None:
