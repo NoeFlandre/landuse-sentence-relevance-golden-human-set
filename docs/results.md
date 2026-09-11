@@ -48,7 +48,8 @@ Drive-only. Historical or intermediate; none of these is a benchmark.
 
 | Path | Contents |
 | --- | --- |
-| `results/evaluations/round-01/analysis/agreement.json` | Generated. The full agreement report: matched rows, label counts, pairwise metrics with confusion matrices, three-rater agreement, every disagreement, the adjudication summary, and each input's path, row count, and SHA-256 |
+| `results/evaluations/round-01/analysis/agreement.json` | Generated canonical Round 1 report against the 154-row final benchmark: label counts, pairwise metrics, confusion matrices, three-rater agreement, disagreements, scope, and hashes |
+| `results/evaluations/round-01/analysis/historical-158/` | Preserved original 158-row agreement report and disagreement table |
 | `results/annotations/benchmark/v1-human-annotated.csv` | The 100-row V1 human set, superseded by the V2 adjudicated benchmark |
 | `results/annotations/benchmark/v2-wikipedia.csv` | The 100 Wikipedia rows before they were combined |
 | `results/annotations/benchmark/v2-website-balanced-58.csv` | The 58 website rows before they were combined, balanced 29 Yes / 29 No |

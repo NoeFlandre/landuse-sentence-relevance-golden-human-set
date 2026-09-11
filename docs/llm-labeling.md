@@ -15,7 +15,7 @@ Both runs used the shared prompt below, the same 158-row input, and web search d
 
 The input is `results/evaluations/round-01/input.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
 
-The two outputs agree on 146 of 158 rows and disagree on 12. Agreement with the human benchmark is quantified in [Interrater agreement](interrater-agreement.md). This is recorded for review; neither output is silently selected as ground truth. Neither machine file is a benchmark. The benchmark is `data/benchmark/v2-adjudicated.csv`, built by adjudicating the disagreements between these two runs and the human annotator.
+On the original 158-row input, the two outputs agree on 146 rows and disagree on 12. Against the final 154-row human benchmark, Claude agrees on 140/154 (Cohen's kappa 0.8168) and GPT agrees on 138/154 (Cohen's kappa 0.7906); the canonical report is documented in [Interrater agreement](interrater-agreement.md). This is recorded for review; neither output is silently selected as ground truth. Neither machine file is a benchmark. The benchmark is `data/benchmark/v2-adjudicated.csv`, built by adjudicating the original disagreements between these two runs and the human annotator.
 
 ## Shared prompt
 
