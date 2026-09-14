@@ -124,3 +124,38 @@ def test_final_dataset_errors_are_specific(mutator, message: str) -> None:
         validate_final_dataset(mutator(make_annotations()))
 
     assert str(error.value) == message
+
+
+def test_default_quotas_declare_the_two_source_v2_contract() -> None:
+    assert DatasetQuotas().sources == (Source.WIKIPEDIA, Source.WEBSITE)
+    assert DatasetQuotas().labels == (Label.YES, Label.NO)
+
+
+def test_quotas_validate_against_their_own_declared_sources() -> None:
+    quotas = DatasetQuotas(
+        total=300,
+        per_source=100,
+        per_label=150,
+        cell_count=300,
+        sources=(Source.WIKIPEDIA, Source.WEBSITE, Source.DESCRIPTION),
+    )
+
+    assert quotas.total == 300
+    assert len(quotas.sources) == 3
+
+
+def test_quotas_reject_a_total_that_ignores_a_declared_source() -> None:
+    with pytest.raises(ValueError, match="per-source quota"):
+        DatasetQuotas(
+            total=200,
+            per_source=100,
+            per_label=100,
+            cell_count=200,
+            sources=(Source.WIKIPEDIA, Source.WEBSITE, Source.DESCRIPTION),
+        )
+
+
+def test_validate_final_dataset_counts_only_the_declared_sources() -> None:
+    rows = make_annotations()
+
+    validate_final_dataset(rows, DatasetQuotas())

@@ -11,19 +11,31 @@ class FinalDatasetNotReadyError(ValueError):
     """Raised when the annotated records cannot satisfy the final dataset contract."""
 
 
+V2_SOURCES: tuple[Source, ...] = (Source.WIKIPEDIA, Source.WEBSITE)
+ALL_LABELS: tuple[Label, ...] = (Label.YES, Label.NO)
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetQuotas:
+    """The marginal contract a finished dataset must satisfy.
+
+    ``sources`` names the sources this dataset draws from, so adding a source to
+    the project does not silently change the contract of an already released one.
+    """
+
     total: int = 100
     per_source: int = 50
     per_label: int = 50
     cell_count: int = 100
     rows_per_cell: int = 1
     h3_resolution: int = 3
+    sources: tuple[Source, ...] = V2_SOURCES
+    labels: tuple[Label, ...] = ALL_LABELS
 
     def __post_init__(self) -> None:
-        if self.total != self.per_source * len(Source):
+        if self.total != self.per_source * len(self.sources):
             raise ValueError("total must equal the per-source quota for every source")
-        if self.total != self.per_label * len(Label):
+        if self.total != self.per_label * len(self.labels):
             raise ValueError("total must equal the per-label quota for every label")
         if self.total != self.cell_count * self.rows_per_cell:
             raise ValueError("total must equal the cell quota")
@@ -60,13 +72,13 @@ def _require_unique_ids(rows: tuple[Annotation, ...]) -> None:
 
 def _require_source_counts(rows: tuple[Annotation, ...], quotas: DatasetQuotas) -> None:
     counts = Counter(row.candidate.source for row in rows)
-    if any(counts[source] != quotas.per_source for source in Source):
+    if any(counts[source] != quotas.per_source for source in quotas.sources):
         raise FinalDatasetNotReadyError("source quotas are not satisfied")
 
 
 def _require_label_counts(rows: tuple[Annotation, ...], quotas: DatasetQuotas) -> None:
     counts = Counter(row.label for row in rows)
-    if any(counts[label] != quotas.per_label for label in Label):
+    if any(counts[label] != quotas.per_label for label in quotas.labels):
         raise FinalDatasetNotReadyError("label quotas are not satisfied")
 
 

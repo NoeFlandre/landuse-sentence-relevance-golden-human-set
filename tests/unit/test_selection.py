@@ -4,12 +4,13 @@ import pytest
 
 import landuse_sentence_relevance.domain.selection as selection
 from landuse_sentence_relevance.domain.constraints import DatasetQuotas
-from landuse_sentence_relevance.domain.models import Annotation, Label, Source
+from landuse_sentence_relevance.domain.models import Annotation, Label
 from landuse_sentence_relevance.domain.selection import (
     _advance_states,
     _exceeds_quotas,
     select_final_annotations,
 )
+from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
 from tests.unit.test_constraints import make_annotations
 
 
@@ -25,7 +26,7 @@ def test_selection_finds_a_balanced_subset_from_extra_annotations() -> None:
     assert selected is not None
     assert len(selected) == 100
     assert sum(annotation.label is Label.YES for annotation in selected) == 50
-    assert {annotation.candidate.source for annotation in selected} == set(Source)
+    assert {annotation.candidate.source for annotation in selected} == set(DEFAULT_SOURCES)
 
 
 def test_selection_uses_direct_path_for_one_row_per_cell(monkeypatch) -> None:

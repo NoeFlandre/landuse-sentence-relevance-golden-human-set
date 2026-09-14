@@ -8,6 +8,7 @@ from typing import Any
 class Source(StrEnum):
     WIKIPEDIA = "wikipedia"
     WEBSITE = "website"
+    DESCRIPTION = "description"
 
 
 class Label(StrEnum):

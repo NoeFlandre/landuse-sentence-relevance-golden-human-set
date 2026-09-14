@@ -6,6 +6,7 @@ import pytest
 import landuse_sentence_relevance.domain.stratification as stratification
 from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.stratification import (
+    DEFAULT_SOURCES,
     _append_next_source_cell,
     _cached_distant_cells,
     _conflict_counts,
@@ -321,7 +322,7 @@ def test_append_next_source_cell_passes_distance_cache_to_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
-    selected_by_source = {source: [] for source in Source}
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
     selected_cells: list[str] = []
     centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
     nearest_distances = {"wiki": 100.0}
@@ -359,7 +360,7 @@ def test_append_next_source_cell_passes_all_selection_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
-    selected_by_source = {source: [] for source in Source}
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
     selected_cells: list[str] = []
     centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
     nearest_distances = {"wiki": 100.0}
@@ -461,7 +462,7 @@ def test_append_next_source_cell_passes_centers_to_distance_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
-    selected_by_source = {source: [] for source in Source}
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
     selected_cells: list[str] = []
     centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
     received: dict[str, object] = {}
@@ -576,7 +577,7 @@ def test_feasible_source_cells_reserves_cells_for_the_other_source() -> None:
     assert _feasible_source_cells(
         Source.WIKIPEDIA,
         available,
-        {source: [] for source in Source},
+        {source: [] for source in DEFAULT_SOURCES},
         [],
         target_count=1,
     ) == ["wiki-a", "wiki-b"]
@@ -589,7 +590,7 @@ def test_feasible_source_cells_rejects_an_insufficient_current_source() -> None:
         _feasible_source_cells(
             Source.WIKIPEDIA,
             available,
-            {source: [] for source in Source},
+            {source: [] for source in DEFAULT_SOURCES},
             [],
             target_count=2,
         )
@@ -604,7 +605,7 @@ def test_feasible_source_cells_rejects_an_insufficient_other_source() -> None:
         _feasible_source_cells(
             Source.WIKIPEDIA,
             available,
-            {source: [] for source in Source},
+            {source: [] for source in DEFAULT_SOURCES},
             [],
             target_count=2,
         )

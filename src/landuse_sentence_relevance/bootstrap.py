@@ -7,6 +7,7 @@ from typing import Any
 from landuse_sentence_relevance.config import Settings
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
+from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
 from landuse_sentence_relevance.models.language_identifier import CommonLinguaIdentifier
 from landuse_sentence_relevance.models.sentence_splitter import SaTSentenceSplitter
 from landuse_sentence_relevance.sources.huggingface import HuggingFaceDatasetRows, HuggingFaceRowConfig
@@ -121,7 +122,7 @@ def _try_finalize(
     center_of_cell: Callable[[str], tuple[float, float]],
     minimum_distance_km: float,
 ) -> FinalizedCandidatePool | None:
-    if not all(_source_has_buffer(pool, source, target_cells_per_source) for source in Source):
+    if not all(_source_has_buffer(pool, source, target_cells_per_source) for source in DEFAULT_SOURCES):
         return None
     try:
         return pool.finalize(
@@ -158,6 +159,7 @@ def _load_candidate_pool(
     pool = BoundedCandidatePool(
         capacity_per_stratum=settings.candidate_capacity_per_stratum,
         seed=settings.seed,
+        sources=DEFAULT_SOURCES,
     )
     if progress_candidates is not None:
         for candidate in progress_candidates:
