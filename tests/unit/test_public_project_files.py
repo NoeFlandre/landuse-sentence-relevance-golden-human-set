@@ -26,6 +26,16 @@ def test_llm_evaluation_round_workflow_is_publicly_documented() -> None:
     assert (ROOT / "docs/llm-evaluation-rounds.md").is_file()
 
 
+def test_paused_v3_workflow_is_publicly_documented() -> None:
+    configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+    page = (ROOT / "docs/v3.md").read_text(encoding="utf-8")
+
+    assert "V3 workflow: v3.md" in configuration
+    assert "osm-polygon-description-tag" in page
+    assert "Wikivoyage is excluded" in page
+    assert "300" in page
+
+
 def test_pages_workflow_builds_strictly_and_deploys_with_least_privilege() -> None:
     workflow = (ROOT / ".github/workflows/docs.yml").read_text(encoding="utf-8")
 
