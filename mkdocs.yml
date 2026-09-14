@@ -26,6 +26,7 @@ nav:
   - LLM evaluation rounds: llm-evaluation-rounds.md
   - Interrater agreement: interrater-agreement.md
   - Engineering:
+      - Versioning: versioning.md
       - QA: qa.md
       - Architecture decisions:
           - Quality gauntlet: adr/0001-quality-gauntlet.md

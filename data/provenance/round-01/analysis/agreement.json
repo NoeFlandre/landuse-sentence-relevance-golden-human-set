@@ -1,0 +1,302 @@
+{
+  "raters": [
+    "claude",
+    "gpt",
+    "human"
+  ],
+  "labels": [
+    "no",
+    "yes"
+  ],
+  "matched_rows": 154,
+  "label_counts": {
+    "claude": {
+      "no": 62,
+      "yes": 92
+    },
+    "gpt": {
+      "no": 62,
+      "yes": 92
+    },
+    "human": {
+      "no": 74,
+      "yes": 80
+    }
+  },
+  "pairwise": [
+    {
+      "left": "claude",
+      "right": "gpt",
+      "matched": 154,
+      "agreements": 142,
+      "observed_agreement": 0.922077922077922,
+      "expected_agreement": 0.518974531961545,
+      "cohen_kappa": 0.838008415147265,
+      "confusion_matrix": {
+        "no": {
+          "no": 56,
+          "yes": 6
+        },
+        "yes": {
+          "no": 6,
+          "yes": 86
+        }
+      }
+    },
+    {
+      "left": "claude",
+      "right": "human",
+      "matched": 154,
+      "agreements": 140,
+      "observed_agreement": 0.9090909090909091,
+      "expected_agreement": 0.503794906392309,
+      "cohen_kappa": 0.8167912984364377,
+      "confusion_matrix": {
+        "no": {
+          "no": 61,
+          "yes": 1
+        },
+        "yes": {
+          "no": 13,
+          "yes": 79
+        }
+      }
+    },
+    {
+      "left": "gpt",
+      "right": "human",
+      "matched": 154,
+      "agreements": 138,
+      "observed_agreement": 0.8961038961038961,
+      "expected_agreement": 0.503794906392309,
+      "cohen_kappa": 0.7906186267845002,
+      "confusion_matrix": {
+        "no": {
+          "no": 60,
+          "yes": 2
+        },
+        "yes": {
+          "no": 14,
+          "yes": 78
+        }
+      }
+    }
+  ],
+  "three_rater": {
+    "matched": 154,
+    "unanimous": 133,
+    "unanimous_agreement": 0.8636363636363636,
+    "fleiss_kappa": 0.8143939393939393
+  },
+  "disagreements": [
+    {
+      "sentence": "Based on Ross Island, the AFD provides the United States Antarctic Program with professional emergency ser",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Construction started in June 2006 with a total investment of 236 million yuan, and the airport was opened in June 2008.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Discover a premium selection of 15 signature bars and restaurants.",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "It has almost 900 people living on 70 km .",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "It is one of the Line Islands belonging to the Republic of Kiribati .",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "It is the largest paper and pulp company in Latin America and among the biggest producers in the sector.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "It was founded in 1981 and is part of the Wet Tropics of Queensland .",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Jarvis is one of the Line Islands and, for statistical purposes, is also grouped as one of the United States Minor Outlying Islands .",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Recent technical challenges and scheduled maintenance have reduced the output of our power generation capacity.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Romantics and families alike find action and fun at Carmel Valley Ranch, California’s premier resort.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Selo in Sakha Republic, Russia",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The Australian Antarctic Territory ( AAT ) is a region of East Antarctica claimed by Australia as an external territory .",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The airport received its first passenger flight on 24 September 2021.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The cape, but not the settlement, was formerly known as North Cape (or Cape North).",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The farthest point of the peninsula is Jacobsen Head.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The islands have no permanent human inhabitants.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "The main village is Tuihana.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Town under republic jurisdiction in Sakha Republic, Russia",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Welcome to the Arctic – welcome to Icecamp Greenland!",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "You will take a 2hr scenic journey to a sleepy town called Gansbaai.",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "in 2000 Meybod was recorded as the first Historical city of Iran in the list of national monuments.",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    }
+  ],
+  "round_id": "round-01",
+  "scope": {
+    "reference": "results/evaluations/round-01/benchmark.csv",
+    "rows": 154,
+    "excluded_model_rows": 4,
+    "reason": "Four rows removed when the final human benchmark was adjudicated."
+  },
+  "reference": {
+    "name": "final_human_benchmark",
+    "path": "results/evaluations/round-01/benchmark.csv",
+    "label_column": "label",
+    "rows": 154,
+    "sha256": "ac185e51835eb626c932744009873382aa80027d26e93615dbde28d23af1d5fd"
+  },
+  "sources": [
+    {
+      "name": "human",
+      "path": "results/evaluations/round-01/benchmark.csv",
+      "label_column": "label",
+      "rows": 154,
+      "rows_used": 154,
+      "sha256": "ac185e51835eb626c932744009873382aa80027d26e93615dbde28d23af1d5fd"
+    },
+    {
+      "name": "gpt",
+      "path": "results/evaluations/round-01/outputs/gpt.csv",
+      "label_column": "llm_label",
+      "rows": 158,
+      "rows_used": 154,
+      "sha256": "0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec"
+    },
+    {
+      "name": "claude",
+      "path": "results/evaluations/round-01/outputs/claude.csv",
+      "label_column": "llm_label",
+      "rows": 158,
+      "rows_used": 154,
+      "sha256": "8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2"
+    }
+  ],
+  "historical_158_row_report": "analysis/historical-158/agreement.json"
+}

@@ -2,9 +2,10 @@
 
 Every data file in the project, what it contains, and where it comes from.
 
-There are two data trees:
+There are three data trees:
 
 - **`data/`** is committed to Git. It holds the small, final, hand-reviewable tables that must be readable without the Seagate drive.
+- **`data/provenance/`** is the committed exception for small, immutable release snapshots needed to reproduce published evaluations.
 - **`results/`** lives only on the Seagate project drive and is ignored by Git. It holds the raw working artifacts: session logs, candidate pools, per-rater exports, and generated reports.
 
 Source rows from Hugging Face are streamed and are never stored locally.
@@ -32,13 +33,15 @@ Committed, one row per sentence the three raters did not agree on.
 
 ## Rater inputs
 
-Round 1's three labelled copies of the same 158 sentences. Drive-only; future rounds use the numbered structure in [LLM evaluation rounds](llm-evaluation-rounds.md).
+Round 1's three labelled copies of the same 158 sentences. The release keeps a
+tracked provenance snapshot; future rounds use the numbered drive-only
+structure in [LLM evaluation rounds](llm-evaluation-rounds.md).
 
 | Path | Rater | Label column |
 | --- | --- | --- |
-| `results/evaluations/round-01/human.csv` | human annotator | `label` |
-| `results/evaluations/round-01/outputs/gpt.csv` | GPT 5.6 Extra High | `llm_label` |
-| `results/evaluations/round-01/outputs/claude.csv` | Claude Opus 5 Extra | `llm_label` |
+| `data/provenance/round-01/human.csv` | human annotator | `label` |
+| `data/provenance/round-01/outputs/gpt.csv` | GPT 5.6 Extra High | `llm_label` |
+| `data/provenance/round-01/outputs/claude.csv` | Claude Opus 5 Extra | `llm_label` |
 
 The two machine runs and their shared prompt are recorded in [LLM labeling](llm-labeling.md); the repeatable workflow is in [LLM evaluation rounds](llm-evaluation-rounds.md).
 
@@ -48,8 +51,8 @@ Drive-only. Historical or intermediate; none of these is a benchmark.
 
 | Path | Contents |
 | --- | --- |
-| `results/evaluations/round-01/analysis/agreement.json` | Generated canonical Round 1 report against the 154-row final benchmark: label counts, pairwise metrics, confusion matrices, three-rater agreement, disagreements, scope, and hashes |
-| `results/evaluations/round-01/analysis/historical-158/` | Preserved original 158-row agreement report and disagreement table |
+| `data/provenance/round-01/` | Committed, immutable Round 1 release snapshot: prompt, 158-row input and rater files, manifest, canonical 154-row agreement report, and historical 158-row report |
+| `results/evaluations/round-01/` | Drive-only working mirror of the tracked Round 1 snapshot |
 | `results/annotations/benchmark/v1-human-annotated.csv` | The 100-row V1 human set, superseded by the V2 adjudicated benchmark |
 | `results/annotations/benchmark/v2-wikipedia.csv` | The 100 Wikipedia rows before they were combined |
 | `results/annotations/benchmark/v2-website-balanced-58.csv` | The 58 website rows before they were combined, balanced 29 Yes / 29 No |

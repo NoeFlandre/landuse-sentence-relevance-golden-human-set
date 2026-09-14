@@ -1,0 +1,385 @@
+{
+  "raters": [
+    "claude",
+    "gpt",
+    "human"
+  ],
+  "labels": [
+    "no",
+    "yes"
+  ],
+  "matched_rows": 158,
+  "label_counts": {
+    "claude": {
+      "no": 62,
+      "yes": 96
+    },
+    "gpt": {
+      "no": 62,
+      "yes": 96
+    },
+    "human": {
+      "no": 79,
+      "yes": 79
+    }
+  },
+  "pairwise": [
+    {
+      "left": "claude",
+      "right": "gpt",
+      "matched": 158,
+      "agreements": 146,
+      "observed_agreement": 0.9240506329113924,
+      "expected_agreement": 0.5231533408107675,
+      "cohen_kappa": 0.840725806451613,
+      "confusion_matrix": {
+        "no": {
+          "no": 56,
+          "yes": 6
+        },
+        "yes": {
+          "no": 6,
+          "yes": 90
+        }
+      }
+    },
+    {
+      "left": "claude",
+      "right": "human",
+      "matched": 158,
+      "agreements": 133,
+      "observed_agreement": 0.8417721518987342,
+      "expected_agreement": 0.5,
+      "cohen_kappa": 0.6835443037974684,
+      "confusion_matrix": {
+        "no": {
+          "no": 58,
+          "yes": 4
+        },
+        "yes": {
+          "no": 21,
+          "yes": 75
+        }
+      }
+    },
+    {
+      "left": "gpt",
+      "right": "human",
+      "matched": 158,
+      "agreements": 133,
+      "observed_agreement": 0.8417721518987342,
+      "expected_agreement": 0.5,
+      "cohen_kappa": 0.6835443037974684,
+      "confusion_matrix": {
+        "no": {
+          "no": 58,
+          "yes": 4
+        },
+        "yes": {
+          "no": 21,
+          "yes": 75
+        }
+      }
+    }
+  ],
+  "three_rater": {
+    "matched": 158,
+    "unanimous": 127,
+    "unanimous_agreement": 0.8037974683544303,
+    "fleiss_kappa": 0.7328994964826496
+  },
+  "disagreements": [
+    {
+      "sentence": "Based on Ross Island, the AFD provides the United States Antarctic Program with professional emergency ser",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Construction started in June 2006 with a total investment of 236 million yuan, and the airport was opened in June 2008.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Discover a premium selection of 15 signature bars and restaurants.",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Find the ideal camper area according to your needs and wishes: sea view spot, electric and water terminals, in a quiet and naturalsetting or at a walking distance from the city centre!",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Ifalik is located approximately 40 kilometers (25 mi) east of Woleai and 700 kilometers (430 mi) southeast of the island of Yap .",
+      "labels": {
+        "claude": "no",
+        "gpt": "no",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "It has almost 900 people living on 70 km .",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "It is located just to the west of the northern part of Dangerous Ground , and is 22 miles (35 km) southeast of Philippine-occupied Thitu Island (Pag-asa) and 22 miles (35 km) north-northeast of Taiwan-occupied Itu Aba Island .",
+      "labels": {
+        "claude": "no",
+        "gpt": "no",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "It is one of the Line Islands belonging to the Republic of Kiribati .",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "It is the largest paper and pulp company in Latin America and among the biggest producers in the sector.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "It was founded in 1981 and is part of the Wet Tropics of Queensland .",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Jarvis is one of the Line Islands and, for statistical purposes, is also grouped as one of the United States Minor Outlying Islands .",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "One of the smallest libraries in HSPLS, our 775- sq. ft. “portable” library building opened in its present location on Feb. 24, 1994.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Recent technical challenges and scheduled maintenance have reduced the output of our power generation capacity.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Romantics and families alike find action and fun at Carmel Valley Ranch, California’s premier resort.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Selo in Sakha Republic, Russia",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "St Mary's Church building was completed in 1861 and consecrated on 9th May, Ascension Day of that year.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The Australian Antarctic Territory ( AAT ) is a region of East Antarctica claimed by Australia as an external territory .",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The Centre is a purpose built multi-use facility in the Hamlet of Gjoa Haven.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The airport received its first passenger flight on 24 September 2021.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The arena was opened in 2003 and has a capacity of 7,100.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The cape, but not the settlement, was formerly known as North Cape (or Cape North).",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The farthest point of the peninsula is Jacobsen Head.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The guano -coated Gardner Pinnacles.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The island is described as 'inconspicuous and fladt'.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "The islands have no permanent human inhabitants.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "yes"
+      }
+    },
+    {
+      "sentence": "The main village is Tuihana.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "This is one of three DOC Great Walk huts on the Kepler Track - the Luxmore, Iris Burn and Moturau.",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Town under republic jurisdiction in Sakha Republic, Russia",
+      "labels": {
+        "claude": "yes",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "Welcome to the Arctic – welcome to Icecamp Greenland!",
+      "labels": {
+        "claude": "yes",
+        "gpt": "no",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "You will take a 2hr scenic journey to a sleepy town called Gansbaai.",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    },
+    {
+      "sentence": "in 2000 Meybod was recorded as the first Historical city of Iran in the list of national monuments.",
+      "labels": {
+        "claude": "no",
+        "gpt": "yes",
+        "human": "no"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "name": "human",
+      "path": "results/evaluations/round-01/human.csv",
+      "label_column": "label",
+      "rows": 158,
+      "sha256": "42d1cc2a447c15ee559437ede01ef76fef1d694e16749482abf0a7a3ef4713e0"
+    },
+    {
+      "name": "gpt",
+      "path": "results/evaluations/round-01/outputs/gpt.csv",
+      "label_column": "llm_label",
+      "rows": 158,
+      "sha256": "0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec"
+    },
+    {
+      "name": "claude",
+      "path": "results/evaluations/round-01/outputs/claude.csv",
+      "label_column": "llm_label",
+      "rows": 158,
+      "sha256": "8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2"
+    }
+  ],
+  "adjudication": {
+    "matched_rows": 158,
+    "unanimous": 127,
+    "adjudicated": 31,
+    "removed": 4,
+    "final_rows": 154,
+    "final_label_counts": {
+      "no": 74,
+      "yes": 80
+    },
+    "verdict_counts": {
+      "no": 20,
+      "remove": 4,
+      "yes": 7
+    },
+    "upheld": {
+      "claude": 13,
+      "gpt": 11,
+      "human": 18
+    }
+  }
+}

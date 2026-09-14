@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "round_id": "round-01",
+  "status": "evaluated",
+  "scope": "Canonical Round 1 agreement against the 154-row final adjudicated human benchmark; the model outputs remain the historical 158-row files and four removed rows are excluded.",
+  "benchmark": {
+    "path": "benchmark.csv",
+    "rows": 154,
+    "sha256": "ac185e51835eb626c932744009873382aa80027d26e93615dbde28d23af1d5fd"
+  },
+  "human_reference": {
+    "path": "benchmark.csv",
+    "rows": 154,
+    "label_column": "label",
+    "sha256": "ac185e51835eb626c932744009873382aa80027d26e93615dbde28d23af1d5fd"
+  },
+  "input": {
+    "path": "input.csv",
+    "rows": 158,
+    "sha256": "a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d"
+  },
+  "prompt": {
+    "path": "prompt.md",
+    "sha256": "e60d3427fe4c7e7e0be55c7d441772b8280a50195e3f15e7ee35b7aa563d4719"
+  },
+  "outputs": {
+    "gpt": {
+      "path": "outputs/gpt.csv",
+      "rows": 158,
+      "label_column": "llm_label",
+      "model": "GPT 5.6 Extra High",
+      "run_at": "2026-09-10T10:09:00+02:00",
+      "sha256": "0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec"
+    },
+    "claude": {
+      "path": "outputs/claude.csv",
+      "rows": 158,
+      "label_column": "llm_label",
+      "model": "Claude Opus 5 Extra",
+      "run_at": "2026-09-10T10:14:00+02:00",
+      "sha256": "8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2"
+    }
+  },
+  "analysis": {
+    "agreement": "analysis/agreement.json",
+    "disagreements": "analysis/disagreements.csv",
+    "adjudication": "analysis/adjudication.csv",
+    "agreement_reference": "benchmark.csv",
+    "agreement_rows": 154,
+    "excluded_output_rows": 4,
+    "historical_agreement": "analysis/historical-158/agreement.json",
+    "agreement_sha256": "e35f65994bf496482e22e39f18bdd5e002ae71323f539cbce85d270f6b3b0d6b"
+  },
+  "historical_human_reference": {
+    "path": "human.csv",
+    "rows": 158,
+    "label_column": "label",
+    "sha256": "42d1cc2a447c15ee559437ede01ef76fef1d694e16749482abf0a7a3ef4713e0"
+  }
+}

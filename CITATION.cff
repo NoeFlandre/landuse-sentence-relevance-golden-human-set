@@ -3,7 +3,7 @@ message: "If you use this software, please cite it."
 type: software
 title: "Land-use sentence relevance golden human set"
 version: 2.0.0
-date-released: 2026-08-27
+date-released: 2026-09-14
 authors:
   - family-names: Flandre
     given-names: Noe

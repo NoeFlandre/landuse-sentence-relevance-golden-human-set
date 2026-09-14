@@ -23,6 +23,10 @@ Prompt-tuning rounds for GPT and Claude are prepared, hashed, and evaluated inde
 
 The app streams public source rows and keeps the candidate bank and annotations on the Seagate project drive. See the [project documentation](https://noeflandre.github.io/landuse-sentence-relevance-golden-human-set/) for the source revisions, annotation contract, licenses, and QA gauntlet.
 
+## Versioning
+
+Releases are immutable git tags; a tagged benchmark file is never edited. The current release is **v2.0.0**. See [CHANGELOG.md](CHANGELOG.md) and the [versioning policy](https://noeflandre.github.io/landuse-sentence-relevance-golden-human-set/versioning/).
+
 ## License
 
 Project code and documentation are Apache-2.0. Upstream OSM and Wikipedia material keeps its original license; the dataset card documents the component licenses.

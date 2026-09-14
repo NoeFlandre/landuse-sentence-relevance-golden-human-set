@@ -2,7 +2,9 @@
 
 This page records two machine-labeled copies of the V2 combined results. They are separate from the human benchmark and do not replace human annotations.
 
-This is the historical Round 1 record. Its complete snapshot is under results/evaluations/round-01/; use [LLM evaluation rounds](llm-evaluation-rounds.md) for every new prompt iteration.
+This is the historical Round 1 record. Its complete release snapshot is
+under `data/provenance/round-01/`; use
+[LLM evaluation rounds](llm-evaluation-rounds.md) for every new prompt iteration.
 
 ## Runs
 
@@ -10,10 +12,10 @@ Both runs used the shared prompt below, the same 158-row input, and web search d
 
 | Run | Model | Time | Output | Labels | Output SHA-256 |
 | --- | --- | --- | --- | --- | --- |
-| GPT | GPT 5.6 Extra High | 2026-09-10 10:09 Europe/Paris | `results/evaluations/round-01/outputs/gpt.csv` | 96 `yes`, 62 `no` | `0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec` |
-| Claude | Claude Opus 5 Extra | 2026-09-10 10:14 Europe/Paris | `results/evaluations/round-01/outputs/claude.csv` | 96 `yes`, 62 `no` | `8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2` |
+| GPT | GPT 5.6 Extra High | 2026-09-10 10:09 Europe/Paris | `data/provenance/round-01/outputs/gpt.csv` | 96 `yes`, 62 `no` | `0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec` |
+| Claude | Claude Opus 5 Extra | 2026-09-10 10:14 Europe/Paris | `data/provenance/round-01/outputs/claude.csv` | 96 `yes`, 62 `no` | `8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2` |
 
-The input is `results/evaluations/round-01/input.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
+The input is `data/provenance/round-01/input.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
 
 On the original 158-row input, the two outputs agree on 146 rows and disagree on 12. Against the final 154-row human benchmark, Claude agrees on 140/154 (Cohen's kappa 0.8168) and GPT agrees on 138/154 (Cohen's kappa 0.7906); the canonical report is documented in [Interrater agreement](interrater-agreement.md). This is recorded for review; neither output is silently selected as ground truth. Neither machine file is a benchmark. The benchmark is `data/benchmark/v2-adjudicated.csv`, built by adjudicating the original disagreements between these two runs and the human annotator.
 

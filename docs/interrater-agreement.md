@@ -1,6 +1,6 @@
 # Interrater agreement and adjudication
 
-The human annotator, GPT, and Claude originally labelled the same 158-sentence V2 combined export. The final adjudicated human benchmark contains 154 rows. The metrics below are the canonical Round 1 metrics against those 154 benchmark rows; the original 158-row report is preserved under `results/evaluations/round-01/analysis/historical-158/`.
+The human annotator, GPT, and Claude originally labelled the same 158-sentence V2 combined export. The final adjudicated human benchmark contains 154 rows. The metrics below are the canonical Round 1 metrics against those 154 benchmark rows; the original 158-row report is preserved under `data/provenance/round-01/analysis/historical-158/`.
 
 ## At a glance
 
@@ -16,11 +16,11 @@ All three agree on 133/154 (86.4%), Fleiss' kappa 0.81. The 31 disagreements in 
 
 | Rater | Source | Label column |
 | --- | --- | --- |
-| `human` | `results/evaluations/round-01/benchmark.csv` | `label` |
-| `gpt` | `results/evaluations/round-01/outputs/gpt.csv` | `llm_label` |
-| `claude` | `results/evaluations/round-01/outputs/claude.csv` | `llm_label` |
+| `human` | `data/provenance/round-01/benchmark.csv` | `label` |
+| `gpt` | `data/provenance/round-01/outputs/gpt.csv` | `llm_label` |
+| `claude` | `data/provenance/round-01/outputs/claude.csv` | `llm_label` |
 
-The canonical report uses the final 154-row benchmark as its reference. The GPT and Claude files are the historical 158-row outputs; their four rows removed during human adjudication are excluded from the canonical comparison. The original 158-row human labels remain at `results/evaluations/round-01/human.csv`.
+The canonical report uses the final 154-row benchmark as its reference. The GPT and Claude files are the historical 158-row outputs; their four rows removed during human adjudication are excluded from the canonical comparison. The original 158-row human labels remain at `data/provenance/round-01/human.csv`.
 
 ## Method
 
@@ -135,11 +135,12 @@ The result is `data/benchmark/v2-adjudicated.csv`: the human export with 4 rows 
 | --- | --- | --- |
 | [`data/interrater/disagreements.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/disagreements.csv) | yes | One row per non-unanimous sentence, generated |
 | [`data/interrater/adjudication.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/adjudication.csv) | yes | The same rows plus the hand-assigned `final_label`; the only hand-edited file here |
-| `results/evaluations/round-01/analysis/agreement.json` | no | Canonical machine-readable Round 1 report against the 154-row benchmark, including label counts, pairwise metrics, confusion matrices, three-rater agreement, disagreements, scope, and hashes |
-| `results/evaluations/round-01/analysis/historical-158/` | no | Preserved original 158-row agreement report and disagreement table |
+| `data/provenance/round-01/analysis/agreement.json` | yes | Canonical machine-readable Round 1 report against the 154-row benchmark, including label counts, pairwise metrics, confusion matrices, three-rater agreement, disagreements, scope, and hashes |
+| `data/provenance/round-01/analysis/historical-158/` | yes | Preserved original 158-row agreement report and disagreement table |
+| `data/provenance/round-01/` | yes | Complete immutable Round 1 snapshot: prompt, input, benchmark, model outputs, manifest, and analysis |
 | [`data/benchmark/v2-adjudicated.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/benchmark/v2-adjudicated.csv) | yes | The 154-row final benchmark: the human export's own nine columns, with removed rows dropped and adjudicated labels applied |
 
-Committed tables live under `data/`; raw and intermediate artifacts stay under `results/` on the Seagate drive. See the [Data catalogue](results.md) for every file in the project.
+Committed tables and immutable release provenance live under `data/`; raw and intermediate artifacts stay under `results/` on the Seagate drive. See the [Data catalogue](results.md) for every file in the project.
 
 ### Review table columns
 
@@ -171,6 +172,6 @@ Rows are sorted by `minority_rater`, then `minority_label`, then the sentence, s
 ./scripts/uv-seagate run python scripts/interrater_agreement.py
 ```
 
-This legacy command rebuilds the original 158-row adjudication inputs and committed review tables. The canonical 154-row Round 1 agreement report is the preserved generated artifact at `results/evaluations/round-01/analysis/agreement.json`; do not overwrite it with the legacy command. Future prompt rounds use `scripts/evaluate_llm_round.py` and their own numbered directory. Outputs are byte-identical across repeated runs on unchanged inputs. A validation failure prints to standard error, returns exit status 1, and writes nothing.
+This legacy command rebuilds the original 158-row adjudication inputs and committed review tables. The canonical 154-row Round 1 agreement report is the preserved generated artifact at `data/provenance/round-01/analysis/agreement.json`; do not overwrite it with the legacy command. Future prompt rounds use `scripts/evaluate_llm_round.py` and their own numbered directory. Outputs are byte-identical across repeated runs on unchanged inputs. A validation failure prints to standard error, returns exit status 1, and writes nothing.
 
 The code lives in `src/landuse_sentence_relevance/analysis/`, is covered by unit tests under `tests/unit/analysis/` and `tests/unit/test_interrater_script.py`, and is part of the mutation gate described in [QA](qa.md).

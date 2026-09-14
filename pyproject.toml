@@ -57,6 +57,7 @@ only-include = [
     "scripts",
     "docs",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "CITATION.cff",
     "Dockerfile",
