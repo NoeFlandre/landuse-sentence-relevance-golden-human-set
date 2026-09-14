@@ -34,6 +34,8 @@ def test_paused_v3_workflow_is_publicly_documented() -> None:
     assert "osm-polygon-description-tag" in page
     assert "Wikivoyage is excluded" in page
     assert "300" in page
+    assert "paused and not implemented" in page
+    assert "V3 dataset revisions and settings are not in `config.py`" in page
 
 
 def test_pages_workflow_builds_strictly_and_deploys_with_least_privilege() -> None:
