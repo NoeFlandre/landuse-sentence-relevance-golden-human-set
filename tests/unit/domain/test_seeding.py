@@ -101,3 +101,29 @@ def test_seed_plan_matches_the_v3_arithmetic_of_the_released_v2_benchmark() -> N
     }
     assert sum(plan.remaining.values()) == 147
     assert len(plan.reserved_cells) == 154
+
+
+def test_seed_plan_selects_and_orders_by_the_seed() -> None:
+    existing = make_rows(Source.WIKIPEDIA, Label.NO, 6, "wn")
+    quotas = SourceLabelQuotas({(Source.WIKIPEDIA, Label.NO): 3})
+
+    first = plan_seed(existing, quotas, seed="seed-a")
+    second = plan_seed(existing, quotas, seed="seed-b")
+
+    def identifiers(rows: tuple[Annotation, ...]) -> list[str]:
+        return [row.candidate.candidate_id for row in rows]
+
+    assert identifiers(first.reused) != identifiers(second.reused)
+    assert identifiers(first.excluded) != identifiers(second.excluded)
+    assert set(identifiers(first.reused)) != set(identifiers(second.reused))
+
+
+def test_seed_plan_reports_no_shortfall_for_an_exactly_satisfied_pair() -> None:
+    existing = make_rows(Source.WIKIPEDIA, Label.YES, 3, "wy")
+    quotas = SourceLabelQuotas({(Source.WIKIPEDIA, Label.YES): 3})
+
+    plan = plan_seed(existing, quotas, seed=SEED)
+
+    assert plan.remaining == {}
+    assert len(plan.reused) == 3
+    assert plan.excluded == ()

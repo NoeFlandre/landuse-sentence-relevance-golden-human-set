@@ -90,3 +90,109 @@ class Settings:
             language_model_device=env.get("LANGUAGE_MODEL_DEVICE", "auto"),
             hf_token=env.get("HF_TOKEN"),
         )
+
+
+_V3_DERIVED_PATHS = (
+    "benchmark_path",
+    "candidate_pool_path",
+    "candidate_progress_path",
+    "session_path",
+    "model_cache_dir",
+    "hf_auth_dir",
+)
+
+
+def _anchored(path: Path, data_root: Path) -> Path:
+    return path if path.is_absolute() else data_root / path
+
+
+@dataclass(frozen=True, slots=True)
+class V3Settings:
+    """Configuration for the V3 dataset.
+
+    V3 is a separate profile rather than new defaults on :class:`Settings`, so a
+    change here can never alter how the released V2 dataset was built. Every
+    source is pinned to an immutable revision, and every generated path is
+    distinct from its V2 counterpart.
+    """
+
+    data_root: Path = DEFAULT_DATA_ROOT
+    description_dataset_id: str = "NoeFlandre/osm-polygon-description-tag"
+    description_dataset_revision: str = "fec858b679f5ee7e87f0ecfaaa6b7223b2a7f5e2"
+    description_sentences_config: str = "language-v1"
+    description_sentences_split: str = "train"
+    description_geometry_config: str = "default"
+    description_geometry_split: str = "train"
+    wikipedia_dataset_id: str = "NoeFlandre/osm-polygon-wikidata-and-wikipedia"
+    wikipedia_dataset_revision: str = "f48c5aaaec6aecd63ecf5c195565cc2787597f1e"
+    wikipedia_sentences_config: str = "wikipedia_sentences"
+    wikipedia_sentences_split: str = "wikipedia_sentences"
+    website_dataset_id: str = "NoeFlandre/osm-polygon-website-tag"
+    website_dataset_revision: str = "5c8e56a50b5679118a28aef057af002209f80a5e"
+    website_config: str = "default"
+    website_split: str = "polygons"
+    output_dataset_id: str = "NoeFlandre/landuse-sentence-relevance-golden-human-set"
+    output_dataset_split: str = "v3"
+    benchmark_path: Path = Path("data/benchmark/v2-adjudicated.csv")
+    candidate_pool_path: Path = Path("results/candidates/v3/pool.json")
+    candidate_progress_path: Path = Path("results/candidates/v3/progress.json")
+    session_path: Path = Path("results/annotations/sessions/v3.jsonl")
+    model_cache_dir: Path = Path("state/runtime-cache")
+    hf_auth_dir: Path = Path("state/huggingface-auth")
+    h3_resolution: int = 3
+    rows_per_source: int = 100
+    rows_per_source_label: int = 50
+    candidate_cells_per_source: int = 400
+    candidate_capacity_per_stratum: int = 1
+    minimum_cell_distance_km: float = 0.0
+    remote_file_sample_count: int = 386
+    max_rows_per_shard: int = 20_000
+    stream_workers: int = 32
+    description_min_language_score: float = 0.90
+    website_min_language_probability: float = 0.90
+    max_text_characters: int = 400
+    seed: str = f"{PROJECT_NAME}-v3"
+    hf_token: str | None = None
+
+    def __post_init__(self) -> None:
+        """Anchor every generated path to ``data_root``.
+
+        The defaults are relative, so choosing a different root moves the whole
+        tree with it instead of silently writing to the default drive. An
+        absolute path is accepted only when it already lies under the root.
+        """
+
+        for name in _V3_DERIVED_PATHS:
+            resolved = _anchored(getattr(self, name), self.data_root)
+            if not resolved.is_relative_to(self.data_root):
+                raise ValueError(f"{name} must stay under the project data root")
+            object.__setattr__(self, name, resolved)
+
+    @classmethod
+    def from_env(cls, values: Mapping[str, str] | None = None) -> V3Settings:
+        env = os.environ if values is None else values
+        data_root = Path(env.get("PROJECT_DATA_ROOT", str(DEFAULT_DATA_ROOT)))
+        results_root = data_root / "results"
+        state_root = data_root / "state"
+        return cls(
+            data_root=data_root,
+            benchmark_path=Path(
+                env.get("V3_BENCHMARK_PATH", str(data_root / "data/benchmark/v2-adjudicated.csv"))
+            ),
+            candidate_pool_path=Path(
+                env.get("V3_CANDIDATE_POOL_PATH", str(results_root / "candidates/v3/pool.json"))
+            ),
+            candidate_progress_path=Path(
+                env.get("V3_CANDIDATE_PROGRESS_PATH", str(results_root / "candidates/v3/progress.json"))
+            ),
+            session_path=Path(
+                env.get("V3_SESSION_PATH", str(results_root / "annotations/sessions/v3.jsonl"))
+            ),
+            model_cache_dir=Path(env.get("MODEL_CACHE_DIR", str(state_root / "runtime-cache"))),
+            hf_auth_dir=Path(env.get("HF_AUTH_DIR", str(state_root / "huggingface-auth"))),
+            candidate_cells_per_source=int(env.get("V3_CANDIDATE_CELLS_PER_SOURCE", "400")),
+            remote_file_sample_count=int(env.get("V3_REMOTE_FILE_SAMPLE_COUNT", "386")),
+            max_rows_per_shard=int(env.get("V3_MAX_ROWS_PER_SHARD", "20000")),
+            stream_workers=int(env.get("STREAM_WORKERS", "32")),
+            hf_token=env.get("HF_TOKEN"),
+        )

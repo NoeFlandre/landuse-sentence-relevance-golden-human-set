@@ -218,3 +218,20 @@ def test_next_unannotated_is_stable_and_skips_seen_ids() -> None:
     assert first.candidate_id == "wiki"
     assert second.candidate_id == "web"
     assert finalized.next_unannotated({"web", "wiki"}) is None
+
+
+def test_pool_finalization_honours_a_three_source_profile() -> None:
+    triple = (Source.WIKIPEDIA, Source.WEBSITE, Source.DESCRIPTION)
+    pool = BoundedCandidatePool(capacity_per_stratum=1, seed="seed", sources=triple)
+    for source in triple:
+        for cell in ("a", "b"):
+            pool.add(make_candidate(f"{source.value}-{cell}", source, f"{source.value}-{cell}"))
+
+    finalized = pool.finalize(
+        target_cells_per_source=1,
+        center_of_cell=lambda cell: (0.0, float(len(cell))),
+    )
+
+    assert len(finalized.candidates) == 3
+    assert {candidate.source for candidate in finalized.candidates} == set(triple)
+    assert len(set(finalized.cells)) == 3

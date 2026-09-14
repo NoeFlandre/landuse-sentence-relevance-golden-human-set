@@ -192,3 +192,10 @@ def test_committed_adjudicated_benchmark_is_the_complete_final_export() -> None:
     assert Counter(row["label"] for row in rows) == {"yes": 80, "no": 74}
     assert Counter(row["source"] for row in rows) == {"wikipedia": 100, "website": 54}
     assert len({row["sentence"] for row in rows}) == 154
+
+
+def test_mutation_gate_copies_the_committed_data_the_guards_read() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    assert "data" in configuration["tool"]["mutmut"]["also_copy"]

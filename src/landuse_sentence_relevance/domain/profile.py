@@ -55,16 +55,11 @@ class SourceLabelQuotas:
         return sum(self.counts.values())
 
 
-def balanced_quotas(
-    sources: Sequence[Source],
-    rows_per_source_label: int,
-    h3_resolution: int = 3,
-) -> SourceLabelQuotas:
+def balanced_quotas(sources: Sequence[Source], rows_per_source_label: int) -> SourceLabelQuotas:
     """Require the same number of rows for every source and label combination."""
 
     return SourceLabelQuotas(
-        {(source, label): rows_per_source_label for source in sources for label in _LABEL_ORDER},
-        h3_resolution=h3_resolution,
+        {(source, label): rows_per_source_label for source in sources for label in _LABEL_ORDER}
     )
 
 

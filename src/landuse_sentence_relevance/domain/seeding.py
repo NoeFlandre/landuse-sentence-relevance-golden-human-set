@@ -30,7 +30,15 @@ def _group(existing: tuple[Annotation, ...]) -> dict[QuotaKey, list[Annotation]]
 
 
 def _ordered(rows: list[Annotation], seed: str) -> list[Annotation]:
+    """Rank rows so that which ones a quota keeps depends only on the seed."""
+
     return sorted(rows, key=lambda row: (_rank(seed, row.candidate.candidate_id), row.candidate.candidate_id))
+
+
+def _by_candidate_id(rows: list[Annotation]) -> tuple[Annotation, ...]:
+    """Order an already chosen set stably, so the plan does not depend on input order."""
+
+    return tuple(sorted(rows, key=lambda row: row.candidate.candidate_id))
 
 
 def plan_seed(
@@ -56,8 +64,8 @@ def plan_seed(
         excluded.extend(ordered[keep:])
     remaining = _remaining(quotas, grouped)
     return SeedPlan(
-        reused=tuple(_ordered(reused, seed)),
-        excluded=tuple(_ordered(excluded, seed)),
+        reused=_by_candidate_id(reused),
+        excluded=_by_candidate_id(excluded),
         remaining=remaining,
         reserved_cells=frozenset(row.candidate.h3_cell for row in rows),
     )
@@ -74,19 +82,3 @@ def _remaining(
             if missing > 0:
                 shortfall[(source, label)] = missing
     return shortfall
-
-
-def remaining_total(plan: SeedPlan) -> int:
-    """Return how many rows still need a human label."""
-
-    return sum(plan.remaining.values())
-
-
-def seeded_counts(plan: SeedPlan) -> dict[QuotaKey, int]:
-    """Count the reused rows for each source and label."""
-
-    counts: dict[QuotaKey, int] = {}
-    for row in plan.reused:
-        key = (row.candidate.source, row.label)
-        counts[key] = counts.get(key, 0) + 1
-    return counts
