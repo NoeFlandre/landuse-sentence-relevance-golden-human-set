@@ -25,6 +25,7 @@ nav:
   - LLM labeling: llm-labeling.md
   - LLM evaluation rounds: llm-evaluation-rounds.md
   - Interrater agreement: interrater-agreement.md
+  - V3 workflow: v3.md
   - Engineering:
       - Versioning: versioning.md
       - QA: qa.md
