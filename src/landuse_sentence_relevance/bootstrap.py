@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from landuse_sentence_relevance.config import Settings, V3Settings
 from landuse_sentence_relevance.domain.models import Candidate, Source
+from landuse_sentence_relevance.domain.profile import V3_QUOTAS, V3_SOURCES, SourceLabelQuotas
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
+from landuse_sentence_relevance.domain.seeding import SeedPlan
 from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
+from landuse_sentence_relevance.domain.v3_preflight import (
+    V3PreflightError,
+    V3PreflightReport,
+    preflight_v3_candidate_pool,
+)
 from landuse_sentence_relevance.models.language_identifier import CommonLinguaIdentifier
 from landuse_sentence_relevance.models.sentence_splitter import SaTSentenceSplitter
 from landuse_sentence_relevance.sources.huggingface import (
@@ -31,10 +40,12 @@ from landuse_sentence_relevance.storage.candidate_pool import CandidatePoolStore
 from landuse_sentence_relevance.storage.candidate_progress import CandidateProgressStore
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
+from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
 from landuse_sentence_relevance.workflow import AnnotationWorkflow
 
 logger = logging.getLogger(__name__)
 _PROGRESS_CHECKPOINT_INTERVAL = 32
+_V3_PROGRESS_CHECKPOINT_INTERVAL = 32
 
 _WIKIPEDIA_COLUMNS = {
     "polygons": ("polygon_id", "has_english_wikipedia", "lat", "lon", "name", "region"),
@@ -136,6 +147,15 @@ class V3StreamSpec:
     split: str
     directory: str
     columns: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class V3CandidatePoolResult:
+    """The finalized oversized pool and the evidence that it is annotation-ready."""
+
+    pool: FinalizedCandidatePool
+    preflight: V3PreflightReport
+    seed_plan: SeedPlan
 
 
 def v3_stream_specs(settings: V3Settings) -> tuple[V3StreamSpec, ...]:
@@ -446,6 +466,203 @@ def build_v3_source_adapters(
     )
 
 
+def build_v3_candidate_pool(
+    settings: V3Settings,
+    *,
+    quotas: SourceLabelQuotas = V3_QUOTAS,
+    adapters: V3SourceAdapters | None = None,
+    cell_for_location: Callable[[float, float], str] | None = None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None = None,
+    loader: HuggingFaceDatasetLoader | None = None,
+) -> V3CandidatePoolResult:
+    """Build or reuse the bounded, globally unique V3 candidate reservoir."""
+
+    seed_plan = load_v2_seed_plan(settings.benchmark_path, quotas=quotas, seed=settings.seed)
+    metadata = _v3_candidate_pool_metadata(settings, quotas)
+    pool_store = CandidatePoolStore(settings.candidate_pool_path)
+    cached = pool_store.load(metadata)
+    if cached is not None:
+        return _validated_v3_result(cached, seed_plan, quotas, settings.candidate_cells_per_source)
+
+    progress_store = CandidateProgressStore(settings.candidate_progress_path)
+    pool = _load_v3_candidate_pool(settings, progress_store, metadata, seed_plan.reserved_cells)
+    resumed = _try_finalize_v3(pool, settings, seed_plan, quotas, center_of_cell)
+    if resumed is not None:
+        pool_store.save(resumed.pool, metadata)
+        return resumed
+
+    cell_for_location, center_of_cell = _resolve_v3_geometry(settings, cell_for_location, center_of_cell)
+    source_adapters = (
+        adapters
+        if adapters is not None
+        else build_v3_source_adapters(
+            settings,
+            cell_for_location=cell_for_location,
+            loader=loader,
+        )
+    )
+    _collect_v3_sources(source_adapters, pool, progress_store, metadata, seed_plan.reserved_cells)
+    finalized = _finalize_v3_pool(pool, settings, center_of_cell)
+    result = _validated_v3_result(finalized, seed_plan, quotas, settings.candidate_cells_per_source)
+    pool_store.save(finalized, metadata)
+    return result
+
+
+def _resolve_v3_geometry(
+    settings: V3Settings,
+    cell_for_location: Callable[[float, float], str] | None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None,
+) -> tuple[Callable[[float, float], str], Callable[[str], tuple[float, float]]]:
+    if cell_for_location is not None and center_of_cell is not None:
+        return cell_for_location, center_of_cell
+    default_cell_for_location, default_center_of_cell = _h3_geometry(settings)
+    return cell_for_location or default_cell_for_location, center_of_cell or default_center_of_cell
+
+
+def _load_v3_candidate_pool(
+    settings: V3Settings,
+    progress_store: CandidateProgressStore,
+    metadata: Mapping[str, Any],
+    reserved_cells: frozenset[str],
+) -> BoundedCandidatePool:
+    pool = BoundedCandidatePool(
+        capacity_per_stratum=settings.candidate_capacity_per_stratum,
+        seed=settings.seed,
+        sources=V3_SOURCES,
+    )
+    candidates = progress_store.load(metadata)
+    if candidates is None:
+        return pool
+    for candidate in candidates:
+        _add_v3_candidate(pool, candidate, reserved_cells)
+    logger.info(
+        "Resuming V3 candidate progress from %s (%d compact candidates)",
+        settings.candidate_progress_path,
+        len(candidates),
+    )
+    return pool
+
+
+def _collect_v3_sources(
+    adapters: V3SourceAdapters,
+    pool: BoundedCandidatePool,
+    progress_store: CandidateProgressStore,
+    metadata: Mapping[str, Any],
+    reserved_cells: frozenset[str],
+) -> None:
+    source_streams = {
+        Source.WIKIPEDIA: adapters.wikipedia.iter_candidates(),
+        Source.WEBSITE: adapters.website.iter_candidates(),
+        Source.DESCRIPTION: adapters.description.iter_candidates(),
+    }
+    for source in V3_SOURCES:
+        _collect_v3_source(
+            source_streams[source],
+            source,
+            pool,
+            progress_store,
+            metadata,
+            reserved_cells,
+        )
+
+
+def _collect_v3_source(
+    candidates: Iterable[Candidate],
+    source: Source,
+    pool: BoundedCandidatePool,
+    progress_store: CandidateProgressStore,
+    metadata: Mapping[str, Any],
+    reserved_cells: frozenset[str],
+) -> int:
+    collected = 0
+    try:
+        for candidate in candidates:
+            if candidate.source is not source:
+                raise ValueError(f"V3 {source.value} adapter yielded {candidate.source.value} candidate")
+            if candidate.h3_cell in reserved_cells:
+                continue
+            pool.add(candidate)
+            collected += 1
+            if collected % _V3_PROGRESS_CHECKPOINT_INTERVAL == 0:
+                progress_store.save(pool.snapshot(), metadata)
+    finally:
+        progress_store.save(pool.snapshot(), metadata)
+    return collected
+
+
+def _add_v3_candidate(
+    pool: BoundedCandidatePool,
+    candidate: Candidate,
+    reserved_cells: frozenset[str],
+) -> None:
+    if candidate.source not in V3_SOURCES:
+        raise ValueError(f"V3 checkpoint contains unexpected {candidate.source.value} candidate")
+    if candidate.h3_cell not in reserved_cells:
+        pool.add(candidate)
+
+
+def _try_finalize_v3(
+    pool: BoundedCandidatePool,
+    settings: V3Settings,
+    seed_plan: SeedPlan,
+    quotas: SourceLabelQuotas,
+    center_of_cell: Callable[[str], tuple[float, float]] | None,
+) -> V3CandidatePoolResult | None:
+    if center_of_cell is None:
+        return None
+    try:
+        finalized = pool.finalize(
+            target_cells_per_source=settings.candidate_cells_per_source,
+            center_of_cell=center_of_cell,
+            minimum_distance_km=settings.minimum_cell_distance_km,
+        )
+    except ValueError:
+        return None
+    return _validated_v3_result(finalized, seed_plan, quotas, settings.candidate_cells_per_source)
+
+
+def _finalize_v3_pool(
+    pool: BoundedCandidatePool,
+    settings: V3Settings,
+    center_of_cell: Callable[[str], tuple[float, float]],
+) -> FinalizedCandidatePool:
+    try:
+        return pool.finalize(
+            target_cells_per_source=settings.candidate_cells_per_source,
+            center_of_cell=center_of_cell,
+            minimum_distance_km=settings.minimum_cell_distance_km,
+        )
+    except ValueError as error:
+        available = _v3_available_cells(pool)
+        raise V3PreflightError(
+            f"V3 preflight cannot select {settings.candidate_cells_per_source} disjoint cells per source; "
+            f"available={available}"
+        ) from error
+
+
+def _v3_available_cells(pool: BoundedCandidatePool) -> dict[str, int]:
+    snapshot = pool.snapshot()
+    return {
+        source.value: len({candidate.h3_cell for candidate in snapshot if candidate.source is source})
+        for source in V3_SOURCES
+    }
+
+
+def _validated_v3_result(
+    pool: FinalizedCandidatePool,
+    seed_plan: SeedPlan,
+    quotas: SourceLabelQuotas,
+    candidate_cells_per_source: int,
+) -> V3CandidatePoolResult:
+    report = preflight_v3_candidate_pool(
+        pool,
+        seed_plan,
+        quotas=quotas,
+        candidate_cells_per_source=candidate_cells_per_source,
+    )
+    return V3CandidatePoolResult(pool=pool, preflight=report, seed_plan=seed_plan)
+
+
 def _wikipedia_row_loaders(
     settings: Settings,
     remote_files: Mapping[str, tuple[str, ...]],
@@ -752,3 +969,53 @@ def _candidate_pool_metadata(settings: Settings) -> dict[str, Any]:
             "remote_file_sample_count": settings.remote_file_sample_count,
         },
     }
+
+
+def _v3_candidate_pool_metadata(
+    settings: V3Settings,
+    quotas: SourceLabelQuotas,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "pool_kind": "v3-oversized",
+        "seed": settings.seed,
+        "h3_resolution": settings.h3_resolution,
+        "benchmark": {
+            "path": str(settings.benchmark_path),
+            "sha256": _sha256_file(settings.benchmark_path),
+        },
+        "quotas": {
+            source.value: {label.value: quotas.required(source, label) for label in quotas.labels}
+            for source in quotas.sources
+        },
+        "streams": [
+            {
+                "name": spec.name,
+                "dataset_id": spec.dataset_id,
+                "revision": spec.revision,
+                "config": spec.config,
+                "split": spec.split,
+                "columns": list(spec.columns),
+            }
+            for spec in v3_stream_specs(settings)
+        ],
+        "sampling": {
+            "candidate_cells_per_source": settings.candidate_cells_per_source,
+            "candidate_capacity_per_stratum": settings.candidate_capacity_per_stratum,
+            "minimum_cell_distance_km": settings.minimum_cell_distance_km,
+            "max_rows_per_shard": settings.max_rows_per_shard,
+            "max_join_entries": settings.max_join_entries,
+            "description_min_language_score": settings.description_min_language_score,
+            "website_min_language_probability": settings.website_min_language_probability,
+            "max_text_characters": settings.max_text_characters,
+            "remote_file_sample_count": settings.remote_file_sample_count,
+        },
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()

@@ -27,4 +27,4 @@ After the public final upload succeeds, that exact cache is deleted automaticall
 
 The final upload is automatic once all quotas are satisfied. See [annotation](annotation.md) for the contract and [QA](qa.md) for the deterministic checks.
 
-A follow-up 300-row set is designed but paused and not implemented; its planned sources, quotas, and storage are described in [V3 workflow](v3.md).
+A follow-up 300-row set is designed, and its oversized candidate pool and geographic preflight are shipped; annotation remains paused. Its sources, quotas, storage, and runbook are described in [V3 workflow](v3.md).
