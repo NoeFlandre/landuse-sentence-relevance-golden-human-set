@@ -6,6 +6,7 @@ import pytest
 import landuse_sentence_relevance.domain.stratification as stratification
 from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.stratification import (
+    DEFAULT_SOURCES,
     _append_next_source_cell,
     _cached_distant_cells,
     _conflict_counts,
@@ -321,7 +322,7 @@ def test_append_next_source_cell_passes_distance_cache_to_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
-    selected_by_source = {source: [] for source in Source}
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
     selected_cells: list[str] = []
     centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
     nearest_distances = {"wiki": 100.0}
@@ -359,7 +360,7 @@ def test_append_next_source_cell_passes_all_selection_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
-    selected_by_source = {source: [] for source in Source}
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
     selected_cells: list[str] = []
     centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
     nearest_distances = {"wiki": 100.0}
@@ -461,7 +462,7 @@ def test_append_next_source_cell_passes_centers_to_distance_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     available = {Source.WIKIPEDIA: {"wiki"}, Source.WEBSITE: {"web"}}
-    selected_by_source = {source: [] for source in Source}
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
     selected_cells: list[str] = []
     centers = {"wiki": (0.0, 0.0), "web": (0.0, 10.0)}
     received: dict[str, object] = {}
@@ -576,7 +577,7 @@ def test_feasible_source_cells_reserves_cells_for_the_other_source() -> None:
     assert _feasible_source_cells(
         Source.WIKIPEDIA,
         available,
-        {source: [] for source in Source},
+        {source: [] for source in DEFAULT_SOURCES},
         [],
         target_count=1,
     ) == ["wiki-a", "wiki-b"]
@@ -589,7 +590,7 @@ def test_feasible_source_cells_rejects_an_insufficient_current_source() -> None:
         _feasible_source_cells(
             Source.WIKIPEDIA,
             available,
-            {source: [] for source in Source},
+            {source: [] for source in DEFAULT_SOURCES},
             [],
             target_count=2,
         )
@@ -604,7 +605,7 @@ def test_feasible_source_cells_rejects_an_insufficient_other_source() -> None:
         _feasible_source_cells(
             Source.WIKIPEDIA,
             available,
-            {source: [] for source in Source},
+            {source: [] for source in DEFAULT_SOURCES},
             [],
             target_count=2,
         )
@@ -875,3 +876,66 @@ def test_distance_to_selection_returns_distance_and_seed_tiebreaker() -> None:
 def test_common_cell_selection_requires_a_positive_target() -> None:
     with pytest.raises(ValueError, match=r"^target_count must be positive$"):
         select_common_cells({}, target_count=0, center_of_cell=lambda cell: (0.0, 0.0), seed="test")
+
+
+V3_SOURCE_TRIPLE = (Source.WIKIPEDIA, Source.WEBSITE, Source.DESCRIPTION)
+
+
+def test_distinct_source_cell_selection_serves_a_three_source_profile() -> None:
+    eligible = {
+        Source.WIKIPEDIA: {"a", "b", "c", "d"},
+        Source.WEBSITE: {"a", "b", "c", "d"},
+        Source.DESCRIPTION: {"a", "b", "c", "d"},
+    }
+
+    selected = select_distinct_source_cells(
+        eligible,
+        target_count_per_source=1,
+        center_of_cell=lambda cell: (0.0, float(ord(cell[0]))),
+        seed="seed",
+        sources=V3_SOURCE_TRIPLE,
+    )
+
+    assert set(selected) == set(V3_SOURCE_TRIPLE)
+    chosen = [cell for cells in selected.values() for cell in cells]
+    assert len(chosen) == 3
+    assert len(set(chosen)) == 3
+
+
+def test_distinct_source_cell_selection_reserves_cells_for_every_declared_source() -> None:
+    eligible = {
+        Source.WIKIPEDIA: {"a", "b", "c"},
+        Source.WEBSITE: {"a"},
+        Source.DESCRIPTION: {"b"},
+    }
+
+    selected = select_distinct_source_cells(
+        eligible,
+        target_count_per_source=1,
+        center_of_cell=lambda cell: (0.0, float(ord(cell[0]))),
+        seed="seed",
+        sources=V3_SOURCE_TRIPLE,
+    )
+
+    assert selected[Source.WEBSITE] == ("a",)
+    assert selected[Source.DESCRIPTION] == ("b",)
+    assert selected[Source.WIKIPEDIA] == ("c",)
+
+
+def test_distinct_source_cell_selection_ignores_sources_it_was_not_given() -> None:
+    eligible = {
+        Source.WIKIPEDIA: {"a", "b"},
+        Source.WEBSITE: {"a", "b"},
+        Source.DESCRIPTION: {"a", "b"},
+    }
+
+    selected = select_distinct_source_cells(
+        eligible,
+        target_count_per_source=1,
+        center_of_cell=lambda cell: (0.0, float(ord(cell[0]))),
+        seed="seed",
+        sources=(Source.DESCRIPTION,),
+    )
+
+    assert set(selected) == {Source.DESCRIPTION}
+    assert len(selected[Source.DESCRIPTION]) == 1

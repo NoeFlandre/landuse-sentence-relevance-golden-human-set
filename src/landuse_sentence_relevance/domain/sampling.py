@@ -5,7 +5,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
-from landuse_sentence_relevance.domain.stratification import select_distinct_source_cells
+from landuse_sentence_relevance.domain.stratification import (
+    DEFAULT_SOURCES,
+    select_distinct_source_cells,
+)
 
 
 def _rank(seed: str, candidate_id: str) -> str:
@@ -50,11 +53,17 @@ def _require_matching_candidate_cells(candidates: tuple[Candidate, ...], cells: 
 class BoundedCandidatePool:
     """Keep only a deterministic bounded number of candidates per source and H3 cell."""
 
-    def __init__(self, capacity_per_stratum: int, seed: str) -> None:
+    def __init__(
+        self,
+        capacity_per_stratum: int,
+        seed: str,
+        sources: tuple[Source, ...] = DEFAULT_SOURCES,
+    ) -> None:
         if capacity_per_stratum < 1:
             raise ValueError("capacity_per_stratum must be positive")
         self._capacity = capacity_per_stratum
         self._seed = seed
+        self._sources = sources
         self._buckets: dict[tuple[Source, str], dict[str, Candidate]] = {}
 
     def add(self, candidate: Candidate) -> None:
@@ -77,36 +86,40 @@ class BoundedCandidatePool:
         center_of_cell: Callable[[str], tuple[float, float]],
         minimum_distance_km: float = 0.0,
     ) -> FinalizedCandidatePool:
-        eligible_cells = _eligible_cells(self._buckets)
+        eligible_cells = _eligible_cells(self._buckets, self._sources)
         selected_by_source = select_distinct_source_cells(
             eligible_cells,
             target_count_per_source=target_cells_per_source,
             center_of_cell=center_of_cell,
             seed=self._seed,
             minimum_distance_km=minimum_distance_km,
+            sources=self._sources,
         )
-        cells = tuple(cell for source in Source for cell in selected_by_source[source])
+        cells = tuple(cell for source in self._sources for cell in selected_by_source[source])
         return FinalizedCandidatePool(
-            candidates=_selected_candidates(self._buckets, selected_by_source),
+            candidates=_selected_candidates(self._buckets, selected_by_source, self._sources),
             cells=cells,
         )
 
 
 def _eligible_cells(
     buckets: dict[tuple[Source, str], dict[str, Candidate]],
+    sources: tuple[Source, ...],
 ) -> dict[Source, set[str]]:
-    eligible = {source: set() for source in Source}
+    eligible: dict[Source, set[str]] = {source: set() for source in sources}
     for source, cell in buckets:
-        eligible[source].add(cell)
+        if source in eligible:
+            eligible[source].add(cell)
     return eligible
 
 
 def _selected_candidates(
     buckets: dict[tuple[Source, str], dict[str, Candidate]],
     cells_by_source: dict[Source, tuple[str, ...]],
+    sources: tuple[Source, ...],
 ) -> tuple[Candidate, ...]:
     return tuple(
         min(buckets[(source, cell)].values(), key=lambda row: row.candidate_id)
-        for source in Source
+        for source in sources
         for cell in cells_by_source[source]
     )

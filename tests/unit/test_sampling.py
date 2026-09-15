@@ -5,6 +5,7 @@ from landuse_sentence_relevance.domain.sampling import (
     BoundedCandidatePool,
     FinalizedCandidatePool,
 )
+from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
 
 
 def make_candidate(candidate_id: str, source: Source, cell: str) -> Candidate:
@@ -88,7 +89,7 @@ def test_pool_finalization_keeps_one_candidate_per_disjoint_source_cell() -> Non
     assert len(finalized.candidates) == 4
     assert len({candidate.h3_cell for candidate in finalized.candidates}) == 4
     assert len(finalized.cells) == 4
-    assert {candidate.source for candidate in finalized.candidates} == set(Source)
+    assert {candidate.source for candidate in finalized.candidates} == set(DEFAULT_SOURCES)
 
 
 def test_finalized_pool_rejects_more_than_one_sentence_per_h3_cell() -> None:
@@ -131,7 +132,7 @@ def test_pool_finalization_uses_center_function_and_seed() -> None:
     first = BoundedCandidatePool(capacity_per_stratum=1, seed="test")
     second = BoundedCandidatePool(capacity_per_stratum=1, seed="other")
     for cell in centers:
-        for source in Source:
+        for source in DEFAULT_SOURCES:
             candidate = make_candidate(f"{source.value}-{cell}", source, cell)
             first.add(candidate)
             second.add(candidate)
@@ -157,14 +158,14 @@ def test_snapshot_orders_cells_before_sources() -> None:
 @pytest.mark.parametrize("candidate_ids", [("z", "a", "m"), ("a", "m", "z")])
 def test_finalization_selects_smallest_candidate_id_per_cell(candidate_ids) -> None:
     pool = BoundedCandidatePool(capacity_per_stratum=3, seed="test")
-    for source in Source:
+    for source in DEFAULT_SOURCES:
         for candidate_id in candidate_ids:
             pool.add(make_candidate(f"{source}-{candidate_id}", source, source.value))
 
     finalized = pool.finalize(1, lambda cell: (0.0, 0.0))
 
     assert finalized.candidates == tuple(
-        make_candidate(f"{source}-a", source, source.value) for source in Source
+        make_candidate(f"{source}-a", source, source.value) for source in DEFAULT_SOURCES
     )
 
 
@@ -217,3 +218,20 @@ def test_next_unannotated_is_stable_and_skips_seen_ids() -> None:
     assert first.candidate_id == "wiki"
     assert second.candidate_id == "web"
     assert finalized.next_unannotated({"web", "wiki"}) is None
+
+
+def test_pool_finalization_honours_a_three_source_profile() -> None:
+    triple = (Source.WIKIPEDIA, Source.WEBSITE, Source.DESCRIPTION)
+    pool = BoundedCandidatePool(capacity_per_stratum=1, seed="seed", sources=triple)
+    for source in triple:
+        for cell in ("a", "b"):
+            pool.add(make_candidate(f"{source.value}-{cell}", source, f"{source.value}-{cell}"))
+
+    finalized = pool.finalize(
+        target_cells_per_source=1,
+        center_of_cell=lambda cell: (0.0, float(len(cell))),
+    )
+
+    assert len(finalized.candidates) == 3
+    assert {candidate.source for candidate in finalized.candidates} == set(triple)
+    assert len(set(finalized.cells)) == 3

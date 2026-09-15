@@ -123,7 +123,7 @@ source_paths = [
     "src/landuse_sentence_relevance/sources/website_discovery.py",
     "src/landuse_sentence_relevance/sources/website_candidates.py",
 ]
-also_copy = ["src/landuse_sentence_relevance", "scripts"]
+also_copy = ["src/landuse_sentence_relevance", "scripts", "data"]
 on_dependency_change = "rerun"
 cache_invalidation_exclude = [
     "mkdocs.yml",

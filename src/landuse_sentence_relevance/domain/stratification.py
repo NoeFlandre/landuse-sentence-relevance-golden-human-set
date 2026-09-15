@@ -7,6 +7,8 @@ from itertools import product
 
 from landuse_sentence_relevance.domain.models import Source
 
+DEFAULT_SOURCES: tuple[Source, ...] = (Source.WIKIPEDIA, Source.WEBSITE)
+
 _EARTH_RADIUS_KM = 6371.0088
 _UNIT_CUBE_NEIGHBOR_OFFSETS = tuple(product((-1, 0, 1), repeat=3))
 
@@ -164,14 +166,15 @@ def select_distinct_source_cells(
     center_of_cell: Callable[[str], tuple[float, float]],
     seed: str,
     minimum_distance_km: float = 0.0,
+    sources: tuple[Source, ...] = DEFAULT_SOURCES,
 ) -> dict[Source, tuple[str, ...]]:
-    """Choose disjoint, globally spread cells for each source."""
+    """Choose disjoint, globally spread cells for each of ``sources``."""
     _require_target_count(target_count_per_source)
     _require_nonnegative_distance(minimum_distance_km)
-    available = _available_source_cells(eligible_cells)
+    available = _available_source_cells(eligible_cells, sources)
     centers = _cell_centers(available, center_of_cell)
     conflict_counts = _conflict_counts(centers, minimum_distance_km) if minimum_distance_km > 0 else None
-    selected_by_source = _empty_source_selection()
+    selected_by_source = _empty_source_selection(sources)
     selected_cells: list[str] = []
     nearest_distances = {} if minimum_distance_km > 0 else None
     for _ in range(target_count_per_source):
@@ -185,12 +188,16 @@ def select_distinct_source_cells(
             seed,
             nearest_distances,
             conflict_counts,
+            sources,
         )
     return _freeze_source_selection(selected_by_source)
 
 
-def _available_source_cells(eligible_cells: Mapping[Source, Iterable[str]]) -> dict[Source, set[str]]:
-    return {source: set(eligible_cells[source]) for source in Source}
+def _available_source_cells(
+    eligible_cells: Mapping[Source, Iterable[str]],
+    sources: tuple[Source, ...],
+) -> dict[Source, set[str]]:
+    return {source: set(eligible_cells[source]) for source in sources}
 
 
 def _cell_centers(
@@ -203,8 +210,8 @@ def _cell_centers(
     return {cell: center_of_cell(cell) for cell in cells}
 
 
-def _empty_source_selection() -> dict[Source, list[str]]:
-    return {source: [] for source in Source}
+def _empty_source_selection(sources: tuple[Source, ...]) -> dict[Source, list[str]]:
+    return {source: [] for source in sources}
 
 
 def _freeze_source_selection(selected: Mapping[Source, list[str]]) -> dict[Source, tuple[str, ...]]:
@@ -226,8 +233,9 @@ def _append_selection_round(
     seed: str,
     nearest_distances: dict[str, float] | None = None,
     conflict_counts: Mapping[str, int] | None = None,
+    sources: tuple[Source, ...] = DEFAULT_SOURCES,
 ) -> None:
-    for source in Source:
+    for source in sources:
         _append_next_source_cell(
             source,
             available,
@@ -239,6 +247,7 @@ def _append_selection_round(
             seed,
             nearest_distances,
             conflict_counts,
+            sources,
         )
 
 
@@ -253,6 +262,7 @@ def _append_next_source_cell(
     seed: str,
     nearest_distances: dict[str, float] | None = None,
     conflict_counts: Mapping[str, int] | None = None,
+    sources: tuple[Source, ...] = DEFAULT_SOURCES,
 ) -> None:
     candidates = _required_source_candidates(
         source,
@@ -260,6 +270,7 @@ def _append_next_source_cell(
         selected_by_source,
         selected_cells,
         target_count,
+        sources,
     )
     distant = _required_distant_candidates(
         candidates,
@@ -280,6 +291,7 @@ def _required_source_candidates(
     selected_by_source: Mapping[Source, list[str]],
     selected_cells: list[str],
     target_count: int,
+    sources: tuple[Source, ...] = DEFAULT_SOURCES,
 ) -> list[str]:
     candidates = _feasible_source_cells(
         source,
@@ -287,6 +299,7 @@ def _required_source_candidates(
         selected_by_source,
         selected_cells,
         target_count,
+        sources,
     )
     if not candidates:
         raise ValueError("need enough disjoint source cells")
@@ -394,6 +407,7 @@ def _feasible_source_cells(
     selected_by_source: Mapping[Source, list[str]],
     selected_cells: list[str],
     target_count: int,
+    sources: tuple[Source, ...] = DEFAULT_SOURCES,
 ) -> list[str]:
     candidates = sorted(available[source] - set(selected_cells))
     feasible: list[str] = []
@@ -402,7 +416,7 @@ def _feasible_source_cells(
         if all(
             len(available[other] - used)
             >= target_count - len(selected_by_source[other]) - (1 if other is source else 0)
-            for other in Source
+            for other in sources
         ):
             feasible.append(candidate)
     return feasible

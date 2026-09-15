@@ -4,6 +4,8 @@ import tomllib
 from collections import Counter
 from pathlib import Path
 
+from landuse_sentence_relevance.config import V3Settings
+
 ROOT = Path(__file__).parents[2]
 
 
@@ -35,7 +37,29 @@ def test_paused_v3_workflow_is_publicly_documented() -> None:
     assert "Wikivoyage is excluded" in page
     assert "300" in page
     assert "paused and not implemented" in page
-    assert "V3 dataset revisions and settings are not in `config.py`" in page
+
+
+def test_v3_page_does_not_deny_the_settings_profile_the_repository_ships() -> None:
+    page = (ROOT / "docs/v3.md").read_text(encoding="utf-8")
+
+    assert "V3Settings" in page
+    assert "V3 dataset revisions and settings are not in `config.py`" not in page
+    assert "No V3 code, V3 settings, or V3 benchmark exists" not in page
+    assert "no V3 setting in `config.py`" not in page
+
+
+def test_v3_page_pins_the_same_revisions_and_website_records_as_the_settings() -> None:
+    page = (ROOT / "docs/v3.md").read_text(encoding="utf-8")
+    settings = V3Settings()
+
+    for revision in (
+        settings.description_dataset_revision,
+        settings.wikipedia_dataset_revision,
+        settings.website_dataset_revision,
+    ):
+        assert revision in page
+    assert f"`{settings.website_config}`/`{settings.website_split}`" in page
+    assert "`website_sentences` and `contact_website_sentences`" not in page
 
 
 def test_pages_workflow_builds_strictly_and_deploys_with_least_privilege() -> None:
@@ -192,3 +216,10 @@ def test_committed_adjudicated_benchmark_is_the_complete_final_export() -> None:
     assert Counter(row["label"] for row in rows) == {"yes": 80, "no": 74}
     assert Counter(row["source"] for row in rows) == {"wikipedia": 100, "website": 54}
     assert len({row["sentence"] for row in rows}) == 154
+
+
+def test_mutation_gate_copies_the_committed_data_the_guards_read() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        configuration = tomllib.load(project_file)
+
+    assert "data" in configuration["tool"]["mutmut"]["also_copy"]
