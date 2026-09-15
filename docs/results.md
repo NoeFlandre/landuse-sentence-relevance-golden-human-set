@@ -62,6 +62,8 @@ Drive-only. Historical or intermediate; none of these is a benchmark.
 | `results/candidates/v2/pool.json` | 512 reusable V2 candidates, 256 per source |
 | `results/candidates/v2/website-only-pool.json` | Website-only V2 candidate bank |
 | `results/candidates/v2/progress.json` | Resumable candidate-building checkpoint |
+| `results/candidates/v3/pool.json` | Finalized V3 oversized reservoir: at least 400 fresh globally unique H3 resolution-3 cells per source, plus compact metadata |
+| `results/candidates/v3/progress.json` | Atomic resumable V3 candidate-building checkpoint, containing compact candidate metadata only |
 | `results/candidates/v2/archive/failures/` | Preserved checkpoints from the failed builds described in [Data sources](data-sources.md) |
 | `results/maps/{v1,v2}/` | Static world/H3 distribution plots |
 

@@ -28,7 +28,7 @@ def test_llm_evaluation_round_workflow_is_publicly_documented() -> None:
     assert (ROOT / "docs/llm-evaluation-rounds.md").is_file()
 
 
-def test_paused_v3_workflow_is_publicly_documented() -> None:
+def test_v3_candidate_pool_and_paused_annotation_workflow_are_publicly_documented() -> None:
     configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     page = (ROOT / "docs/v3.md").read_text(encoding="utf-8")
 
@@ -36,7 +36,8 @@ def test_paused_v3_workflow_is_publicly_documented() -> None:
     assert "osm-polygon-description-tag" in page
     assert "Wikivoyage is excluded" in page
     assert "300" in page
-    assert "paused and not implemented" in page
+    assert "candidate pool shipped" in page
+    assert "annotation remains paused" in page
 
 
 def test_v3_page_does_not_deny_the_settings_profile_the_repository_ships() -> None:
@@ -48,14 +49,16 @@ def test_v3_page_does_not_deny_the_settings_profile_the_repository_ships() -> No
     assert "no V3 setting in `config.py`" not in page
 
 
-def test_v3_page_documents_the_streaming_adapters_while_the_workflow_stays_paused() -> None:
+def test_v3_page_documents_the_streaming_adapters_and_candidate_pool() -> None:
     page = " ".join((ROOT / "docs/v3.md").read_text(encoding="utf-8").casefold().split())
 
-    assert "streaming adapters are implemented" in page
+    assert "streaming adapters and issue #6's oversized candidate pool" in page
     assert "no local splitter" in page
     assert "bounded streaming joins" in page
-    assert "candidate pool and annotation workflow remain" in page
-    assert "paused and not implemented" in page
+    assert "candidate pool and geographic preflight are implemented" in page
+    assert "annotation workflow is paused" in page
+    assert "results/candidates/v3/pool.json" in page
+    assert "results/candidates/v3/progress.json" in page
 
 
 def test_v3_page_documents_how_the_projections_are_checked_against_the_pinned_schemas() -> None:

@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from itertools import islice
 from math import isfinite
-from typing import Any
+from typing import Any, Protocol
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.sources.validation import validate_positive_limit
@@ -67,13 +67,19 @@ class JoinedPlace:
     source_url: str | None = None
 
 
+class V3CandidateSource(Protocol):
+    """The narrow iterable contract consumed by the V3 reservoir builder."""
+
+    def iter_candidates(self) -> Iterator[Candidate]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class V3SourceAdapters:
     """The three independently streamable V3 candidate adapters."""
 
-    description: DescriptionSentenceSource
-    wikipedia: WikipediaSentenceSource
-    website: WebsiteSentenceSource
+    description: V3CandidateSource
+    wikipedia: V3CandidateSource
+    website: V3CandidateSource
 
 
 class DescriptionSentenceSource:
