@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from landuse_sentence_relevance.domain.profile import V3_QUOTAS, V3_SOURCES, Sou
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
 from landuse_sentence_relevance.domain.seeding import SeedPlan
 from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
+from landuse_sentence_relevance.domain.v3_annotation import V3AnnotationSeed, select_v3_annotation_seed
 from landuse_sentence_relevance.domain.v3_preflight import (
     V3PreflightError,
     V3PreflightReport,
@@ -40,6 +42,7 @@ from landuse_sentence_relevance.storage.candidate_pool import CandidatePoolStore
 from landuse_sentence_relevance.storage.candidate_progress import CandidateProgressStore
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
+from landuse_sentence_relevance.storage.v3_annotation_seed import V3AnnotationSeedStore
 from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
 from landuse_sentence_relevance.workflow import AnnotationWorkflow
 
@@ -506,6 +509,51 @@ def build_v3_candidate_pool(
     result = _validated_v3_result(finalized, seed_plan, quotas, settings.candidate_cells_per_source)
     pool_store.save(finalized, metadata)
     return result
+
+
+def build_v3_annotation_seed(
+    settings: V3Settings,
+    *,
+    quotas: SourceLabelQuotas = V3_QUOTAS,
+    pool_result: V3CandidatePoolResult | None = None,
+    adapters: V3SourceAdapters | None = None,
+    cell_for_location: Callable[[float, float], str] | None = None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None = None,
+    loader: HuggingFaceDatasetLoader | None = None,
+) -> V3AnnotationSeed:
+    """Build or resume the deterministic, unlabeled V3 annotation state."""
+
+    seed_plan = load_v2_seed_plan(settings.benchmark_path, quotas=quotas, seed=settings.seed)
+    if pool_result is None:
+        pool_result = build_v3_candidate_pool(
+            settings,
+            quotas=quotas,
+            adapters=adapters,
+            cell_for_location=cell_for_location,
+            center_of_cell=center_of_cell,
+            loader=loader,
+        )
+    preflight_v3_candidate_pool(
+        pool_result.pool,
+        seed_plan,
+        quotas=quotas,
+        candidate_cells_per_source=settings.candidate_cells_per_source,
+    )
+    benchmark_sha256 = _sha256_file(settings.benchmark_path)
+    metadata = _v3_annotation_seed_metadata(settings, quotas, pool_result.pool, benchmark_sha256)
+    store = V3AnnotationSeedStore(settings.annotation_seed_path)
+    cached = store.load(metadata)
+    if cached is not None:
+        return cached
+    state = select_v3_annotation_seed(
+        seed_plan,
+        pool_result.pool,
+        quotas=quotas,
+        seed=settings.seed,
+        benchmark_sha256=benchmark_sha256,
+    )
+    store.save(state, metadata)
+    return state
 
 
 def _resolve_v3_geometry(
@@ -1011,6 +1059,48 @@ def _v3_candidate_pool_metadata(
             "remote_file_sample_count": settings.remote_file_sample_count,
         },
     }
+
+
+def _v3_annotation_seed_metadata(
+    settings: V3Settings,
+    quotas: SourceLabelQuotas,
+    pool: FinalizedCandidatePool,
+    benchmark_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "state_kind": "v3-annotation-seed",
+        "seed": settings.seed,
+        "h3_resolution": settings.h3_resolution,
+        "benchmark": {"path": str(settings.benchmark_path), "sha256": benchmark_sha256},
+        "candidate_pool": {
+            "path": str(settings.candidate_pool_path),
+            "sha256": _candidate_pool_digest(pool),
+            "candidate_count": len(pool.candidates),
+        },
+        "quotas": {
+            source.value: {label.value: quotas.required(source, label) for label in quotas.labels}
+            for source in quotas.sources
+        },
+        "selection": {
+            "policy": "sha256-ranked source-by-target-label slots with candidate-id tie-break",
+            "pending_rows_unlabeled": True,
+            "v2_cells_reserved": True,
+        },
+    }
+
+
+def _candidate_pool_digest(pool: FinalizedCandidatePool) -> str:
+    payload = json.dumps(
+        {
+            "candidates": [candidate.to_dict() for candidate in pool.candidates],
+            "cells": list(pool.cells),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _sha256_file(path: Path) -> str:

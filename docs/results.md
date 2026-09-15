@@ -64,6 +64,7 @@ Drive-only. Historical or intermediate; none of these is a benchmark.
 | `results/candidates/v2/progress.json` | Resumable candidate-building checkpoint |
 | `results/candidates/v3/pool.json` | Finalized V3 oversized reservoir: at least 400 fresh globally unique H3 resolution-3 cells per source, plus compact metadata |
 | `results/candidates/v3/progress.json` | Atomic resumable V3 candidate-building checkpoint, containing compact candidate metadata only |
+| `results/annotations/seeds/v3.json` | Atomic V3 annotation seed: 153 frozen V2 rows, 147 deterministic unlabeled slots, quota and hash metadata |
 | `results/candidates/v2/archive/failures/` | Preserved checkpoints from the failed builds described in [Data sources](data-sources.md) |
 | `results/maps/{v1,v2}/` | Static world/H3 distribution plots |
 
