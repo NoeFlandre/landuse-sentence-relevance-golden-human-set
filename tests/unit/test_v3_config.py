@@ -48,6 +48,10 @@ def test_v3_names_the_upstream_sentence_level_configurations() -> None:
         "wikipedia_sentences",
         "wikipedia_sentences",
     )
+    assert (settings.wikipedia_polygons_config, settings.wikipedia_polygons_split) == (
+        "polygons",
+        "polygons",
+    )
     assert (settings.website_config, settings.website_split) == ("default", "polygons")
 
 
@@ -79,6 +83,14 @@ def test_v3_targets_three_hundred_rows_from_an_oversized_pool() -> None:
     assert settings.rows_per_source == 100
     assert settings.rows_per_source_label == 50
     assert settings.candidate_cells_per_source >= 400
+
+
+def test_v3_bounds_the_streaming_joins_it_resolves_geolocation_with() -> None:
+    settings = V3Settings()
+
+    assert settings.max_rows_per_shard == 20_000
+    assert settings.max_join_entries > 0
+    assert settings.max_join_entries <= 1_000_000
 
 
 def test_v3_does_not_configure_a_local_splitter_or_language_model() -> None:
