@@ -7,8 +7,13 @@ from typing import Any
 
 from landuse_sentence_relevance.config import Settings, V3Settings
 from landuse_sentence_relevance.domain.models import Candidate, Source
+from landuse_sentence_relevance.domain.profile import V3_QUOTAS, SourceLabelQuotas
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
 from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
+from landuse_sentence_relevance.domain.v3_pool import (
+    V3CandidateReservoir,
+    preflight_v3_candidate_pool,
+)
 from landuse_sentence_relevance.models.language_identifier import CommonLinguaIdentifier
 from landuse_sentence_relevance.models.sentence_splitter import SaTSentenceSplitter
 from landuse_sentence_relevance.sources.huggingface import (
@@ -31,10 +36,16 @@ from landuse_sentence_relevance.storage.candidate_pool import CandidatePoolStore
 from landuse_sentence_relevance.storage.candidate_progress import CandidateProgressStore
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
+from landuse_sentence_relevance.storage.v3_candidate_pool import (
+    V2Benchmark,
+    V3CandidateProgressStore,
+    load_v2_benchmark,
+)
 from landuse_sentence_relevance.workflow import AnnotationWorkflow
 
 logger = logging.getLogger(__name__)
 _PROGRESS_CHECKPOINT_INTERVAL = 32
+_V3_PROGRESS_CHECKPOINT_INTERVAL = 256
 
 _WIKIPEDIA_COLUMNS = {
     "polygons": ("polygon_id", "has_english_wikipedia", "lat", "lon", "name", "region"),
@@ -752,3 +763,272 @@ def _candidate_pool_metadata(settings: Settings) -> dict[str, Any]:
             "remote_file_sample_count": settings.remote_file_sample_count,
         },
     }
+
+
+def build_v3_candidate_pool(
+    settings: V3Settings,
+    *,
+    adapters: V3SourceAdapters | None = None,
+    cell_for_location: Callable[[float, float], str] | None = None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None = None,
+    loader: HuggingFaceDatasetLoader | None = None,
+    quotas: SourceLabelQuotas = V3_QUOTAS,
+) -> FinalizedCandidatePool:
+    """Build and persist the bounded V3 reservoir after a quota preflight.
+
+    The V3 path is intentionally separate from :func:`build_workflow`: no V2
+    candidate or annotation artifact is read or written except the immutable V2
+    benchmark used to reserve its H3 cells and calculate the remaining quotas.
+    """
+
+    benchmark = load_v2_benchmark(settings.benchmark_path)
+    metadata = _v3_candidate_pool_metadata(settings, benchmark.fingerprint, quotas)
+    pool_store = CandidatePoolStore(settings.candidate_pool_path)
+    cached = pool_store.load(metadata)
+    if cached is not None:
+        return _reuse_v3_candidate_pool(cached, benchmark, settings, quotas)
+
+    cell_for_location, center_of_cell = _v3_geometry_callbacks(
+        settings,
+        cell_for_location,
+        center_of_cell,
+    )
+    adapters = _v3_adapters(settings, adapters, cell_for_location, loader)
+
+    progress_store = V3CandidateProgressStore(settings.candidate_progress_path)
+    reservoir = V3CandidateReservoir(
+        capacity_per_source=settings.candidate_reservoir_cells_per_source,
+        seed=settings.seed,
+        reserved_cells=benchmark.reserved_cells,
+        sources=quotas.sources,
+    )
+    completed_sources = _resume_v3_progress(reservoir, progress_store, metadata, settings)
+    _collect_v3_sources(
+        adapters,
+        quotas.sources,
+        reservoir,
+        progress_store,
+        completed_sources,
+        metadata,
+    )
+    finalized = _finalize_v3_candidate_pool(
+        reservoir,
+        settings,
+        benchmark,
+        quotas,
+        center_of_cell,
+    )
+    pool_store.save(finalized, metadata)
+    logger.info(
+        "V3 candidate pool ready: %d candidates across %d globally unique H3 cells",
+        len(finalized.candidates),
+        len(finalized.cells),
+    )
+    return finalized
+
+
+def _reuse_v3_candidate_pool(
+    pool: FinalizedCandidatePool,
+    benchmark: V2Benchmark,
+    settings: V3Settings,
+    quotas: SourceLabelQuotas,
+) -> FinalizedCandidatePool:
+    preflight = preflight_v3_candidate_pool(
+        pool,
+        existing_v2=benchmark.annotations,
+        quotas=quotas,
+        target_cells_per_source=settings.candidate_cells_per_source,
+        seed=settings.seed,
+    )
+    _log_v3_preflight(preflight)
+    logger.info("Reusable V3 candidate pool found at %s", settings.candidate_pool_path)
+    return pool
+
+
+def _v3_geometry_callbacks(
+    settings: V3Settings,
+    cell_for_location: Callable[[float, float], str] | None,
+    center_of_cell: Callable[[str], tuple[float, float]] | None,
+) -> tuple[Callable[[float, float], str] | None, Callable[[str], tuple[float, float]]]:
+    if center_of_cell is not None:
+        return cell_for_location, center_of_cell
+    if cell_for_location is None:
+        return _h3_geometry(settings)
+    _, generated_center = _h3_geometry(settings)
+    return cell_for_location, generated_center
+
+
+def _v3_adapters(
+    settings: V3Settings,
+    adapters: V3SourceAdapters | None,
+    cell_for_location: Callable[[float, float], str] | None,
+    loader: HuggingFaceDatasetLoader | None,
+) -> V3SourceAdapters:
+    if adapters is not None:
+        return adapters
+    return build_v3_source_adapters(settings, cell_for_location=cell_for_location, loader=loader)
+
+
+def _resume_v3_progress(
+    reservoir: V3CandidateReservoir,
+    progress_store: V3CandidateProgressStore,
+    metadata: Mapping[str, Any],
+    settings: V3Settings,
+) -> set[Source]:
+    progress = progress_store.load(metadata)
+    if progress is None:
+        return set()
+    for candidate in progress.candidates:
+        reservoir.add(candidate)
+    completed_sources = set(progress.completed_sources)
+    logger.info(
+        "Resuming V3 candidate progress from %s (%d bounded candidates; completed=%s)",
+        settings.candidate_progress_path,
+        len(progress.candidates),
+        ",".join(sorted(source.value for source in completed_sources)) or "none",
+    )
+    return completed_sources
+
+
+def _collect_v3_sources(
+    adapters: V3SourceAdapters,
+    sources: tuple[Source, ...],
+    reservoir: V3CandidateReservoir,
+    progress_store: V3CandidateProgressStore,
+    completed_sources: set[Source],
+    metadata: Mapping[str, Any],
+) -> None:
+    for source in sources:
+        if source in completed_sources:
+            logger.info("V3 %s source already checkpointed; skipping stream", source.value)
+            continue
+        _collect_v3_source(
+            source,
+            _v3_source_factory(adapters, source),
+            reservoir,
+            progress_store,
+            completed_sources,
+            metadata,
+        )
+
+
+def _finalize_v3_candidate_pool(
+    reservoir: V3CandidateReservoir,
+    settings: V3Settings,
+    benchmark: V2Benchmark,
+    quotas: SourceLabelQuotas,
+    center_of_cell: Callable[[str], tuple[float, float]],
+) -> FinalizedCandidatePool:
+    finalized = reservoir.finalize(
+        target_cells_per_source=settings.candidate_cells_per_source,
+        center_of_cell=center_of_cell,
+        minimum_distance_km=settings.minimum_cell_distance_km,
+    )
+    preflight = preflight_v3_candidate_pool(
+        finalized,
+        existing_v2=benchmark.annotations,
+        quotas=quotas,
+        target_cells_per_source=settings.candidate_cells_per_source,
+        seed=settings.seed,
+    )
+    _log_v3_preflight(preflight)
+    return finalized
+
+
+def _v3_source_factory(
+    adapters: V3SourceAdapters,
+    source: Source,
+) -> Callable[[], Iterable[Candidate]]:
+    if source is Source.DESCRIPTION:
+        return adapters.description.iter_candidates
+    if source is Source.WIKIPEDIA:
+        return adapters.wikipedia.iter_candidates
+    if source is Source.WEBSITE:
+        return adapters.website.iter_candidates
+    raise ValueError(f"source is outside the V3 adapter set: {source.value}")
+
+
+def _collect_v3_source(
+    source: Source,
+    candidates_factory: Callable[[], Iterable[Candidate]],
+    reservoir: V3CandidateReservoir,
+    progress_store: V3CandidateProgressStore,
+    completed_sources: set[Source],
+    metadata: Mapping[str, Any],
+) -> None:
+    seen = 0
+    try:
+        for candidate in candidates_factory():
+            reservoir.add(candidate)
+            seen += 1
+            if seen % _V3_PROGRESS_CHECKPOINT_INTERVAL == 0:
+                progress_store.save(reservoir.snapshot(), completed_sources, metadata)
+                logger.info("Saved V3 %s progress after %d streamed candidates", source.value, seen)
+    except BaseException:
+        progress_store.save(reservoir.snapshot(), completed_sources, metadata)
+        raise
+    completed_sources.add(source)
+    progress_store.save(reservoir.snapshot(), completed_sources, metadata)
+    logger.info(
+        "V3 %s source checkpointed: %d streamed candidates, %d retained",
+        source.value,
+        seen,
+        reservoir.count_for_source(source),
+    )
+
+
+def _v3_candidate_pool_metadata(
+    settings: V3Settings,
+    benchmark_fingerprint: str,
+    quotas: SourceLabelQuotas,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "profile": "v3",
+        "seed": settings.seed,
+        "h3_resolution": settings.h3_resolution,
+        "v2_benchmark_sha256": benchmark_fingerprint,
+        "sources": {
+            "description": {
+                "dataset_id": settings.description_dataset_id,
+                "revision": settings.description_dataset_revision,
+                "sentences_config": settings.description_sentences_config,
+                "sentences_split": settings.description_sentences_split,
+                "geometry_config": settings.description_geometry_config,
+                "geometry_split": settings.description_geometry_split,
+            },
+            "wikipedia": {
+                "dataset_id": settings.wikipedia_dataset_id,
+                "revision": settings.wikipedia_dataset_revision,
+                "sentences_config": settings.wikipedia_sentences_config,
+                "sentences_split": settings.wikipedia_sentences_split,
+                "polygons_config": settings.wikipedia_polygons_config,
+                "polygons_split": settings.wikipedia_polygons_split,
+            },
+            "website": {
+                "dataset_id": settings.website_dataset_id,
+                "revision": settings.website_dataset_revision,
+                "config": settings.website_config,
+                "split": settings.website_split,
+            },
+        },
+        "quotas": {
+            source.value: {label.value: quotas.required(source, label) for label in quotas.labels}
+            for source in quotas.sources
+        },
+        "sampling": {
+            "candidate_cells_per_source": settings.candidate_cells_per_source,
+            "candidate_reservoir_cells_per_source": settings.candidate_reservoir_cells_per_source,
+            "minimum_cell_distance_km": settings.minimum_cell_distance_km,
+            "max_rows_per_shard": settings.max_rows_per_shard,
+            "max_join_entries": settings.max_join_entries,
+            "description_min_language_score": settings.description_min_language_score,
+            "website_min_language_probability": settings.website_min_language_probability,
+            "max_text_characters": settings.max_text_characters,
+            "remote_file_sample_count": settings.remote_file_sample_count,
+        },
+    }
+
+
+def _log_v3_preflight(preflight: object) -> None:
+    logger.info("V3 candidate preflight passed: %s", preflight)

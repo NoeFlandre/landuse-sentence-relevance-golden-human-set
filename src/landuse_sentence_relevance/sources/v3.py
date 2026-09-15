@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from itertools import islice
 from math import isfinite
-from typing import Any
+from typing import Any, Protocol
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.sources.validation import validate_positive_limit
@@ -17,6 +17,13 @@ type Row = Mapping[str, Any]
 type RowStream = Iterable[Row]
 type ShardLoader = Callable[[], Iterable[RowStream]]
 type CellForLocation = Callable[[float, float], str]
+
+
+class V3CandidateStream(Protocol):
+    """The small streaming interface shared by production adapters and fakes."""
+
+    def iter_candidates(self) -> Iterable[Candidate]: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +78,9 @@ class JoinedPlace:
 class V3SourceAdapters:
     """The three independently streamable V3 candidate adapters."""
 
-    description: DescriptionSentenceSource
-    wikipedia: WikipediaSentenceSource
-    website: WebsiteSentenceSource
+    description: V3CandidateStream
+    wikipedia: V3CandidateStream
+    website: V3CandidateStream
 
 
 class DescriptionSentenceSource:

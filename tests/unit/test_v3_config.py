@@ -140,6 +140,14 @@ def test_v3_oversizes_the_candidate_pool_against_its_own_row_target() -> None:
     settings = V3Settings()
 
     assert settings.candidate_cells_per_source >= 4 * settings.rows_per_source
+    assert settings.candidate_reservoir_cells_per_source >= settings.candidate_cells_per_source
+
+
+def test_v3_reservoir_capacity_can_be_overridden_without_touching_v2() -> None:
+    settings = V3Settings.from_env({"V3_CANDIDATE_RESERVOIR_CELLS_PER_SOURCE": "800"})
+
+    assert settings.candidate_reservoir_cells_per_source == 800
+    assert settings.candidate_cells_per_source == V3Settings().candidate_cells_per_source
 
 
 def test_v3_seed_differs_from_the_v2_seed() -> None:

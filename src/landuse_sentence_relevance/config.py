@@ -145,6 +145,7 @@ class V3Settings:
     rows_per_source: int = 100
     rows_per_source_label: int = 50
     candidate_cells_per_source: int = 400
+    candidate_reservoir_cells_per_source: int = 1_600
     candidate_capacity_per_stratum: int = 1
     minimum_cell_distance_km: float = 0.0
     remote_file_sample_count: int = 386
@@ -194,6 +195,9 @@ class V3Settings:
             model_cache_dir=Path(env.get("MODEL_CACHE_DIR", str(state_root / "runtime-cache"))),
             hf_auth_dir=Path(env.get("HF_AUTH_DIR", str(state_root / "huggingface-auth"))),
             candidate_cells_per_source=int(env.get("V3_CANDIDATE_CELLS_PER_SOURCE", "400")),
+            candidate_reservoir_cells_per_source=int(
+                env.get("V3_CANDIDATE_RESERVOIR_CELLS_PER_SOURCE", "1600")
+            ),
             remote_file_sample_count=int(env.get("V3_REMOTE_FILE_SAMPLE_COUNT", "386")),
             max_rows_per_shard=int(env.get("V3_MAX_ROWS_PER_SHARD", "20000")),
             max_join_entries=int(env.get("V3_MAX_JOIN_ENTRIES", "500000")),
