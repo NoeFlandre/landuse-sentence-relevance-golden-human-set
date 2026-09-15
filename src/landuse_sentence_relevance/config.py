@@ -96,6 +96,7 @@ _V3_DERIVED_PATHS = (
     "benchmark_path",
     "candidate_pool_path",
     "candidate_progress_path",
+    "annotation_seed_path",
     "session_path",
     "model_cache_dir",
     "hf_auth_dir",
@@ -138,6 +139,7 @@ class V3Settings:
     benchmark_path: Path = Path("data/benchmark/v2-adjudicated.csv")
     candidate_pool_path: Path = Path("results/candidates/v3/pool.json")
     candidate_progress_path: Path = Path("results/candidates/v3/progress.json")
+    annotation_seed_path: Path = Path("results/annotations/seeds/v3.json")
     session_path: Path = Path("results/annotations/sessions/v3.jsonl")
     model_cache_dir: Path = Path("state/runtime-cache")
     hf_auth_dir: Path = Path("state/huggingface-auth")
@@ -187,6 +189,9 @@ class V3Settings:
             ),
             candidate_progress_path=Path(
                 env.get("V3_CANDIDATE_PROGRESS_PATH", str(results_root / "candidates/v3/progress.json"))
+            ),
+            annotation_seed_path=Path(
+                env.get("V3_ANNOTATION_SEED_PATH", str(results_root / "annotations/seeds/v3.json"))
             ),
             session_path=Path(
                 env.get("V3_SESSION_PATH", str(results_root / "annotations/sessions/v3.jsonl"))

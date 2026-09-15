@@ -61,6 +61,7 @@ def test_v3_uses_paths_that_cannot_collide_with_v2() -> None:
 
     assert settings.candidate_pool_path == DEFAULT_DATA_ROOT / "results/candidates/v3/pool.json"
     assert settings.candidate_progress_path == DEFAULT_DATA_ROOT / "results/candidates/v3/progress.json"
+    assert settings.annotation_seed_path == DEFAULT_DATA_ROOT / "results/annotations/seeds/v3.json"
     assert settings.session_path == DEFAULT_DATA_ROOT / "results/annotations/sessions/v3.jsonl"
     assert settings.output_dataset_split == "v3"
     assert settings.candidate_pool_path != v2.candidate_pool_path
@@ -72,7 +73,12 @@ def test_v3_uses_paths_that_cannot_collide_with_v2() -> None:
 def test_v3_keeps_every_generated_path_under_the_project_data_root(tmp_path: Path) -> None:
     settings = V3Settings.from_env({"PROJECT_DATA_ROOT": str(tmp_path)})
 
-    for path in (settings.candidate_pool_path, settings.candidate_progress_path, settings.session_path):
+    for path in (
+        settings.candidate_pool_path,
+        settings.candidate_progress_path,
+        settings.annotation_seed_path,
+        settings.session_path,
+    ):
         assert path.is_relative_to(tmp_path)
 
 
@@ -115,6 +121,7 @@ def test_v3_paths_stay_inside_an_explicitly_chosen_data_root(tmp_path: Path) -> 
         settings.benchmark_path,
         settings.candidate_pool_path,
         settings.candidate_progress_path,
+        settings.annotation_seed_path,
         settings.session_path,
         settings.model_cache_dir,
         settings.hf_auth_dir,
