@@ -9,6 +9,13 @@ V2 uses English-only sentences from inside source text blocks when available, H3
 ./scripts/uv-seagate run landuse-annotate
 ```
 
+To run the local, unpublished V3 annotation session explicitly, use its
+separate candidate, seed, and session paths:
+
+```bash
+ANNOTATION_VERSION=v3 ./scripts/uv-seagate run landuse-annotate
+```
+
 Use `scripts/uv-seagate` for local UV commands. It refuses to run without the Seagate project drive and keeps the virtual environment, UV cache, temporary files, Python bytecode, and Hugging Face login under the Seagate `state/` directory, outside the Mac's internal storage.
 
 If no Hugging Face login is available, authenticate once with the persistent project location:

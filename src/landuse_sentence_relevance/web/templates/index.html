@@ -82,6 +82,73 @@
         margin-bottom: 1rem;
       }
 
+      .source-progress {
+        margin-bottom: 1rem;
+        padding: 1rem 1.1rem;
+        border: 1px solid #dfe6eb;
+        border-radius: .9rem;
+        background: #ffffff;
+      }
+
+      .source-progress-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: .8rem;
+      }
+
+      .source-progress-header h2 { margin-bottom: 0; }
+
+      .source-progress-target {
+        margin: 0;
+        color: #52616b;
+        font-size: .8rem;
+        font-weight: 700;
+      }
+
+      .source-progress-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .65rem;
+      }
+
+      .source-progress-card {
+        padding: .75rem;
+        border: 1px solid #edf0f2;
+        border-radius: .7rem;
+        background: #f8fafb;
+      }
+
+      .source-progress-card h3 {
+        margin: 0 0 .3rem;
+        color: #344454;
+        font-size: .85rem;
+        text-transform: capitalize;
+      }
+
+      .source-progress-card p {
+        margin: 0;
+        color: #52616b;
+        font-size: .75rem;
+        line-height: 1.5;
+      }
+
+      .source-progress-card .source-progress-count {
+        color: #17212b;
+        font-size: .9rem;
+        font-weight: 800;
+      }
+
+      .frozen-note {
+        margin: 0;
+        padding: .8rem 1.35rem;
+        border-bottom: 1px solid #edf0f2;
+        color: #52616b;
+        font-size: .8rem;
+        line-height: 1.5;
+      }
+
       .metric {
         padding: 1rem 1.1rem;
         border: 1px solid #dfe6eb;
@@ -322,6 +389,7 @@
         .page-header,
         .annotation-header { align-items: flex-start; flex-direction: column; }
         .metrics { grid-template-columns: 1fr; }
+        .source-progress-grid { grid-template-columns: 1fr; }
         .annotation-row { grid-template-columns: 1fr; gap: .8rem; }
         .annotation-actions { align-items: center; }
       }
@@ -336,10 +404,12 @@
     <main class="annotation-shell">
       <header class="page-header">
         <div>
-          <p class="eyebrow">Human annotation</p>
+          <p class="eyebrow">{% if state.workflow_version == "v3" %}V3 human annotation{% else %}Human annotation{% endif %}</p>
           <h1>Sentence relevance</h1>
         </div>
-        {% if state.published %}
+        {% if state.workflow_version == "v3" %}
+          <span class="status-chip">V3 · local only</span>
+        {% elif state.published %}
           <span class="status-chip">Uploaded</span>
         {% elif state.final_ready %}
           <span class="status-chip">Saved · uploading</span>
@@ -348,30 +418,71 @@
         {% endif %}
       </header>
 
-      <section class="metrics" aria-label="Annotation metrics">
-        <div class="metric">
-          <span class="metric-label">Saved</span>
-          <strong class="metric-value">{{ state.labeled_count }}</strong>
-        </div>
-        <div class="metric metric-yes">
-          <span class="metric-label">Yes</span>
-          <strong class="metric-value">{{ state.yes_count }}</strong>
-        </div>
-        <div class="metric metric-no">
-          <span class="metric-label">No</span>
-          <strong class="metric-value">{{ state.no_count }}</strong>
-        </div>
-      </section>
+      {% if state.workflow_version == "v3" %}
+        <section class="metrics" aria-label="V3 annotation metrics">
+          <div class="metric">
+            <span class="metric-label">Total progress</span>
+            <strong class="metric-value">{{ state.labeled_count }} / {{ state.total_count }}</strong>
+          </div>
+          <div class="metric metric-yes">
+            <span class="metric-label">Yes / target</span>
+            <strong class="metric-value">{{ state.yes_count }} / {{ state.target_yes_count }}</strong>
+          </div>
+          <div class="metric metric-no">
+            <span class="metric-label">No / target</span>
+            <strong class="metric-value">{{ state.no_count }} / {{ state.target_no_count }}</strong>
+          </div>
+        </section>
+
+        <section class="source-progress" aria-label="V3 source progress">
+          <header class="source-progress-header">
+            <div>
+              <p class="eyebrow">Quota tracking</p>
+              <h2>Per-source progress</h2>
+            </div>
+            <p class="source-progress-target">Target: {{ state.target_yes_count }} Yes · {{ state.target_no_count }} No</p>
+          </header>
+          <div class="source-progress-grid">
+            {% for source in state.source_progress %}
+              <article class="source-progress-card" data-source="{{ source.source.value }}">
+                <h3>{{ source.source.value }}</h3>
+                <p class="source-progress-count">{{ source.labeled_count }} / {{ source.total_count }} labeled</p>
+                <p>Yes {{ source.yes_count }} / {{ source.target_yes_count }} · No {{ source.no_count }} / {{ source.target_no_count }}</p>
+                <p>Remaining quota: Yes {{ source.remaining_yes_count }} · No {{ source.remaining_no_count }}</p>
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+      {% else %}
+        <section class="metrics" aria-label="Annotation metrics">
+          <div class="metric">
+            <span class="metric-label">Saved</span>
+            <strong class="metric-value">{{ state.labeled_count }}</strong>
+          </div>
+          <div class="metric metric-yes">
+            <span class="metric-label">Yes</span>
+            <strong class="metric-value">{{ state.yes_count }}</strong>
+          </div>
+          <div class="metric metric-no">
+            <span class="metric-label">No</span>
+            <strong class="metric-value">{{ state.no_count }}</strong>
+          </div>
+        </section>
+      {% endif %}
 
       {% if not state.published and not state.final_ready and candidate %}
         <section class="next-section">
           <section class="annotation-card">
             <header class="annotation-header">
               <div>
-                <p class="eyebrow">Continue labeling</p>
+                <p class="eyebrow">{% if state.workflow_version == "v3" %}Fresh V3 row{% else %}Continue labeling{% endif %}</p>
                 <h2>Next sentence</h2>
               </div>
-              <p class="progress" aria-label="Annotation progress">{{ state.labeled_count }} labeled · {{ state.yes_count }} Yes · {{ state.no_count }} No</p>
+              {% if state.workflow_version == "v3" %}
+                <p class="progress" aria-label="Annotation progress">{{ state.labeled_count }} / {{ state.total_count }} labeled · {{ state.remaining_count }} remaining</p>
+              {% else %}
+                <p class="progress" aria-label="Annotation progress">{{ state.labeled_count }} labeled · {{ state.yes_count }} Yes · {{ state.no_count }} No</p>
+              {% endif %}
             </header>
             <div class="candidate">
               <p class="sentence">{{ candidate.sentence }}</p>
@@ -422,6 +533,13 @@
             <p>The final balanced dataset is public on Hugging Face.</p>
           </section>
         </section>
+      {% elif state.workflow_version == "v3" and state.final_ready %}
+        <section class="next-section">
+          <section class="empty-state">
+            <h2>V3 session complete</h2>
+            <p>All V3 rows are saved locally. V3 publication is disabled until a separate release decision.</p>
+          </section>
+        </section>
       {% elif state.final_ready %}
         <section class="next-section">
           <section class="empty-state">
@@ -434,11 +552,19 @@
       <section class="review-card" aria-labelledby="saved-annotations-heading">
         <header class="section-heading">
           <div>
-            <p class="eyebrow">Review</p>
-            <h2 id="saved-annotations-heading">Saved annotations</h2>
+            <p class="eyebrow">{% if state.workflow_version == "v3" %}Fresh review{% else %}Review{% endif %}</p>
+            <h2 id="saved-annotations-heading">{% if state.workflow_version == "v3" %}Fresh annotations{% else %}Saved annotations{% endif %}</h2>
           </div>
-          <span class="section-count">{{ state.labeled_count }} records</span>
+          {% if state.workflow_version == "v3" %}
+            <span class="section-count">{{ state.fresh_labeled_count }} fresh records</span>
+          {% else %}
+            <span class="section-count">{{ state.labeled_count }} records</span>
+          {% endif %}
         </header>
+
+        {% if state.workflow_version == "v3" %}
+          <p class="frozen-note">Frozen V2 labels: {{ state.seeded_count }} (read-only; never shown for reannotation).</p>
+        {% endif %}
 
         {% if state.annotations %}
           <ol class="annotation-list">
