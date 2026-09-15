@@ -24,7 +24,7 @@ def test_v3_sources_produce_the_three_english_geolocated_candidate_streams() -> 
         sentence_shards_loader=_shards(
             {
                 "description_identity": "d" * 64,
-                "source_pbf": "region.osm.pbf",
+                "source_pbf": "occitanie-latest.osm.pbf",
                 "osm_type": "node",
                 "osm_id": 1,
                 "language_code": "eng",
@@ -34,12 +34,11 @@ def test_v3_sources_produce_the_three_english_geolocated_candidate_streams() -> 
         ),
         geometry_shards_loader=_shards(
             {
-                "source_pbf": "region.osm.pbf",
+                "source_pbf": "occitanie-latest.osm.pbf",
                 "osm_type": "node",
                 "osm_id": 1,
                 "lat": 45.0,
                 "lon": 2.0,
-                "region": "Occitanie",
             }
         ),
         cell_for_location=cell_for_location,
@@ -53,6 +52,7 @@ def test_v3_sources_produce_the_three_english_geolocated_candidate_streams() -> 
                 "language": "en",
                 "section_index": 1,
                 "sentence_index": 1,
+                "heading": "History",
                 "text": "A contextual English Wikipedia sentence.",
                 "page_id": 123,
             },
@@ -63,6 +63,7 @@ def test_v3_sources_produce_the_three_english_geolocated_candidate_streams() -> 
                 "language": "en",
                 "section_index": 1,
                 "sentence_index": 1,
+                "heading": "History",
                 "text": "A travel guide sentence.",
             },
         ),
@@ -110,14 +111,87 @@ def test_v3_sources_produce_the_three_english_geolocated_candidate_streams() -> 
         "A contextual English Wikipedia sentence.",
         "An upstream website sentence.",
     ]
-    assert all(candidate.language == "en" for candidate in candidates)
+    assert [candidate.language for candidate in candidates] == ["en", "en", "en"]
     assert [candidate.source_url for candidate in candidates] == [
         "https://www.openstreetmap.org/node/1",
         "https://en.wikipedia.org/?curid=123",
         "https://example.test",
     ]
     assert [candidate.region for candidate in candidates] == [
-        "Occitanie",
+        "occitanie",
         "Ile-de-France",
         "Bretagne",
     ]
+
+
+def test_v3_sources_drop_the_non_english_records_of_the_same_streams() -> None:
+    """The English rule must be falsifiable: same shapes, non-English metadata."""
+
+    def cell_for_location(latitude: float, longitude: float) -> str:
+        return "8928308280fffff"
+
+    description = DescriptionSentenceSource(
+        sentence_shards_loader=_shards(
+            {
+                "description_identity": "d" * 64,
+                "source_pbf": "region.osm.pbf",
+                "osm_type": "node",
+                "osm_id": 1,
+                "language_code": "fra",
+                "top_score": 0.99,
+                "sentences": ["Une phrase de description en francais."],
+            }
+        ),
+        geometry_shards_loader=_shards(
+            {
+                "source_pbf": "region.osm.pbf",
+                "osm_type": "node",
+                "osm_id": 1,
+                "lat": 45.0,
+                "lon": 2.0,
+            }
+        ),
+        cell_for_location=cell_for_location,
+    )
+    wikipedia = WikipediaSentenceSource(
+        sentence_shards_loader=_shards(
+            {
+                "sentence_id": "wikipedia-french",
+                "wikidata": "Q1",
+                "project": "wikipedia",
+                "language": "fr",
+                "section_index": 1,
+                "sentence_index": 1,
+                "heading": "Histoire",
+                "text": "Une phrase contextuelle de Wikipedia en francais.",
+                "page_id": 123,
+            }
+        ),
+        polygon_shards_loader=_shards(
+            {
+                "polygon_id": "p1",
+                "wikidata": "Q1",
+                "has_english_wikipedia": True,
+                "lat": 45.0,
+                "lon": 2.0,
+            }
+        ),
+        cell_for_location=cell_for_location,
+    )
+    website = WebsiteSentenceSource(
+        row_shards_loader=_shards(
+            {
+                "polygon_id": "p2",
+                "lat": 46.0,
+                "lon": 3.0,
+                "website_language": "fra_Latn",
+                "website_language_probability": 0.99,
+                "website_sentences": ["Une phrase de site web en francais."],
+            }
+        ),
+        cell_for_location=cell_for_location,
+    )
+
+    assert list(description.iter_candidates()) == []
+    assert list(wikipedia.iter_candidates()) == []
+    assert list(website.iter_candidates()) == []

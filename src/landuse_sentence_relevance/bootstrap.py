@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from landuse_sentence_relevance.config import Settings, V3Settings
@@ -58,47 +59,48 @@ _WIKIPEDIA_DIRECTORIES = {
     "wikipedia_sections": "wikipedia/sections",
 }
 _WEBSITE_DIRECTORIES = {"polygons": "polygons"}
-_V3_DESCRIPTION_COLUMNS = {
-    "sentences": (
-        "description_identity",
-        "source_pbf",
-        "osm_type",
-        "osm_id",
-        "language_code",
-        "top_score",
-        "sentences",
-    ),
-    "geometry": (
-        "source_pbf",
-        "osm_type",
-        "osm_id",
-        "osm_url",
-        "name",
-        "region",
-        "bbox_min_x",
-        "bbox_min_y",
-        "bbox_max_x",
-        "bbox_max_y",
-    ),
-}
-_V3_WIKIPEDIA_COLUMNS = {
-    "sentences": (
-        "sentence_id",
-        "document_id",
-        "section_id",
-        "wikidata",
-        "project",
-        "language",
-        "page_id",
-        "section_index",
-        "sentence_index",
-        "is_lead",
-        "is_title",
-        "source_url",
-        "text",
-    ),
-    "polygons": ("polygon_id", "wikidata", "has_english_wikipedia", "lat", "lon", "name", "region"),
-}
+_V3_DESCRIPTION_SENTENCE_COLUMNS = (
+    "description_identity",
+    "source_pbf",
+    "osm_type",
+    "osm_id",
+    "language_code",
+    "top_score",
+    "sentences",
+)
+_V3_DESCRIPTION_GEOMETRY_COLUMNS = (
+    "source_pbf",
+    "osm_type",
+    "osm_id",
+    "osm_url",
+    "name",
+    "bbox_min_x",
+    "bbox_min_y",
+    "bbox_max_x",
+    "bbox_max_y",
+)
+_V3_WIKIPEDIA_SENTENCE_COLUMNS = (
+    "sentence_id",
+    "document_id",
+    "section_id",
+    "wikidata",
+    "project",
+    "language",
+    "page_id",
+    "section_index",
+    "heading",
+    "sentence_index",
+    "text",
+)
+_V3_WIKIPEDIA_POLYGON_COLUMNS = (
+    "polygon_id",
+    "wikidata",
+    "has_english_wikipedia",
+    "lat",
+    "lon",
+    "name",
+    "region",
+)
 _V3_WEBSITE_COLUMNS = (
     "polygon_id",
     "lat",
@@ -116,9 +118,87 @@ _V3_WEBSITE_COLUMNS = (
     "contact_website_sentences",
     "contact_website_sentence_status",
 )
-_V3_DESCRIPTION_DIRECTORIES = {"sentences": "language-v1/data", "geometry": "data"}
-_V3_WIKIPEDIA_DIRECTORIES = {"sentences": "wikipedia/sentences", "polygons": "polygons"}
-_V3_WEBSITE_DIRECTORIES = {"polygons": "polygons"}
+
+
+@dataclass(frozen=True, slots=True)
+class V3StreamSpec:
+    """One immutable upstream V3 stream, with the exact columns production reads.
+
+    Every projection here is asserted against the recorded upstream schema in
+    ``tests/fixtures/v3_upstream_schema.json``, so a column the pinned revision
+    does not publish cannot reach a stream and fail with ``ArrowInvalid``.
+    """
+
+    name: str
+    dataset_id: str
+    revision: str
+    config: str
+    split: str
+    directory: str
+    columns: tuple[str, ...]
+
+
+def v3_stream_specs(settings: V3Settings) -> tuple[V3StreamSpec, ...]:
+    """Return the five V3 streams a run opens, in a deterministic order."""
+
+    return (
+        V3StreamSpec(
+            name="description_sentences",
+            dataset_id=settings.description_dataset_id,
+            revision=settings.description_dataset_revision,
+            config=settings.description_sentences_config,
+            split=settings.description_sentences_split,
+            directory="language-v1/data",
+            columns=_V3_DESCRIPTION_SENTENCE_COLUMNS,
+        ),
+        V3StreamSpec(
+            name="description_geometry",
+            dataset_id=settings.description_dataset_id,
+            revision=settings.description_dataset_revision,
+            config=settings.description_geometry_config,
+            split=settings.description_geometry_split,
+            directory="data",
+            columns=_V3_DESCRIPTION_GEOMETRY_COLUMNS,
+        ),
+        V3StreamSpec(
+            name="wikipedia_sentences",
+            dataset_id=settings.wikipedia_dataset_id,
+            revision=settings.wikipedia_dataset_revision,
+            config=settings.wikipedia_sentences_config,
+            split=settings.wikipedia_sentences_split,
+            directory="wikipedia/sentences",
+            columns=_V3_WIKIPEDIA_SENTENCE_COLUMNS,
+        ),
+        V3StreamSpec(
+            name="wikipedia_polygons",
+            dataset_id=settings.wikipedia_dataset_id,
+            revision=settings.wikipedia_dataset_revision,
+            config=settings.wikipedia_polygons_config,
+            split=settings.wikipedia_polygons_split,
+            directory="polygons",
+            columns=_V3_WIKIPEDIA_POLYGON_COLUMNS,
+        ),
+        V3StreamSpec(
+            name="website_polygons",
+            dataset_id=settings.website_dataset_id,
+            revision=settings.website_dataset_revision,
+            config=settings.website_config,
+            split=settings.website_split,
+            directory="polygons",
+            columns=_V3_WEBSITE_COLUMNS,
+        ),
+    )
+
+
+def v3_streams_by_dataset(
+    settings: V3Settings,
+) -> tuple[tuple[str, str, tuple[V3StreamSpec, ...]], ...]:
+    """Group the V3 streams by dataset so each catalog is listed once."""
+
+    grouped: dict[tuple[str, str], list[V3StreamSpec]] = {}
+    for spec in v3_stream_specs(settings):
+        grouped.setdefault((spec.dataset_id, spec.revision), []).append(spec)
+    return tuple((dataset_id, revision, tuple(specs)) for (dataset_id, revision), specs in grouped.items())
 
 
 def _wikipedia_rows(
@@ -284,62 +364,46 @@ def _remote_files(
     return wikipedia_remote_files, website_remote_files
 
 
-def _v3_remote_files(
-    settings: V3Settings,
-) -> tuple[
-    Mapping[str, tuple[str, ...]],
-    Mapping[str, tuple[str, ...]],
-    Mapping[str, tuple[str, ...]],
-]:
+def v3_remote_files(settings: V3Settings) -> dict[str, tuple[str, ...]]:
+    """Select the aligned remote Parquet shards of every V3 stream, by stream name."""
+
     logger.info(
         "Selecting %d aligned remote V3 Parquet shards per source dataset",
         settings.remote_file_sample_count,
     )
-    description_remote_files = pinned_remote_file_urls(
-        settings.description_dataset_id,
-        settings.description_dataset_revision,
-        _V3_DESCRIPTION_DIRECTORIES,
-        settings.remote_file_sample_count,
-        token=settings.hf_token,
+    remote_files: dict[str, tuple[str, ...]] = {}
+    for dataset_id, revision, specs in v3_streams_by_dataset(settings):
+        remote_files.update(
+            pinned_remote_file_urls(
+                dataset_id,
+                revision,
+                {spec.name: spec.directory for spec in specs},
+                settings.remote_file_sample_count,
+                token=settings.hf_token,
+            )
+        )
+    return remote_files
+
+
+def v3_row_config(spec: V3StreamSpec, remote_files: tuple[str, ...]) -> HuggingFaceRowConfig:
+    """Return the exact streaming configuration production opens for one stream."""
+
+    return HuggingFaceRowConfig(
+        dataset_id=spec.dataset_id,
+        revision=spec.revision,
+        split=spec.split,
+        config=spec.config,
+        columns=spec.columns,
+        remote_files=remote_files,
     )
-    wikipedia_remote_files = pinned_remote_file_urls(
-        settings.wikipedia_dataset_id,
-        settings.wikipedia_dataset_revision,
-        _V3_WIKIPEDIA_DIRECTORIES,
-        settings.remote_file_sample_count,
-        token=settings.hf_token,
-    )
-    website_remote_files = pinned_remote_file_urls(
-        settings.website_dataset_id,
-        settings.website_dataset_revision,
-        _V3_WEBSITE_DIRECTORIES,
-        settings.remote_file_sample_count,
-        token=settings.hf_token,
-    )
-    return description_remote_files, wikipedia_remote_files, website_remote_files
 
 
 def _v3_rows(
-    *,
-    dataset_id: str,
-    revision: str,
-    split: str,
-    config: str,
-    columns: tuple[str, ...],
-    remote_files: tuple[str, ...],
+    spec: V3StreamSpec,
+    remote_files: Mapping[str, tuple[str, ...]],
     loader: HuggingFaceDatasetLoader | None,
 ) -> HuggingFaceDatasetRows:
-    return HuggingFaceDatasetRows(
-        HuggingFaceRowConfig(
-            dataset_id=dataset_id,
-            revision=revision,
-            split=split,
-            config=config,
-            columns=columns,
-            remote_files=remote_files,
-        ),
-        loader=loader,
-    )
+    return HuggingFaceDatasetRows(v3_row_config(spec, remote_files[spec.name]), loader=loader)
 
 
 def build_v3_source_adapters(
@@ -351,58 +415,13 @@ def build_v3_source_adapters(
     """Compose V3 adapters over immutable, streaming-only source revisions."""
     if cell_for_location is None:
         cell_for_location, _ = _h3_geometry(settings)
-    description_remote_files, wikipedia_remote_files, website_remote_files = _v3_remote_files(settings)
-
-    description_sentences = _v3_rows(
-        dataset_id=settings.description_dataset_id,
-        revision=settings.description_dataset_revision,
-        split=settings.description_sentences_split,
-        config=settings.description_sentences_config,
-        columns=_V3_DESCRIPTION_COLUMNS["sentences"],
-        remote_files=description_remote_files["sentences"],
-        loader=loader,
-    )
-    description_geometry = _v3_rows(
-        dataset_id=settings.description_dataset_id,
-        revision=settings.description_dataset_revision,
-        split=settings.description_geometry_split,
-        config=settings.description_geometry_config,
-        columns=_V3_DESCRIPTION_COLUMNS["geometry"],
-        remote_files=description_remote_files["geometry"],
-        loader=loader,
-    )
-    wikipedia_sentences = _v3_rows(
-        dataset_id=settings.wikipedia_dataset_id,
-        revision=settings.wikipedia_dataset_revision,
-        split=settings.wikipedia_sentences_split,
-        config=settings.wikipedia_sentences_config,
-        columns=_V3_WIKIPEDIA_COLUMNS["sentences"],
-        remote_files=wikipedia_remote_files["sentences"],
-        loader=loader,
-    )
-    wikipedia_polygons = _v3_rows(
-        dataset_id=settings.wikipedia_dataset_id,
-        revision=settings.wikipedia_dataset_revision,
-        split=settings.wikipedia_polygons_split,
-        config=settings.wikipedia_polygons_config,
-        columns=_V3_WIKIPEDIA_COLUMNS["polygons"],
-        remote_files=wikipedia_remote_files["polygons"],
-        loader=loader,
-    )
-    website_rows = _v3_rows(
-        dataset_id=settings.website_dataset_id,
-        revision=settings.website_dataset_revision,
-        split=settings.website_split,
-        config=settings.website_config,
-        columns=_V3_WEBSITE_COLUMNS,
-        remote_files=website_remote_files["polygons"],
-        loader=loader,
-    )
+    remote_files = v3_remote_files(settings)
+    rows = {spec.name: _v3_rows(spec, remote_files, loader) for spec in v3_stream_specs(settings)}
 
     return V3SourceAdapters(
         description=DescriptionSentenceSource(
-            sentence_shards_loader=description_sentences.shards,
-            geometry_shards_loader=description_geometry.shards,
+            sentence_shards_loader=rows["description_sentences"].shards,
+            geometry_shards_loader=rows["description_geometry"].shards,
             cell_for_location=cell_for_location,
             max_rows_per_shard=settings.max_rows_per_shard,
             min_language_score=settings.description_min_language_score,
@@ -410,15 +429,15 @@ def build_v3_source_adapters(
             max_join_entries=settings.max_join_entries,
         ),
         wikipedia=WikipediaSentenceSource(
-            sentence_shards_loader=wikipedia_sentences.shards,
-            polygon_shards_loader=wikipedia_polygons.shards,
+            sentence_shards_loader=rows["wikipedia_sentences"].shards,
+            polygon_shards_loader=rows["wikipedia_polygons"].shards,
             cell_for_location=cell_for_location,
             max_rows_per_shard=settings.max_rows_per_shard,
             max_text_characters=settings.max_text_characters,
             max_join_entries=settings.max_join_entries,
         ),
         website=WebsiteSentenceSource(
-            row_shards_loader=website_rows.shards,
+            row_shards_loader=rows["website_polygons"].shards,
             cell_for_location=cell_for_location,
             max_rows_per_shard=settings.max_rows_per_shard,
             min_language_probability=settings.website_min_language_probability,

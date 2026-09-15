@@ -58,6 +58,16 @@ def test_v3_page_documents_the_streaming_adapters_while_the_workflow_stays_pause
     assert "paused and not implemented" in page
 
 
+def test_v3_page_documents_how_the_projections_are_checked_against_the_pinned_schemas() -> None:
+    page = " ".join((ROOT / "docs/v3.md").read_text(encoding="utf-8").casefold().split())
+
+    assert "v3_upstream_schema.json" in page
+    assert "publishes no `is_lead` or `is_title` column" in page
+    assert "publishes no `region`" in page
+    assert "scripts/record_v3_schema.py" in page
+    assert "scripts/streaming_smoke.py" in page
+
+
 def test_v3_page_pins_the_same_revisions_and_website_records_as_the_settings() -> None:
     page = (ROOT / "docs/v3.md").read_text(encoding="utf-8")
     settings = V3Settings()

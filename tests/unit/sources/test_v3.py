@@ -55,8 +55,12 @@ def _geometry_row(
     osm_id: str = "1",
     source_pbf: str = "region.osm.pbf",
     name: str = "Place",
-    region: str = "Region",
 ) -> dict[str, Any]:
+    """Shape a geometry row the way the recorded upstream schema publishes it.
+
+    The pinned revision has no ``region`` column, so none is set here.
+    """
+
     return {
         "source_pbf": source_pbf,
         "osm_type": "node",
@@ -64,7 +68,6 @@ def _geometry_row(
         "lat": 45.0,
         "lon": 2.0,
         "name": name,
-        "region": region,
         "osm_url": f"https://www.openstreetmap.org/way/{osm_id}",
     }
 
@@ -77,9 +80,17 @@ def _wikipedia_row(
     language: str = "en",
     section_index: int = 3,
     sentence_index: int = 2,
+    heading: str = "History",
     text: str = "The place has a contextual section sentence.",
     **overrides: Any,
 ) -> dict[str, Any]:
+    """Shape a sentence row the way the recorded upstream schema publishes it.
+
+    The pinned revision has no ``is_lead`` or ``is_title`` column: the lead is
+    ``section_index`` 0 with an empty heading, and a section title arrives as the
+    first sentence of a body section carrying the MediaWiki edit marker.
+    """
+
     return {
         "sentence_id": sentence_id,
         "wikidata": wikidata,
@@ -87,10 +98,21 @@ def _wikipedia_row(
         "language": language,
         "section_index": section_index,
         "sentence_index": sentence_index,
+        "heading": heading,
         "text": text,
         "page_id": 123,
         **overrides,
     }
+
+
+def _lead_row(*, sentence_id: str, sentence_index: int = 0, **overrides: Any) -> dict[str, Any]:
+    return _wikipedia_row(
+        sentence_id=sentence_id,
+        section_index=0,
+        sentence_index=sentence_index,
+        heading="",
+        **overrides,
+    )
 
 
 def _polygon_row(
@@ -162,14 +184,14 @@ def test_description_adapter_uses_upstream_english_sentence_records() -> None:
 
 def test_description_adapter_preserves_the_upstream_geometry_provenance() -> None:
     source = _description_source(
-        (iter([_description_row(identity="a" * 64)]),),
-        (iter([_geometry_row(name="Bois de Vincennes", region="Ile-de-France")]),),
+        (iter([_description_row(identity="a" * 64, source_pbf="ile-de-france-latest.osm.pbf")]),),
+        (iter([_geometry_row(name="Bois de Vincennes", source_pbf="ile-de-france-latest.osm.pbf")]),),
     )
 
     candidate = next(source.iter_candidates())
 
     assert candidate.place_name == "Bois de Vincennes"
-    assert candidate.region == "Ile-de-France"
+    assert candidate.region == "ile-de-france"
     assert candidate.source_url == "https://www.openstreetmap.org/way/1"
 
 
@@ -263,9 +285,9 @@ def test_description_adapter_can_resolve_coordinates_from_an_upstream_bbox() -> 
 def test_wikipedia_adapter_keeps_contextual_english_wikipedia_only() -> None:
     sentence_rows = CountingRows(
         [
-            _wikipedia_row(sentence_id="lead", section_index=0, is_lead=True, text="A lead sentence."),
-            _wikipedia_row(sentence_id="title", is_title=True, text="A section title."),
-            _wikipedia_row(sentence_id="good", is_lead=False, is_title=False),
+            _lead_row(sentence_id="lead", text="A lead sentence."),
+            _wikipedia_row(sentence_id="title", sentence_index=0, text="[ edit | edit source ]"),
+            _wikipedia_row(sentence_id="good"),
             _wikipedia_row(sentence_id="voyage", project="wikivoyage", text="Travel guide text."),
             _wikipedia_row(sentence_id="french", language="fr", text="Texte francais."),
         ]
@@ -282,11 +304,11 @@ def test_wikipedia_adapter_keeps_contextual_english_wikipedia_only() -> None:
     assert candidates[0].source_url == "https://en.wikipedia.org/?curid=123"
 
 
-def test_wikipedia_adapter_excludes_upstream_lead_and_title_flagged_sentences() -> None:
+def test_wikipedia_adapter_excludes_every_sentence_of_the_lead_section() -> None:
     sentence_rows = CountingRows(
         [
-            _wikipedia_row(sentence_id="flagged-lead", is_lead=True, is_title=False),
-            _wikipedia_row(sentence_id="flagged-title", is_lead=False, is_title=True),
+            _lead_row(sentence_id="lead-first", sentence_index=0),
+            _lead_row(sentence_id="lead-later", sentence_index=4),
         ]
     )
     source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
@@ -294,11 +316,65 @@ def test_wikipedia_adapter_excludes_upstream_lead_and_title_flagged_sentences() 
     assert list(source.iter_candidates()) == []
 
 
-def test_wikipedia_adapter_rejects_a_zero_indexed_lead_section_without_upstream_flags() -> None:
-    sentence_rows = CountingRows([_wikipedia_row(sentence_id="unflagged-lead", section_index=0)])
+def test_wikipedia_adapter_reads_the_lead_from_the_section_index_alone() -> None:
+    sentence_rows = CountingRows(
+        [_wikipedia_row(sentence_id="numbered-lead", section_index=0, heading="Overview")]
+    )
     source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
 
     assert list(source.iter_candidates()) == []
+
+
+def test_wikipedia_adapter_treats_an_empty_heading_as_the_lead_section() -> None:
+    sentence_rows = CountingRows([_wikipedia_row(sentence_id="unnumbered-lead", section_index=7, heading="")])
+    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
+
+    assert list(source.iter_candidates()) == []
+
+
+@pytest.mark.parametrize(
+    "heading_line",
+    ["[ edit ]", "[ edit | edit source ]", "[ Edit ]", "  [ edit | edit source ]  "],
+)
+def test_wikipedia_adapter_excludes_the_rendered_section_heading_line(heading_line: str) -> None:
+    sentence_rows = CountingRows(
+        [_wikipedia_row(sentence_id="section-title", sentence_index=0, text=heading_line)]
+    )
+    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
+
+    assert list(source.iter_candidates()) == []
+
+
+def test_wikipedia_adapter_excludes_a_heading_line_that_runs_into_body_text() -> None:
+    sentence_rows = CountingRows(
+        [
+            _wikipedia_row(
+                sentence_id="title-and-text",
+                sentence_index=0,
+                text="[ edit ] On 6 December 2011 a bombing struck the shrine.",
+            )
+        ]
+    )
+    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
+
+    assert list(source.iter_candidates()) == []
+
+
+def test_wikipedia_adapter_keeps_a_body_sentence_that_only_mentions_editing() -> None:
+    sentence_rows = CountingRows(
+        [
+            _wikipedia_row(
+                sentence_id="mentions-editing",
+                sentence_index=1,
+                text="The [ edit ] marker is rendered before the section body.",
+            )
+        ]
+    )
+    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
+
+    assert [candidate.candidate_id for candidate in source.iter_candidates()] == [
+        "wikipedia:p1:mentions-editing"
+    ]
 
 
 def test_wikipedia_adapter_keeps_zero_based_first_sentence_in_a_contextual_section() -> None:
@@ -308,8 +384,6 @@ def test_wikipedia_adapter_keeps_zero_based_first_sentence_in_a_contextual_secti
                 sentence_id="zero-based",
                 section_index=1,
                 sentence_index=0,
-                is_lead=False,
-                is_title=False,
                 text="The first sentence in a contextual section.",
             )
         ]
@@ -321,49 +395,29 @@ def test_wikipedia_adapter_keeps_zero_based_first_sentence_in_a_contextual_secti
     ]
 
 
-def test_wikipedia_adapter_keeps_a_zero_indexed_section_the_upstream_marks_as_body() -> None:
-    sentence_rows = CountingRows(
-        [
-            _wikipedia_row(
-                sentence_id="flagged-body",
-                section_index=0,
-                sentence_index=0,
-                is_lead=False,
-                is_title=False,
-            )
-        ]
-    )
-    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
-
-    assert [candidate.candidate_id for candidate in source.iter_candidates()] == ["wikipedia:p1:flagged-body"]
-
-
-def test_wikipedia_adapter_builds_a_sentence_identity_from_a_zero_based_index() -> None:
+def test_wikipedia_adapter_builds_a_sentence_identity_from_the_upstream_indexes() -> None:
     sentence_rows = CountingRows(
         [
             {
                 "document_id": "d1",
                 "section_id": "s1",
-                "sentence_index": 0,
+                "sentence_index": 1,
                 "section_index": 1,
+                "heading": "History",
                 "wikidata": "Q1",
                 "project": "wikipedia",
                 "language": "en",
-                "is_lead": False,
-                "is_title": False,
                 "text": "A contextual sentence without an upstream sentence id.",
             }
         ]
     )
     source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
 
-    assert [candidate.source_record_id for candidate in source.iter_candidates()] == ["d1:s1:0"]
+    assert [candidate.source_record_id for candidate in source.iter_candidates()] == ["d1:s1:1"]
 
 
 def test_wikipedia_adapter_preserves_the_polygon_and_article_provenance() -> None:
-    sentence_rows = CountingRows(
-        [_wikipedia_row(sentence_id="good", source_url="https://en.wikipedia.org/wiki/Place")]
-    )
+    sentence_rows = CountingRows([_wikipedia_row(sentence_id="good")])
     polygon_rows = CountingRows([_polygon_row(name="Vincennes", region="Ile-de-France")])
     source = _wikipedia_source((sentence_rows,), (polygon_rows,))
 
@@ -371,7 +425,22 @@ def test_wikipedia_adapter_preserves_the_polygon_and_article_provenance() -> Non
 
     assert candidate.place_name == "Vincennes"
     assert candidate.region == "Ile-de-France"
-    assert candidate.source_url == "https://en.wikipedia.org/wiki/Place"
+    assert candidate.source_url == "https://en.wikipedia.org/?curid=123"
+
+
+def test_wikipedia_adapter_derives_the_article_url_from_the_upstream_page_id() -> None:
+    sentence_rows = CountingRows([_wikipedia_row(sentence_id="good", page_id=65772030)])
+    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
+
+    assert next(source.iter_candidates()).source_url == "https://en.wikipedia.org/?curid=65772030"
+
+
+def test_wikipedia_adapter_emits_no_article_url_without_a_page_id() -> None:
+    row = _wikipedia_row(sentence_id="good")
+    del row["page_id"]
+    source = _wikipedia_source((CountingRows([row]),), (CountingRows([_polygon_row()]),))
+
+    assert next(source.iter_candidates()).source_url is None
 
 
 def test_wikipedia_adapter_skips_polygons_without_an_english_article() -> None:
@@ -712,28 +781,6 @@ def test_description_adapter_keeps_a_sentence_exactly_on_the_text_bound() -> Non
     assert [candidate.sentence for candidate in source.iter_candidates()] == ["0123456789"]
 
 
-def test_wikipedia_adapter_reads_the_upstream_lead_flag_on_its_own() -> None:
-    sentence_rows = CountingRows(
-        [_wikipedia_row(sentence_id="lead-flagged-body", section_index=0, is_lead=False)]
-    )
-    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
-
-    assert [candidate.candidate_id for candidate in source.iter_candidates()] == [
-        "wikipedia:p1:lead-flagged-body"
-    ]
-
-
-def test_wikipedia_adapter_reads_the_upstream_title_flag_on_its_own() -> None:
-    sentence_rows = CountingRows(
-        [_wikipedia_row(sentence_id="title-flagged-body", section_index=0, is_title=False)]
-    )
-    source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
-
-    assert [candidate.candidate_id for candidate in source.iter_candidates()] == [
-        "wikipedia:p1:title-flagged-body"
-    ]
-
-
 def test_wikipedia_adapter_names_the_upstream_sentence_field_it_read() -> None:
     sentence_rows = CountingRows([_wikipedia_row(sentence_id="good")])
     source = _wikipedia_source((sentence_rows,), (CountingRows([_polygon_row()]),))
@@ -751,7 +798,7 @@ def test_wikipedia_adapter_skips_a_record_without_any_sentence_identity() -> Non
                 "project": "wikipedia",
                 "language": "en",
                 "section_index": 1,
-                "is_lead": False,
+                "heading": "History",
                 "text": "A contextual sentence with no sentence index.",
             },
             {
@@ -761,7 +808,7 @@ def test_wikipedia_adapter_skips_a_record_without_any_sentence_identity() -> Non
                 "project": "wikipedia",
                 "language": "en",
                 "section_index": 1,
-                "is_lead": False,
+                "heading": "History",
                 "text": "A contextual sentence with no section id.",
             },
         ]
@@ -940,3 +987,105 @@ def test_description_adapter_derives_no_osm_url_from_half_an_identity() -> None:
     source = _description_source((iter([sentence_row]),), (iter([geometry_row]),))
 
     assert next(source.iter_candidates()).source_url is None
+
+
+def test_description_adapter_derives_a_region_from_the_upstream_source_pbf() -> None:
+    source = _description_source(
+        (iter([_description_row(identity="a" * 64)]),),
+        (iter([_geometry_row()]),),
+    )
+
+    assert next(source.iter_candidates()).region == "region"
+
+
+def test_description_adapter_derives_the_region_the_sibling_datasets_publish() -> None:
+    sentence_row = _description_row(identity="a" * 64, source_pbf="afghanistan-latest.osm.pbf")
+    geometry_row = _geometry_row(source_pbf="afghanistan-latest.osm.pbf")
+
+    source = _description_source((iter([sentence_row]),), (iter([geometry_row]),))
+
+    assert next(source.iter_candidates()).region == "afghanistan"
+
+
+def test_description_adapter_emits_no_region_without_a_source_pbf() -> None:
+    sentence_row = {
+        "description_identity": "shared-identity",
+        "language_code": "eng",
+        "top_score": 0.99,
+        "sentences": ["A description sentence with no source file."],
+    }
+    geometry_row = {"description_identity": "shared-identity", "lat": 45.0, "lon": 2.0}
+
+    source = _description_source((iter([sentence_row]),), (iter([geometry_row]),))
+
+    assert next(source.iter_candidates()).region is None
+
+
+@pytest.mark.parametrize(
+    ("source_pbf", "region"),
+    [
+        ("afghanistan-latest.osm.pbf", "afghanistan"),
+        ("ile-de-france-latest.osm.pbf", "ile-de-france"),
+        ("afghanistan.osm.pbf", "afghanistan"),
+        ("afghanistan-latest", "afghanistan"),
+        ("  ", None),
+        (None, None),
+    ],
+)
+def test_region_from_source_pbf_strips_only_the_extract_suffixes(
+    source_pbf: str | None, region: str | None
+) -> None:
+    from landuse_sentence_relevance.sources.v3 import region_from_source_pbf
+
+    assert region_from_source_pbf(source_pbf) == region
+
+
+def test_the_join_reports_how_many_keys_it_indexed(caplog: pytest.LogCaptureFixture) -> None:
+    source = _wikipedia_source(
+        (CountingRows([_wikipedia_row(sentence_id="good")]),),
+        (CountingRows([_polygon_row(), _polygon_row(polygon_id="p2", wikidata="Q2")]),),
+    )
+
+    with caplog.at_level("INFO", logger="landuse_sentence_relevance.sources.v3"):
+        list(source.iter_candidates())
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "V3 join indexed 2 join keys from 1 shard(s)" in messages
+    assert not any("join index is full" in message for message in messages)
+
+
+def test_the_join_counts_every_shard_it_read(caplog: pytest.LogCaptureFixture) -> None:
+    source = _wikipedia_source(
+        (CountingRows([_wikipedia_row(sentence_id="good")]),),
+        (
+            CountingRows([_polygon_row()]),
+            CountingRows([_polygon_row(polygon_id="p2", wikidata="Q2")]),
+            CountingRows([]),
+        ),
+    )
+
+    with caplog.at_level("INFO", logger="landuse_sentence_relevance.sources.v3"):
+        list(source.iter_candidates())
+
+    assert "V3 join indexed 2 join keys from 3 shard(s)" in [record.getMessage() for record in caplog.records]
+
+
+def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCaptureFixture) -> None:
+    source = _wikipedia_source(
+        (CountingRows([_wikipedia_row(sentence_id="good")]),),
+        (
+            CountingRows([_polygon_row()]),
+            CountingRows([_polygon_row(polygon_id="p2", wikidata="Q2")]),
+        ),
+        max_join_entries=1,
+    )
+
+    with caplog.at_level("INFO", logger="landuse_sentence_relevance.sources.v3"):
+        list(source.iter_candidates())
+
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert warnings == [
+        "V3 join index is full at 1 keys after 1 shard(s); stopping before shard 2. "
+        "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it."
+    ]
+    assert "V3 join indexed 1 join keys from 1 shard(s)" in [record.getMessage() for record in caplog.records]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from itertools import islice
@@ -16,7 +18,11 @@ type RowStream = Iterable[Row]
 type ShardLoader = Callable[[], Iterable[RowStream]]
 type CellForLocation = Callable[[float, float], str]
 
+logger = logging.getLogger(__name__)
+
 _ENGLISH_CODES = frozenset({"en", "eng", "eng_latn"})
+_SECTION_HEADING_LINE = re.compile(r"^\[[^\]]*\bedit\b[^\]]*\]", re.IGNORECASE)
+_EXTRACT_SUFFIXES = (".pbf", ".osm", "-latest")
 _DEFAULT_MAX_TEXT_CHARACTERS = 400
 _DEFAULT_MAX_ROWS_PER_SHARD = 20_000
 _DEFAULT_MAX_JOIN_ENTRIES = 500_000
@@ -307,9 +313,12 @@ def _join_index(
     """
 
     index: dict[str, JoinedPlace] = {}
+    shards_read = 0
     for rows in shards:
         if len(index) >= max_entries:
-            return index
+            _log_full_join_index(len(index), shards_read)
+            break
+        shards_read += 1
         _index_shard(
             index,
             _bounded_rows(rows, max_rows_per_shard),
@@ -317,7 +326,18 @@ def _join_index(
             place_for_row=place_for_row,
             max_entries=max_entries,
         )
+    logger.info("V3 join indexed %d join keys from %d shard(s)", len(index), shards_read)
     return index
+
+
+def _log_full_join_index(entries: int, shards_read: int) -> None:
+    logger.warning(
+        "V3 join index is full at %d keys after %d shard(s); stopping before shard %d. "
+        "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it.",
+        entries,
+        shards_read,
+        shards_read + 1,
+    )
 
 
 def _index_shard(
@@ -372,7 +392,7 @@ def _description_place(row: Row) -> JoinedPlace | None:
         latitude=latitude,
         longitude=longitude,
         place_name=_optional_text(row.get("name")),
-        region=_optional_text(row.get("region")),
+        region=region_from_source_pbf(row.get("source_pbf")),
         source_url=_osm_url(row),
     )
 
@@ -414,30 +434,42 @@ def _is_english_description(row: Row, min_score: float) -> bool:
 def _is_contextual_english_wikipedia_sentence(row: Row, max_text_characters: int) -> bool:
     """Keep only body sentences of an English Wikipedia article.
 
-    Lead and title sentences are excluded through the upstream ``is_lead`` and
-    ``is_title`` flags. ``sentence_index`` is deliberately never used to decide
-    this: its base is not part of the upstream contract, and treating it as
-    one-based drops the first sentence of every section. When an upstream row
-    carries neither flag, a ``section_index`` of zero is still read as the lead
-    section — the one reading that is safe under both a zero-based and a
-    one-based section numbering.
+    The pinned revision publishes no ``is_lead`` or ``is_title`` column, so the
+    rule is built on the columns it does publish, and on what they hold in the
+    recorded schema fixture (``tests/fixtures/v3_upstream_schema.json``):
+
+    * the lead is ``section_index`` 0, and every lead row there carries an empty
+      ``heading`` at ``level`` 0 while no body row has an empty heading;
+    * a section title reaches the sentence table as the first sentence of a body
+      section, rendered with the MediaWiki edit marker (``[ edit ]`` or
+      ``[ edit | edit source ]``). In the recorded shard every one of the 592
+      body-section first sentences starts with that marker and the marker never
+      appears anywhere else, so rejecting it drops heading lines only.
+
+    ``sentence_index`` alone never decides this: a body sentence that is not a
+    heading line is kept whatever its index.
     """
 
-    if row.get("project") != "wikipedia" or row.get("language") != "en":
+    if not _is_english_wikipedia_row(row):
         return False
-    if not _is_body_sentence(row):
+    if _is_lead_section(row) or _is_section_heading_line(row):
         return False
     return _bounded_sentence(row.get("text"), max_text_characters) is not None
 
 
-def _is_body_sentence(row: Row) -> bool:
-    if row.get("is_lead") is True or row.get("is_title") is True:
+def _is_english_wikipedia_row(row: Row) -> bool:
+    return row.get("project") == "wikipedia" and row.get("language") == "en"
+
+
+def _is_lead_section(row: Row) -> bool:
+    return _integer(row.get("section_index")) == 0 or _optional_text(row.get("heading")) is None
+
+
+def _is_section_heading_line(row: Row) -> bool:
+    if _integer(row.get("sentence_index")) != 0:
         return False
-    return _has_section_flags(row) or _integer(row.get("section_index")) != 0
-
-
-def _has_section_flags(row: Row) -> bool:
-    return row.get("is_lead") is not None or row.get("is_title") is not None
+    text = _optional_text(row.get("text"))
+    return text is not None and _SECTION_HEADING_LINE.match(text) is not None
 
 
 def _is_eligible_website_field(row: Row, field: _WebsiteField, min_probability: float) -> bool:
@@ -509,9 +541,12 @@ def _osm_url(row: Row) -> str | None:
 
 
 def _wikipedia_url(row: Row) -> str | None:
-    explicit = _optional_text(row.get("source_url"))
-    if explicit is not None:
-        return explicit
+    """Derive the article URL; the pinned revision publishes no URL column.
+
+    Only ``language == "en"`` rows reach here, so the English site is the right
+    host for every candidate this adapter emits.
+    """
+
     page_id = _optional_text(row.get("page_id"))
     if page_id is None:
         return None
@@ -541,6 +576,24 @@ def _bounded_sentence(value: Any, max_characters: int) -> str | None:
     if not cleaned or len(cleaned) > max_characters:
         return None
     return cleaned
+
+
+def region_from_source_pbf(value: Any) -> str | None:
+    """Derive the region label the sibling datasets publish from an extract name.
+
+    The description dataset publishes no ``region`` column, but it does publish
+    ``source_pbf``. In the recorded schema fixture the Wikipedia and website
+    polygons of the same extract carry ``region`` "afghanistan" while their
+    ``source_pbf`` is "afghanistan-latest.osm.pbf", so stripping the extract
+    suffixes reproduces the published label rather than inventing one.
+    """
+
+    name = _optional_text(value)
+    if name is None:
+        return None
+    for suffix in _EXTRACT_SUFFIXES:
+        name = name.removesuffix(suffix)
+    return _optional_text(name)
 
 
 def _optional_text(value: Any) -> str | None:
