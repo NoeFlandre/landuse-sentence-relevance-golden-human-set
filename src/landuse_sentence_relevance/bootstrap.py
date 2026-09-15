@@ -44,7 +44,7 @@ from landuse_sentence_relevance.storage.publisher import DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
 from landuse_sentence_relevance.storage.v3_annotation_seed import V3AnnotationSeedStore
 from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
-from landuse_sentence_relevance.workflow import AnnotationWorkflow
+from landuse_sentence_relevance.workflow import AnnotationWorkflow, V3AnnotationWorkflow
 
 logger = logging.getLogger(__name__)
 _PROGRESS_CHECKPOINT_INTERVAL = 32
@@ -952,6 +952,21 @@ def build_workflow(settings: Settings) -> AnnotationWorkflow:
     pool_store.save(finalized_pool, metadata)
     logger.info("Saved reusable candidate pool to %s", settings.candidate_pool_path)
     return _workflow(settings, cache, finalized_pool)
+
+
+def build_v3_workflow(settings: V3Settings) -> V3AnnotationWorkflow:
+    """Build the V3 UI only after the candidate pool and seed preflight pass."""
+
+    logger.info("Starting V3 annotation workflow; validating candidate preflight")
+    seed = build_v3_annotation_seed(settings)
+    workflow = V3AnnotationWorkflow(seed, AnnotationStore(settings.session_path))
+    logger.info(
+        "V3 annotation state ready: %d rows (%d fresh) at %s",
+        seed.total_rows,
+        seed.pending_row_count,
+        settings.session_path,
+    )
+    return workflow
 
 
 def _workflow(

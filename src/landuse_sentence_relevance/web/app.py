@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,7 +13,11 @@ from fastapi.templating import Jinja2Templates
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.observability import configure_logging
-from landuse_sentence_relevance.workflow import UnknownAnnotationError, WorkflowState
+from landuse_sentence_relevance.workflow import (
+    UnknownAnnotationError,
+    V3WorkflowState,
+    WorkflowState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +25,13 @@ TEMPLATE_DIRECTORY = Path(__file__).parent / "templates"
 
 
 class WebWorkflow(Protocol):
-    def state(self) -> WorkflowState: ...
+    def state(self) -> WorkflowState | V3WorkflowState: ...
 
-    def annotate(self, candidate_id: str, label: Label) -> WorkflowState: ...
+    def annotate(self, candidate_id: str, label: Label) -> WorkflowState | V3WorkflowState: ...
 
-    def change_label(self, candidate_id: str, label: Label) -> WorkflowState: ...
+    def change_label(self, candidate_id: str, label: Label) -> WorkflowState | V3WorkflowState: ...
 
-    def remove_annotation(self, candidate_id: str) -> WorkflowState: ...
+    def remove_annotation(self, candidate_id: str) -> WorkflowState | V3WorkflowState: ...
 
     def schedule_publish(self) -> None: ...
 
@@ -98,14 +103,26 @@ def create_app(workflow: WebWorkflow) -> FastAPI:
     return app
 
 
+def build_annotation_workflow() -> WebWorkflow:
+    """Select the isolated annotation profile requested by the environment."""
+
+    from landuse_sentence_relevance.bootstrap import build_v3_workflow, build_workflow
+    from landuse_sentence_relevance.config import Settings, V3Settings
+
+    version = os.environ.get("ANNOTATION_VERSION", "v2").strip().casefold()
+    if version == "v3":
+        return build_v3_workflow(V3Settings.from_env())
+    if version == "v2":
+        return build_workflow(Settings.from_env())
+    raise ValueError("ANNOTATION_VERSION must be v2 or v3")
+
+
 def run() -> None:  # pragma: no cover - process entrypoint
     import uvicorn
 
-    from landuse_sentence_relevance.bootstrap import build_workflow
-    from landuse_sentence_relevance.config import Settings
-
     configure_logging()
-    logger.info("Starting annotation UI; preparing streamed candidates and reusable model cache")
-    workflow = build_workflow(Settings.from_env())
+    version = os.environ.get("ANNOTATION_VERSION", "v2").strip().casefold()
+    logger.info("Starting %s annotation UI", version)
+    workflow = build_annotation_workflow()
     logger.info("Candidate pool ready; starting annotation UI at http://127.0.0.1:8000")
     uvicorn.run(create_app(workflow), host="0.0.0.0", port=8000, log_config=None)
