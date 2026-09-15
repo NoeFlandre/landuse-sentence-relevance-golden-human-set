@@ -4,14 +4,24 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from landuse_sentence_relevance.config import Settings
+from landuse_sentence_relevance.config import Settings, V3Settings
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
 from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
 from landuse_sentence_relevance.models.language_identifier import CommonLinguaIdentifier
 from landuse_sentence_relevance.models.sentence_splitter import SaTSentenceSplitter
-from landuse_sentence_relevance.sources.huggingface import HuggingFaceDatasetRows, HuggingFaceRowConfig
+from landuse_sentence_relevance.sources.huggingface import (
+    HuggingFaceDatasetLoader,
+    HuggingFaceDatasetRows,
+    HuggingFaceRowConfig,
+)
 from landuse_sentence_relevance.sources.remote_files import pinned_remote_file_urls
+from landuse_sentence_relevance.sources.v3 import (
+    DescriptionSentenceSource,
+    V3SourceAdapters,
+    WebsiteSentenceSource,
+    WikipediaSentenceSource,
+)
 from landuse_sentence_relevance.sources.website import WebsiteCandidateSource
 from landuse_sentence_relevance.sources.wikipedia import WikipediaCandidateSource
 from landuse_sentence_relevance.storage.auth import HuggingFaceAuth
@@ -48,6 +58,67 @@ _WIKIPEDIA_DIRECTORIES = {
     "wikipedia_sections": "wikipedia/sections",
 }
 _WEBSITE_DIRECTORIES = {"polygons": "polygons"}
+_V3_DESCRIPTION_COLUMNS = {
+    "sentences": (
+        "description_identity",
+        "source_pbf",
+        "osm_type",
+        "osm_id",
+        "language_code",
+        "top_score",
+        "sentences",
+    ),
+    "geometry": (
+        "source_pbf",
+        "osm_type",
+        "osm_id",
+        "osm_url",
+        "name",
+        "region",
+        "bbox_min_x",
+        "bbox_min_y",
+        "bbox_max_x",
+        "bbox_max_y",
+    ),
+}
+_V3_WIKIPEDIA_COLUMNS = {
+    "sentences": (
+        "sentence_id",
+        "document_id",
+        "section_id",
+        "wikidata",
+        "project",
+        "language",
+        "page_id",
+        "section_index",
+        "sentence_index",
+        "is_lead",
+        "is_title",
+        "source_url",
+        "text",
+    ),
+    "polygons": ("polygon_id", "wikidata", "has_english_wikipedia", "lat", "lon", "name", "region"),
+}
+_V3_WEBSITE_COLUMNS = (
+    "polygon_id",
+    "lat",
+    "lon",
+    "name",
+    "region",
+    "website",
+    "contact_website",
+    "website_language",
+    "website_language_probability",
+    "website_sentences",
+    "website_sentence_status",
+    "contact_website_language",
+    "contact_website_language_probability",
+    "contact_website_sentences",
+    "contact_website_sentence_status",
+)
+_V3_DESCRIPTION_DIRECTORIES = {"sentences": "language-v1/data", "geometry": "data"}
+_V3_WIKIPEDIA_DIRECTORIES = {"sentences": "wikipedia/sentences", "polygons": "polygons"}
+_V3_WEBSITE_DIRECTORIES = {"polygons": "polygons"}
 
 
 def _wikipedia_rows(
@@ -173,7 +244,7 @@ def _load_candidate_pool(
 
 
 def _h3_geometry(
-    settings: Settings,
+    settings: Settings | V3Settings,
 ) -> tuple[Callable[[float, float], str], Callable[[str], tuple[float, float]]]:
     try:
         from h3 import cell_to_latlng, latlng_to_cell
@@ -211,6 +282,149 @@ def _remote_files(
         token=settings.hf_token,
     )
     return wikipedia_remote_files, website_remote_files
+
+
+def _v3_remote_files(
+    settings: V3Settings,
+) -> tuple[
+    Mapping[str, tuple[str, ...]],
+    Mapping[str, tuple[str, ...]],
+    Mapping[str, tuple[str, ...]],
+]:
+    logger.info(
+        "Selecting %d aligned remote V3 Parquet shards per source dataset",
+        settings.remote_file_sample_count,
+    )
+    description_remote_files = pinned_remote_file_urls(
+        settings.description_dataset_id,
+        settings.description_dataset_revision,
+        _V3_DESCRIPTION_DIRECTORIES,
+        settings.remote_file_sample_count,
+        token=settings.hf_token,
+    )
+    wikipedia_remote_files = pinned_remote_file_urls(
+        settings.wikipedia_dataset_id,
+        settings.wikipedia_dataset_revision,
+        _V3_WIKIPEDIA_DIRECTORIES,
+        settings.remote_file_sample_count,
+        token=settings.hf_token,
+    )
+    website_remote_files = pinned_remote_file_urls(
+        settings.website_dataset_id,
+        settings.website_dataset_revision,
+        _V3_WEBSITE_DIRECTORIES,
+        settings.remote_file_sample_count,
+        token=settings.hf_token,
+    )
+    return description_remote_files, wikipedia_remote_files, website_remote_files
+
+
+def _v3_rows(
+    *,
+    dataset_id: str,
+    revision: str,
+    split: str,
+    config: str,
+    columns: tuple[str, ...],
+    remote_files: tuple[str, ...],
+    loader: HuggingFaceDatasetLoader | None,
+) -> HuggingFaceDatasetRows:
+    return HuggingFaceDatasetRows(
+        HuggingFaceRowConfig(
+            dataset_id=dataset_id,
+            revision=revision,
+            split=split,
+            config=config,
+            columns=columns,
+            remote_files=remote_files,
+        ),
+        loader=loader,
+    )
+
+
+def build_v3_source_adapters(
+    settings: V3Settings,
+    *,
+    cell_for_location: Callable[[float, float], str] | None = None,
+    loader: HuggingFaceDatasetLoader | None = None,
+) -> V3SourceAdapters:
+    """Compose V3 adapters over immutable, streaming-only source revisions."""
+    if cell_for_location is None:
+        cell_for_location, _ = _h3_geometry(settings)
+    description_remote_files, wikipedia_remote_files, website_remote_files = _v3_remote_files(settings)
+
+    description_sentences = _v3_rows(
+        dataset_id=settings.description_dataset_id,
+        revision=settings.description_dataset_revision,
+        split=settings.description_sentences_split,
+        config=settings.description_sentences_config,
+        columns=_V3_DESCRIPTION_COLUMNS["sentences"],
+        remote_files=description_remote_files["sentences"],
+        loader=loader,
+    )
+    description_geometry = _v3_rows(
+        dataset_id=settings.description_dataset_id,
+        revision=settings.description_dataset_revision,
+        split=settings.description_geometry_split,
+        config=settings.description_geometry_config,
+        columns=_V3_DESCRIPTION_COLUMNS["geometry"],
+        remote_files=description_remote_files["geometry"],
+        loader=loader,
+    )
+    wikipedia_sentences = _v3_rows(
+        dataset_id=settings.wikipedia_dataset_id,
+        revision=settings.wikipedia_dataset_revision,
+        split=settings.wikipedia_sentences_split,
+        config=settings.wikipedia_sentences_config,
+        columns=_V3_WIKIPEDIA_COLUMNS["sentences"],
+        remote_files=wikipedia_remote_files["sentences"],
+        loader=loader,
+    )
+    wikipedia_polygons = _v3_rows(
+        dataset_id=settings.wikipedia_dataset_id,
+        revision=settings.wikipedia_dataset_revision,
+        split=settings.wikipedia_polygons_split,
+        config=settings.wikipedia_polygons_config,
+        columns=_V3_WIKIPEDIA_COLUMNS["polygons"],
+        remote_files=wikipedia_remote_files["polygons"],
+        loader=loader,
+    )
+    website_rows = _v3_rows(
+        dataset_id=settings.website_dataset_id,
+        revision=settings.website_dataset_revision,
+        split=settings.website_split,
+        config=settings.website_config,
+        columns=_V3_WEBSITE_COLUMNS,
+        remote_files=website_remote_files["polygons"],
+        loader=loader,
+    )
+
+    return V3SourceAdapters(
+        description=DescriptionSentenceSource(
+            sentence_shards_loader=description_sentences.shards,
+            geometry_shards_loader=description_geometry.shards,
+            cell_for_location=cell_for_location,
+            max_rows_per_shard=settings.max_rows_per_shard,
+            min_language_score=settings.description_min_language_score,
+            max_text_characters=settings.max_text_characters,
+            max_join_entries=settings.max_join_entries,
+        ),
+        wikipedia=WikipediaSentenceSource(
+            sentence_shards_loader=wikipedia_sentences.shards,
+            polygon_shards_loader=wikipedia_polygons.shards,
+            cell_for_location=cell_for_location,
+            max_rows_per_shard=settings.max_rows_per_shard,
+            max_text_characters=settings.max_text_characters,
+            max_join_entries=settings.max_join_entries,
+        ),
+        website=WebsiteSentenceSource(
+            row_shards_loader=website_rows.shards,
+            cell_for_location=cell_for_location,
+            max_rows_per_shard=settings.max_rows_per_shard,
+            min_language_probability=settings.website_min_language_probability,
+            max_text_characters=settings.max_text_characters,
+        ),
+    )
 
 
 def _wikipedia_row_loaders(

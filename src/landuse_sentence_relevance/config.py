@@ -127,6 +127,8 @@ class V3Settings:
     wikipedia_dataset_revision: str = "f48c5aaaec6aecd63ecf5c195565cc2787597f1e"
     wikipedia_sentences_config: str = "wikipedia_sentences"
     wikipedia_sentences_split: str = "wikipedia_sentences"
+    wikipedia_polygons_config: str = "polygons"
+    wikipedia_polygons_split: str = "polygons"
     website_dataset_id: str = "NoeFlandre/osm-polygon-website-tag"
     website_dataset_revision: str = "5c8e56a50b5679118a28aef057af002209f80a5e"
     website_config: str = "default"
@@ -147,6 +149,7 @@ class V3Settings:
     minimum_cell_distance_km: float = 0.0
     remote_file_sample_count: int = 386
     max_rows_per_shard: int = 20_000
+    max_join_entries: int = 500_000
     stream_workers: int = 32
     description_min_language_score: float = 0.90
     website_min_language_probability: float = 0.90
@@ -193,6 +196,7 @@ class V3Settings:
             candidate_cells_per_source=int(env.get("V3_CANDIDATE_CELLS_PER_SOURCE", "400")),
             remote_file_sample_count=int(env.get("V3_REMOTE_FILE_SAMPLE_COUNT", "386")),
             max_rows_per_shard=int(env.get("V3_MAX_ROWS_PER_SHARD", "20000")),
+            max_join_entries=int(env.get("V3_MAX_JOIN_ENTRIES", "500000")),
             stream_workers=int(env.get("STREAM_WORKERS", "32")),
             hf_token=env.get("HF_TOKEN"),
         )

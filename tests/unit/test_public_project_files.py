@@ -48,6 +48,16 @@ def test_v3_page_does_not_deny_the_settings_profile_the_repository_ships() -> No
     assert "no V3 setting in `config.py`" not in page
 
 
+def test_v3_page_documents_the_streaming_adapters_while_the_workflow_stays_paused() -> None:
+    page = " ".join((ROOT / "docs/v3.md").read_text(encoding="utf-8").casefold().split())
+
+    assert "streaming adapters are implemented" in page
+    assert "no local splitter" in page
+    assert "bounded streaming joins" in page
+    assert "candidate pool and annotation workflow remain" in page
+    assert "paused and not implemented" in page
+
+
 def test_v3_page_pins_the_same_revisions_and_website_records_as_the_settings() -> None:
     page = (ROOT / "docs/v3.md").read_text(encoding="utf-8")
     settings = V3Settings()
@@ -121,12 +131,14 @@ def test_mutation_gate_covers_deterministic_sources() -> None:
         "src/landuse_sentence_relevance/sources/validation.py",
         "src/landuse_sentence_relevance/sources/website_text.py",
         "src/landuse_sentence_relevance/sources/website_discovery.py",
+        "src/landuse_sentence_relevance/sources/v3.py",
     }.issubset(source_paths)
 
     selected_tests = configuration["tool"]["mutmut"]["pytest_add_cli_args_test_selection"]
     assert "tests/unit/analysis" in selected_tests
     assert "tests/unit/test_interrater_script.py" in selected_tests
     assert "tests/unit/sources/test_website_helpers.py" in selected_tests
+    assert "tests/unit/sources/test_v3.py" in selected_tests
     assert "tests/unit/test_models.py" in selected_tests
 
 
