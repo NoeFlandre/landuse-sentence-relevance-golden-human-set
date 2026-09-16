@@ -5,7 +5,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from landuse_sentence_relevance.domain.models import Candidate
+from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.storage.atomic import TextWriter, atomic_write
 
 _IGNORED_METADATA_KEYS = {
@@ -31,10 +31,37 @@ class CandidateProgressStore:
             raise ValueError("candidate progress metadata does not match the current configuration")
         return tuple(Candidate.from_dict(dict(row)) for row in payload["candidates"])
 
-    def save(self, candidates: Iterable[Candidate], metadata: Mapping[str, Any]) -> None:
+    def load_completed_sources(self, expected_metadata: Mapping[str, Any]) -> frozenset[Source]:
+        """Return the sources whose upstream stream was read to the end.
+
+        A checkpoint written before this was recorded reports nothing, so every
+        source is re-streamed: that is the safe answer, because a source stopped
+        part way through holds only the shards it reached.
+        """
+
+        if not self._path.exists():
+            return frozenset()
+        payload = json.loads(self._path.read_text(encoding="utf-8"))
+        saved_metadata = payload.get("metadata")
+        if not isinstance(saved_metadata, Mapping) or not _metadata_matches(
+            saved_metadata, expected_metadata
+        ):
+            raise ValueError("candidate progress metadata does not match the current configuration")
+        completed = payload.get("completed_sources")
+        if not isinstance(completed, list):
+            return frozenset()
+        return frozenset(Source(value) for value in completed)
+
+    def save(
+        self,
+        candidates: Iterable[Candidate],
+        metadata: Mapping[str, Any],
+        completed_sources: Iterable[Source] = (),
+    ) -> None:
         payload = {
             "metadata": dict(metadata),
             "candidates": [candidate.to_dict() for candidate in candidates],
+            "completed_sources": sorted(source.value for source in completed_sources),
         }
 
         def write_payload(handle: TextWriter) -> None:

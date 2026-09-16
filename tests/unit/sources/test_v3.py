@@ -133,6 +133,22 @@ def _polygon_row(
     }
 
 
+def _website_row(*, polygon_id: str = "p1", **overrides: Any) -> dict[str, Any]:
+    """Shape a website polygon row the way the pinned revision publishes it."""
+    return {
+        "polygon_id": polygon_id,
+        "lat": 45.0,
+        "lon": 2.0,
+        "name": "Place",
+        "region": "Region",
+        "website": "https://example.test",
+        "website_language": "eng_Latn",
+        "website_language_probability": 0.95,
+        "website_sentences": ["The upstream website sentence."],
+        **overrides,
+    }
+
+
 def _description_source(sentence_shards, geometry_shards, **options: Any) -> DescriptionSentenceSource:
     return DescriptionSentenceSource(
         sentence_shards_loader=lambda: sentence_shards,
@@ -1089,3 +1105,73 @@ def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCapture
         "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it."
     ]
     assert "V3 join indexed 1 join keys from 1 shard(s)" in [record.getMessage() for record in caplog.records]
+
+
+class BlockingRows:
+    """A shard that blocks until released, to prove shards are read concurrently."""
+
+    def __init__(self, rows: Iterable[Mapping[str, Any]], barrier: Any) -> None:
+        self._rows = tuple(rows)
+        self._barrier = barrier
+
+    def __iter__(self) -> Iterator[Mapping[str, Any]]:
+        self._barrier.wait(timeout=10)
+        yield from self._rows
+
+
+def test_website_adapter_reads_shards_concurrently() -> None:
+    """Each shard blocks until every other shard has started, so a sequential read deadlocks."""
+
+    import threading
+
+    shard_count = 4
+    barrier = threading.Barrier(shard_count)
+    shards = tuple(
+        BlockingRows([_website_row(polygon_id=f"p{index}")], barrier) for index in range(shard_count)
+    )
+    source = WebsiteSentenceSource(
+        row_shards_loader=lambda: shards,
+        cell_for_location=_cell,
+        max_stream_workers=shard_count,
+    )
+
+    candidates = list(source.iter_candidates())
+
+    assert len(candidates) == shard_count
+
+
+def test_website_adapter_yields_same_candidates_with_and_without_workers() -> None:
+    rows = [_website_row(polygon_id=f"p{index}") for index in range(6)]
+    shards = tuple((row,) for row in rows)
+
+    sequential = _website_source(*shards, max_stream_workers=1)
+    parallel = WebsiteSentenceSource(
+        row_shards_loader=lambda: shards,
+        cell_for_location=_cell,
+        max_stream_workers=4,
+    )
+
+    sequential_ids = sorted(candidate.candidate_id for candidate in sequential.iter_candidates())
+    parallel_ids = sorted(candidate.candidate_id for candidate in parallel.iter_candidates())
+    assert sequential_ids == parallel_ids
+    assert sequential_ids != []
+
+
+def test_website_adapter_propagates_shard_failures_with_workers() -> None:
+    def failing_rows() -> Iterator[Mapping[str, Any]]:
+        yield _website_row(polygon_id="p0")
+        raise RuntimeError("upstream shard failed")
+
+    source = WebsiteSentenceSource(
+        row_shards_loader=lambda: ((_website_row(polygon_id="p1"),), failing_rows()),
+        cell_for_location=_cell,
+        max_stream_workers=2,
+    )
+
+    with pytest.raises(RuntimeError, match="upstream shard failed"):
+        list(source.iter_candidates())
+
+
+def test_website_adapter_rejects_non_positive_stream_workers() -> None:
+    with pytest.raises(ValueError, match="max_stream_workers"):
+        _website_source((), max_stream_workers=0)

@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from itertools import islice
 from math import isfinite
+from queue import Queue
+from threading import Event
 from typing import Any, Protocol
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
@@ -26,6 +29,8 @@ _EXTRACT_SUFFIXES = (".pbf", ".osm", "-latest")
 _DEFAULT_MAX_TEXT_CHARACTERS = 400
 _DEFAULT_MAX_ROWS_PER_SHARD = 20_000
 _DEFAULT_MAX_JOIN_ENTRIES = 500_000
+_DEFAULT_MAX_STREAM_WORKERS = 1
+_SHARD_QUEUE_CAPACITY = 2_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +108,7 @@ class DescriptionSentenceSource:
         min_language_score: float = 0.90,
         max_text_characters: int = _DEFAULT_MAX_TEXT_CHARACTERS,
         max_join_entries: int = _DEFAULT_MAX_JOIN_ENTRIES,
+        max_stream_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
     ) -> None:
         self._sentence_shards_loader = sentence_shards_loader
         self._geometry_shards_loader = geometry_shards_loader
@@ -114,6 +120,8 @@ class DescriptionSentenceSource:
         self.max_text_characters = max_text_characters
         validate_positive_limit(max_join_entries, "max_join_entries")
         self.max_join_entries = max_join_entries
+        validate_positive_limit(max_stream_workers, "max_stream_workers")
+        self.max_stream_workers = max_stream_workers
 
     def iter_candidates(self) -> Iterator[Candidate]:
         geometry_by_identity = _join_index(
@@ -122,8 +130,12 @@ class DescriptionSentenceSource:
             place_for_row=_description_place,
             max_rows_per_shard=self.max_rows_per_shard,
             max_entries=self.max_join_entries,
+            max_workers=self.max_stream_workers,
         )
-        for row in _bounded_shard_rows(self._sentence_shards_loader(), self.max_rows_per_shard):
+        rows = _parallel_shard_rows(
+            self._sentence_shards_loader(), self.max_rows_per_shard, self.max_stream_workers
+        )
+        for row in rows:
             yield from self._row_candidates(row, geometry_by_identity)
 
     def _row_candidates(self, row: Row, geometry: Mapping[str, JoinedPlace]) -> Iterator[Candidate]:
@@ -170,6 +182,7 @@ class WikipediaSentenceSource:
         max_rows_per_shard: int = _DEFAULT_MAX_ROWS_PER_SHARD,
         max_text_characters: int = _DEFAULT_MAX_TEXT_CHARACTERS,
         max_join_entries: int = _DEFAULT_MAX_JOIN_ENTRIES,
+        max_stream_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
     ) -> None:
         self._sentence_shards_loader = sentence_shards_loader
         self._polygon_shards_loader = polygon_shards_loader
@@ -180,6 +193,8 @@ class WikipediaSentenceSource:
         self.max_text_characters = max_text_characters
         validate_positive_limit(max_join_entries, "max_join_entries")
         self.max_join_entries = max_join_entries
+        validate_positive_limit(max_stream_workers, "max_stream_workers")
+        self.max_stream_workers = max_stream_workers
 
     def iter_candidates(self) -> Iterator[Candidate]:
         polygons_by_wikidata = _join_index(
@@ -188,8 +203,12 @@ class WikipediaSentenceSource:
             place_for_row=_wikipedia_polygon_place,
             max_rows_per_shard=self.max_rows_per_shard,
             max_entries=self.max_join_entries,
+            max_workers=self.max_stream_workers,
         )
-        for row in _bounded_shard_rows(self._sentence_shards_loader(), self.max_rows_per_shard):
+        rows = _parallel_shard_rows(
+            self._sentence_shards_loader(), self.max_rows_per_shard, self.max_stream_workers
+        )
+        for row in rows:
             candidate = self._candidate_for(row, polygons_by_wikidata)
             if candidate is not None:
                 yield candidate
@@ -228,6 +247,7 @@ class WebsiteSentenceSource:
         max_rows_per_shard: int = _DEFAULT_MAX_ROWS_PER_SHARD,
         min_language_probability: float = 0.90,
         max_text_characters: int = _DEFAULT_MAX_TEXT_CHARACTERS,
+        max_stream_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
     ) -> None:
         self._row_shards_loader = row_shards_loader
         self._cell_for_location = cell_for_location
@@ -238,9 +258,14 @@ class WebsiteSentenceSource:
         )
         validate_positive_limit(max_text_characters, "max_text_characters")
         self.max_text_characters = max_text_characters
+        validate_positive_limit(max_stream_workers, "max_stream_workers")
+        self.max_stream_workers = max_stream_workers
 
     def iter_candidates(self) -> Iterator[Candidate]:
-        for row in _bounded_shard_rows(self._row_shards_loader(), self.max_rows_per_shard):
+        rows = _parallel_shard_rows(
+            self._row_shards_loader(), self.max_rows_per_shard, self.max_stream_workers
+        )
+        for row in rows:
             yield from self._row_candidates(row)
 
     def _row_candidates(self, row: Row) -> Iterator[Candidate]:
@@ -311,29 +336,55 @@ def _join_index(
     place_for_row: Callable[[Row], JoinedPlace | None],
     max_rows_per_shard: int,
     max_entries: int,
+    max_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
 ) -> dict[str, JoinedPlace]:
     """Index the lookup side of a join across every shard, first key wins.
 
     Both axes are bounded: at most ``max_rows_per_shard`` rows are read from a
     shard, and once ``max_entries`` keys are held no further shard is opened.
+    Shards may be fetched concurrently, but they are merged in shard order so
+    that "first key wins" resolves to the same place whatever the network does.
     """
 
     index: dict[str, JoinedPlace] = {}
     shards_read = 0
-    for rows in shards:
+    for rows in _join_shard_rows(shards, max_rows_per_shard, max_workers):
         if len(index) >= max_entries:
             _log_full_join_index(len(index), shards_read)
             break
         shards_read += 1
         _index_shard(
             index,
-            _bounded_rows(rows, max_rows_per_shard),
+            rows,
             key_for_row=key_for_row,
             place_for_row=place_for_row,
             max_entries=max_entries,
         )
     logger.info("V3 join indexed %d join keys from %d shard(s)", len(index), shards_read)
     return index
+
+
+def _join_shard_rows(
+    shards: Iterable[RowStream],
+    max_rows_per_shard: int,
+    max_workers: int,
+) -> Iterator[Iterable[Row]]:
+    """Yield each shard's bounded rows, prefetching only when workers are enabled.
+
+    The sequential path stays lazy so that a full join index never opens the
+    next shard. Prefetching reads at most ``max_workers`` shards ahead, which is
+    the cost of overlapping the network waits.
+    """
+
+    if max_workers <= 1:
+        for rows in shards:
+            yield _bounded_rows(rows, max_rows_per_shard)
+        return
+    yield from _ordered_parallel_shards(
+        shards,
+        lambda rows: tuple(_bounded_rows(rows, max_rows_per_shard)),
+        max_workers,
+    )
 
 
 def _log_full_join_index(entries: int, shards_read: int) -> None:
@@ -377,6 +428,105 @@ def _add_join_entry(
 
 def _joined_place(index: Mapping[str, JoinedPlace], key: str | None) -> JoinedPlace | None:
     return None if key is None else index.get(key)
+
+
+class _ShardFailure:
+    """Carry a worker thread's exception back to the consuming generator."""
+
+    __slots__ = ("error",)
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+
+def _parallel_shard_rows(
+    shards: Iterable[RowStream],
+    limit: int,
+    max_workers: int,
+) -> Iterator[Row]:
+    """Read shards concurrently and yield their rows as they arrive.
+
+    The pool that consumes these rows keeps a deterministic winner per stratum by
+    hash rank, not by arrival order, so interleaving shards cannot change which
+    candidates survive. Memory stays bounded by a fixed queue, and a shard that
+    raises re-raises here rather than being silently dropped.
+    """
+
+    streams = tuple(shards)
+    if max_workers <= 1 or len(streams) <= 1:
+        yield from _bounded_shard_rows(streams, limit)
+        return
+    queue: Queue[Any] = Queue(maxsize=_SHARD_QUEUE_CAPACITY)
+    finished = Event()
+
+    def drain(rows: RowStream) -> None:
+        try:
+            for row in islice(rows, limit):
+                if finished.is_set():
+                    break
+                queue.put(row)
+        except BaseException as error:  # re-raised in the consuming generator
+            queue.put(_ShardFailure(error))
+        finally:
+            queue.put(None)
+
+    executor = ThreadPoolExecutor(
+        max_workers=min(len(streams), max_workers),
+        thread_name_prefix="v3-shard",
+    )
+    try:
+        for rows in streams:
+            executor.submit(drain, rows)
+        remaining = len(streams)
+        while remaining:
+            item = queue.get()
+            if item is None:
+                remaining -= 1
+            elif isinstance(item, _ShardFailure):
+                raise item.error
+            else:
+                yield item
+    finally:
+        finished.set()
+        _drain_queue(queue)
+        executor.shutdown(wait=True)
+
+
+def _drain_queue(queue: Queue[Any]) -> None:
+    """Unblock workers parked on a full queue so shutdown cannot deadlock."""
+
+    while not queue.empty():
+        queue.get_nowait()
+
+
+def _ordered_parallel_shards(
+    shards: Iterable[RowStream],
+    build: Callable[[RowStream], Any],
+    max_workers: int,
+) -> Iterator[Any]:
+    """Prefetch shards concurrently but hand results back in shard order.
+
+    The join index keeps the first value seen for a key, so its result depends on
+    shard order. Prefetching with a bounded sliding window keeps that order while
+    still overlapping the network waits.
+    """
+
+    streams = iter(shards)
+    if max_workers <= 1:
+        for rows in streams:
+            yield build(rows)
+        return
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="v3-join") as executor:
+        pending: list[Future[Any]] = []
+        for rows in islice(streams, max_workers):
+            pending.append(executor.submit(build, rows))
+        while pending:
+            head = pending.pop(0)
+            wait([head], return_when=FIRST_COMPLETED)
+            next_rows = next(streams, None)
+            if next_rows is not None:
+                pending.append(executor.submit(build, next_rows))
+            yield head.result()
 
 
 def _bounded_shard_rows(shards: Iterable[RowStream], limit: int) -> Iterator[Row]:

@@ -450,6 +450,7 @@ def build_v3_source_adapters(
             min_language_score=settings.description_min_language_score,
             max_text_characters=settings.max_text_characters,
             max_join_entries=settings.max_join_entries,
+            max_stream_workers=settings.stream_workers,
         ),
         wikipedia=WikipediaSentenceSource(
             sentence_shards_loader=rows["wikipedia_sentences"].shards,
@@ -458,6 +459,7 @@ def build_v3_source_adapters(
             max_rows_per_shard=settings.max_rows_per_shard,
             max_text_characters=settings.max_text_characters,
             max_join_entries=settings.max_join_entries,
+            max_stream_workers=settings.stream_workers,
         ),
         website=WebsiteSentenceSource(
             row_shards_loader=rows["website_polygons"].shards,
@@ -465,6 +467,7 @@ def build_v3_source_adapters(
             max_rows_per_shard=settings.max_rows_per_shard,
             min_language_probability=settings.website_min_language_probability,
             max_text_characters=settings.max_text_characters,
+            max_stream_workers=settings.stream_workers,
         ),
     )
 
@@ -504,7 +507,14 @@ def build_v3_candidate_pool(
             loader=loader,
         )
     )
-    _collect_v3_sources(source_adapters, pool, progress_store, metadata, seed_plan.reserved_cells)
+    _collect_v3_sources(
+        source_adapters,
+        pool,
+        progress_store,
+        metadata,
+        seed_plan.reserved_cells,
+        settings.candidate_cells_per_source,
+    )
     finalized = _finalize_v3_pool(pool, settings, center_of_cell)
     result = _validated_v3_result(finalized, seed_plan, quotas, settings.candidate_cells_per_source)
     pool_store.save(finalized, metadata)
@@ -597,20 +607,41 @@ def _collect_v3_sources(
     progress_store: CandidateProgressStore,
     metadata: Mapping[str, Any],
     reserved_cells: frozenset[str],
+    target_cells_per_source: int,
 ) -> None:
-    source_streams = {
-        Source.WIKIPEDIA: adapters.wikipedia.iter_candidates(),
-        Source.WEBSITE: adapters.website.iter_candidates(),
-        Source.DESCRIPTION: adapters.description.iter_candidates(),
+    """Stream only the sources whose reservoir is still short of the target.
+
+    A source that already read its upstream to the end is not read again: the
+    pool keeps a hash-ranked winner per stratum, so a second full pass cannot
+    change what it holds. Holding enough cells is deliberately not sufficient.
+    Upstream shards arrive in a fixed order, so a source stopped part way
+    through covers only the regions it reached, and re-reading it is what gives
+    the reservoir its global spread.
+    """
+    adapter_for_source = {
+        Source.WIKIPEDIA: adapters.wikipedia,
+        Source.WEBSITE: adapters.website,
+        Source.DESCRIPTION: adapters.description,
     }
+    available = _v3_available_cells(pool)
+    completed = set(progress_store.load_completed_sources(metadata))
     for source in V3_SOURCES:
+        if source in completed and available.get(source.value, 0) >= target_cells_per_source:
+            logger.info(
+                "Skipping the %s stream: it finished earlier and holds %d cells for a %d-cell target",
+                source.value,
+                available[source.value],
+                target_cells_per_source,
+            )
+            continue
         _collect_v3_source(
-            source_streams[source],
+            adapter_for_source[source].iter_candidates(),
             source,
             pool,
             progress_store,
             metadata,
             reserved_cells,
+            completed,
         )
 
 
@@ -621,7 +652,10 @@ def _collect_v3_source(
     progress_store: CandidateProgressStore,
     metadata: Mapping[str, Any],
     reserved_cells: frozenset[str],
+    completed: set[Source],
 ) -> int:
+    """Stream one source, recording completion only when its rows truly ran out."""
+
     collected = 0
     try:
         for candidate in candidates:
@@ -632,9 +666,10 @@ def _collect_v3_source(
             pool.add(candidate)
             collected += 1
             if collected % _V3_PROGRESS_CHECKPOINT_INTERVAL == 0:
-                progress_store.save(pool.snapshot(), metadata)
+                progress_store.save(pool.snapshot(), metadata, completed)
+        completed.add(source)
     finally:
-        progress_store.save(pool.snapshot(), metadata)
+        progress_store.save(pool.snapshot(), metadata, completed)
     return collected
 
 
