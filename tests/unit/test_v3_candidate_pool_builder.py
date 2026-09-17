@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from landuse_sentence_relevance.bootstrap import (
+from landuse_sentence_relevance.bootstrap.v3 import (
     _finalize_v3_pool,
     _resolve_v3_geometry,
     _v3_candidate_pool_metadata,
@@ -195,7 +195,7 @@ def test_builder_resolves_default_h3_geometry_when_callers_do_not_inject_it(
         return (1.0, 2.0)
 
     monkeypatch.setattr(
-        "landuse_sentence_relevance.bootstrap._h3_geometry",
+        "landuse_sentence_relevance.bootstrap.v3._h3_geometry",
         lambda settings: (expected_cell, expected_center),
     )
 
@@ -371,7 +371,7 @@ def test_collect_throttles_checkpoints_by_elapsed_time() -> None:
     set, never a stream position.
     """
 
-    from landuse_sentence_relevance.bootstrap import _collect_v3_source
+    from landuse_sentence_relevance.bootstrap.v3 import _collect_v3_source
 
     metadata = {"schema_version": 1}
     pool = BoundedCandidatePool(capacity_per_stratum=1, seed="seed", sources=V3_SOURCES)
@@ -407,7 +407,7 @@ def test_collect_throttles_checkpoints_by_elapsed_time() -> None:
 
 
 def test_collect_checkpoints_when_the_interval_elapses() -> None:
-    from landuse_sentence_relevance.bootstrap import (
+    from landuse_sentence_relevance.bootstrap.v3 import (
         _V3_PROGRESS_CHECKPOINT_SECONDS,
         _collect_v3_source,
     )

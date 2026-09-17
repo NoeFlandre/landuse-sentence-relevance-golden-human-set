@@ -29,6 +29,7 @@ class CapturingRows:
 
 def _build(monkeypatch, settings: V3Settings) -> tuple[Any, list[tuple[Any, ...]]]:
     import landuse_sentence_relevance.bootstrap as bootstrap
+    import landuse_sentence_relevance.bootstrap.streams as streams
 
     catalog_calls: list[tuple[Any, ...]] = []
 
@@ -43,8 +44,8 @@ def _build(monkeypatch, settings: V3Settings) -> tuple[Any, list[tuple[Any, ...]
         return {key: (f"https://example.test/{key}.parquet",) for key in directories}
 
     CapturingRows.instances.clear()
-    monkeypatch.setattr(bootstrap, "pinned_remote_file_urls", pinned_files)
-    monkeypatch.setattr(bootstrap, "HuggingFaceDatasetRows", CapturingRows)
+    monkeypatch.setattr(streams, "pinned_remote_file_urls", pinned_files)
+    monkeypatch.setattr(streams, "HuggingFaceDatasetRows", CapturingRows)
     adapters = bootstrap.build_v3_source_adapters(
         settings, cell_for_location=lambda latitude, longitude: "8928308280fffff"
     )
