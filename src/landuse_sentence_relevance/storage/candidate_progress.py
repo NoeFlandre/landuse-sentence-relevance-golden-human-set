@@ -14,6 +14,17 @@ _IGNORED_METADATA_KEYS = {
 }
 
 
+def _require_matching_metadata(saved: Any, expected: Mapping[str, Any]) -> None:
+    """Refuse a checkpoint written under a different configuration.
+
+    A changed pin or sample count means the record describes different upstream data, so skipping
+    a source on its say-so would silently read something else. Better to re-stream than to guess.
+    """
+
+    if not isinstance(saved, Mapping) or not _metadata_matches(saved, expected):
+        raise ValueError("candidate progress metadata does not match the current configuration")
+
+
 class CandidateProgressStore:
     """Persist compact candidate checkpoints while a pool is being built."""
 
@@ -42,11 +53,7 @@ class CandidateProgressStore:
         if not self._path.exists():
             return frozenset()
         payload = json.loads(self._path.read_text(encoding="utf-8"))
-        saved_metadata = payload.get("metadata")
-        if not isinstance(saved_metadata, Mapping) or not _metadata_matches(
-            saved_metadata, expected_metadata
-        ):
-            raise ValueError("candidate progress metadata does not match the current configuration")
+        _require_matching_metadata(payload.get("metadata"), expected_metadata)
         completed = payload.get("completed_sources")
         if not isinstance(completed, list):
             return frozenset()

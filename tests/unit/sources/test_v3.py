@@ -1175,3 +1175,117 @@ def test_website_adapter_propagates_shard_failures_with_workers() -> None:
 def test_website_adapter_rejects_non_positive_stream_workers() -> None:
     with pytest.raises(ValueError, match="max_stream_workers"):
         _website_source((), max_stream_workers=0)
+
+
+# --------------------------------------------------------------- concurrent shard reading
+
+
+def _slow_rows(rows: Iterable[Mapping[str, Any]], delay: float = 0.0) -> Iterator[Mapping[str, Any]]:
+    import time
+
+    for row in rows:
+        if delay:
+            time.sleep(delay)
+        yield row
+
+
+class TestOrderedParallelShards:
+    """`_ordered_parallel_shards` prefetches concurrently but must preserve shard order.
+
+    The join index keeps the first value seen for a key, so its result depends on shard order.
+    Prefetching that reordered shards would silently change which record wins a key -- a
+    correctness bug that no amount of retrying would surface.
+    """
+
+    def test_a_single_worker_reads_sequentially(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        shards = [iter([{"n": 0}]), iter([{"n": 1}]), iter([{"n": 2}])]
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=1))
+        assert built == [[{"n": 0}], [{"n": 1}], [{"n": 2}]]
+
+    def test_results_come_back_in_shard_order_despite_uneven_timing(self) -> None:
+        """The first shard is the slowest, so arrival order and shard order disagree."""
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        delays = {0: 0.05, 1: 0.0, 2: 0.0, 3: 0.0}
+        shards = [_slow_rows([{"n": index}], delays[index]) for index in range(4)]
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=3))
+        assert built == [[{"n": index}] for index in range(4)]
+
+    def test_every_shard_is_built_when_there_are_more_than_workers(self) -> None:
+        """The sliding window must keep submitting past the initial batch."""
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        shards = [iter([{"n": index}]) for index in range(9)]
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=2))
+        assert [rows[0]["n"] for rows in built] == list(range(9))
+
+    def test_no_shards_yields_nothing(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        assert list(_ordered_parallel_shards([], lambda rows: list(rows), max_workers=4)) == []
+
+    def test_a_shard_that_raises_propagates_rather_than_being_dropped(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        def build(rows: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+            materialised = list(rows)
+            if materialised and materialised[0]["n"] == 1:
+                raise RuntimeError("shard failed")
+            return materialised
+
+        shards = [iter([{"n": index}]) for index in range(3)]
+        with pytest.raises(RuntimeError, match="shard failed"):
+            list(_ordered_parallel_shards(shards, build, max_workers=2))
+
+
+class TestParallelShardRows:
+    """`_parallel_shard_rows` interleaves shards, which is safe only because the pool ranks
+    candidates by hash rather than by arrival order."""
+
+    def test_a_single_worker_reads_shards_in_order(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        shards = [iter([{"n": 0}, {"n": 1}]), iter([{"n": 2}])]
+        assert list(_parallel_shard_rows(shards, limit=10, max_workers=1)) == [
+            {"n": 0},
+            {"n": 1},
+            {"n": 2},
+        ]
+
+    def test_one_shard_is_read_sequentially_whatever_the_worker_count(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        rows = list(_parallel_shard_rows([iter([{"n": 0}, {"n": 1}])], limit=10, max_workers=4))
+        assert rows == [{"n": 0}, {"n": 1}]
+
+    def test_every_row_arrives_when_shards_are_read_concurrently(self) -> None:
+        """Order is not asserted -- interleaving is the point -- but nothing may be lost."""
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        shards = [iter([{"n": index}, {"n": index + 100}]) for index in range(4)]
+        rows = list(_parallel_shard_rows(shards, limit=10, max_workers=3))
+        assert sorted(row["n"] for row in rows) == sorted(
+            [index for index in range(4)] + [index + 100 for index in range(4)]
+        )
+
+    def test_the_limit_is_applied_per_shard(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        shards = [iter([{"n": index} for index in range(10)]) for _ in range(3)]
+        rows = list(_parallel_shard_rows(shards, limit=2, max_workers=3))
+        assert len(rows) == 6
+
+    def test_a_failing_shard_re_raises_in_the_consumer(self) -> None:
+        """A shard that raises must not be silently dropped: the pool would be short and
+        nothing would say so."""
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        def exploding() -> Iterator[Mapping[str, Any]]:
+            yield {"n": 0}
+            raise RuntimeError("upstream died")
+
+        shards = [exploding(), iter([{"n": 1}]), iter([{"n": 2}])]
+        with pytest.raises(RuntimeError, match="upstream died"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=3))

@@ -477,19 +477,30 @@ def _parallel_shard_rows(
     try:
         for rows in streams:
             executor.submit(drain, rows)
-        remaining = len(streams)
-        while remaining:
-            item = queue.get()
-            if item is None:
-                remaining -= 1
-            elif isinstance(item, _ShardFailure):
-                raise item.error
-            else:
-                yield item
+        yield from _consume_shard_queue(queue, len(streams))
     finally:
         finished.set()
         _drain_queue(queue)
         executor.shutdown(wait=True)
+
+
+def _consume_shard_queue(queue: Queue[Any], shards: int) -> Iterator[Row]:
+    """Yield rows until every shard has signalled that it finished.
+
+    Each worker puts exactly one ``None`` sentinel when it stops, so the consumer knows when all
+    of them are done without joining the pool. A ``_ShardFailure`` re-raises here rather than in
+    the worker thread, where it would be swallowed and the pool would simply come up short.
+    """
+
+    remaining = shards
+    while remaining:
+        item = queue.get()
+        if item is None:
+            remaining -= 1
+        elif isinstance(item, _ShardFailure):
+            raise item.error
+        else:
+            yield item
 
 
 def _drain_queue(queue: Queue[Any]) -> None:
@@ -517,16 +528,30 @@ def _ordered_parallel_shards(
             yield build(rows)
         return
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="v3-join") as executor:
-        pending: list[Future[Any]] = []
-        for rows in islice(streams, max_workers):
-            pending.append(executor.submit(build, rows))
-        while pending:
-            head = pending.pop(0)
-            wait([head], return_when=FIRST_COMPLETED)
-            next_rows = next(streams, None)
-            if next_rows is not None:
-                pending.append(executor.submit(build, next_rows))
-            yield head.result()
+        yield from _sliding_window(streams, build, executor, max_workers)
+
+
+def _sliding_window(
+    streams: Iterator[RowStream],
+    build: Callable[[RowStream], Any],
+    executor: ThreadPoolExecutor,
+    width: int,
+) -> Iterator[Any]:
+    """Keep ``width`` shards in flight, yielding each in submission order.
+
+    Popping the head before submitting the next keeps the window from growing, and yielding
+    ``head.result()`` rather than whichever future finished first is what preserves shard order --
+    the property the join index depends on.
+    """
+
+    pending: list[Future[Any]] = [executor.submit(build, rows) for rows in islice(streams, width)]
+    while pending:
+        head = pending.pop(0)
+        wait([head], return_when=FIRST_COMPLETED)
+        next_rows = next(streams, None)
+        if next_rows is not None:
+            pending.append(executor.submit(build, next_rows))
+        yield head.result()
 
 
 def _bounded_shard_rows(shards: Iterable[RowStream], limit: int) -> Iterator[Row]:
