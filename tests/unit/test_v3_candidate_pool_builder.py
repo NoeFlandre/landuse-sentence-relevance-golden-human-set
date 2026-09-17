@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -358,3 +359,88 @@ def test_progress_store_treats_a_checkpoint_without_completion_as_unfinished(tmp
     store.save((_candidate(Source.WIKIPEDIA, 0),), metadata)
 
     assert store.load_completed_sources(metadata) == frozenset()
+
+
+def test_collect_throttles_checkpoints_by_elapsed_time() -> None:
+    """Checkpoints are paced by a clock, not by counting every 32 candidates.
+
+    Rewriting the whole pool per 32 candidates costs a sort and a full
+    re-serialisation, which throttles the stream far below what the network
+    delivers. Frequent writes also buy nothing: a resumed source re-reads its
+    shards from the start, so the checkpoint only has to preserve the candidate
+    set, never a stream position.
+    """
+
+    from landuse_sentence_relevance.bootstrap import _collect_v3_source
+
+    metadata = {"schema_version": 1}
+    pool = BoundedCandidatePool(capacity_per_stratum=1, seed="seed", sources=V3_SOURCES)
+    saves: list[int] = []
+
+    class CountingStore:
+        def save(
+            self,
+            candidates: Iterable[Candidate],
+            meta: Mapping[str, object],
+            completed: Iterable[Source] = (),
+        ) -> None:
+            saves.append(len(tuple(candidates)))
+
+    ticks = {"now": 0.0}
+
+    def now() -> float:
+        return ticks["now"]
+
+    candidates = tuple(_candidate(Source.WEBSITE, index) for index in range(200))
+    _collect_v3_source(
+        iter(candidates),
+        Source.WEBSITE,
+        pool,
+        cast(CandidateProgressStore, CountingStore()),
+        metadata,
+        frozenset(),
+        set(),
+        now=now,
+    )
+
+    assert len(saves) == 1, f"a frozen clock must checkpoint only on completion, got {len(saves)}"
+
+
+def test_collect_checkpoints_when_the_interval_elapses() -> None:
+    from landuse_sentence_relevance.bootstrap import (
+        _V3_PROGRESS_CHECKPOINT_SECONDS,
+        _collect_v3_source,
+    )
+
+    metadata = {"schema_version": 1}
+    pool = BoundedCandidatePool(capacity_per_stratum=1, seed="seed", sources=V3_SOURCES)
+    saves: list[int] = []
+
+    class CountingStore:
+        def save(
+            self,
+            candidates: Iterable[Candidate],
+            meta: Mapping[str, object],
+            completed: Iterable[Source] = (),
+        ) -> None:
+            saves.append(len(tuple(candidates)))
+
+    ticks = {"now": 0.0}
+
+    def now() -> float:
+        ticks["now"] += _V3_PROGRESS_CHECKPOINT_SECONDS + 1.0
+        return ticks["now"]
+
+    candidates = tuple(_candidate(Source.WEBSITE, index) for index in range(5))
+    _collect_v3_source(
+        iter(candidates),
+        Source.WEBSITE,
+        pool,
+        cast(CandidateProgressStore, CountingStore()),
+        metadata,
+        frozenset(),
+        set(),
+        now=now,
+    )
+
+    assert len(saves) == 6, f"one checkpoint per elapsed interval plus the final one, got {len(saves)}"

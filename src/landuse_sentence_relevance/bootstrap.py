@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +49,7 @@ from landuse_sentence_relevance.workflow import AnnotationWorkflow, V3Annotation
 
 logger = logging.getLogger(__name__)
 _PROGRESS_CHECKPOINT_INTERVAL = 32
-_V3_PROGRESS_CHECKPOINT_INTERVAL = 32
+_V3_PROGRESS_CHECKPOINT_SECONDS = 60.0
 
 _WIKIPEDIA_COLUMNS = {
     "polygons": ("polygon_id", "has_english_wikipedia", "lat", "lon", "name", "region"),
@@ -653,10 +654,20 @@ def _collect_v3_source(
     metadata: Mapping[str, Any],
     reserved_cells: frozenset[str],
     completed: set[Source],
+    now: Callable[[], float] = time.monotonic,
 ) -> int:
-    """Stream one source, recording completion only when its rows truly ran out."""
+    """Stream one source, recording completion only when its rows truly ran out.
+
+    Checkpoints are paced by elapsed time rather than by a candidate count. Each
+    save sorts and re-serialises the whole pool, so counting candidates ties the
+    cost to throughput and throttles the stream to roughly the rate at which the
+    pool can be rewritten. Saving often also gains nothing, because a resumed
+    source re-reads its shards from the beginning: the checkpoint has only to
+    preserve the candidate set, never a position in the stream.
+    """
 
     collected = 0
+    last_saved = now()
     try:
         for candidate in candidates:
             if candidate.source is not source:
@@ -665,8 +676,10 @@ def _collect_v3_source(
                 continue
             pool.add(candidate)
             collected += 1
-            if collected % _V3_PROGRESS_CHECKPOINT_INTERVAL == 0:
+            current = now()
+            if current - last_saved >= _V3_PROGRESS_CHECKPOINT_SECONDS:
                 progress_store.save(pool.snapshot(), metadata, completed)
+                last_saved = current
         completed.add(source)
     finally:
         progress_store.save(pool.snapshot(), metadata, completed)
