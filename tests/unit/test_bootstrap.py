@@ -238,7 +238,6 @@ def test_build_workflow_collects_and_saves_a_new_pool(monkeypatch, tmp_path) -> 
 def test_build_workflow_finalizes_resumable_progress_before_streaming(monkeypatch, tmp_path) -> None:
     import h3
 
-    import landuse_sentence_relevance.bootstrap.runtime as runtime
     import landuse_sentence_relevance.bootstrap.v2 as bootstrap
 
     settings = replace(

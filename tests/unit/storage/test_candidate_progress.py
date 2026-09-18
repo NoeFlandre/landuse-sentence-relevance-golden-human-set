@@ -233,5 +233,32 @@ def test_a_changed_configuration_refuses_the_checkpoint(tmp_path: Path) -> None:
     """A changed pin must invalidate the record rather than silently skip different data."""
     store = CandidateProgressStore(tmp_path / "progress.json")
     store.save([], {"schema_version": 2, "fingerprint": "stable"}, completed_sources=[])
-    with pytest.raises(ValueError, match="metadata does not match"):
+    with pytest.raises(
+        ValueError,
+        match=r"^candidate progress metadata does not match the current configuration$",
+    ):
         store.load_completed_sources({"schema_version": 2, "fingerprint": "changed"})
+
+
+def test_completed_sources_are_read_with_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The checkpoint is written as UTF-8, so it must be read back as UTF-8 rather than as
+    whatever the platform happens to default to -- a source name outside ASCII would otherwise
+    decode differently on another machine and re-stream a source that was already finished."""
+
+    from landuse_sentence_relevance.domain.models import Source
+
+    path = tmp_path / "progress.json"
+    store = CandidateProgressStore(path)
+    metadata = {"schema_version": 2, "fingerprint": "encoding"}
+    store.save([], metadata, completed_sources=[Source.WIKIPEDIA])
+    read_encodings: list[str | None] = []
+    original_read_text = Path.read_text
+
+    def read_text(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        read_encodings.append(encoding)
+        return original_read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    assert store.load_completed_sources(metadata) == frozenset({Source.WIKIPEDIA})
+    assert read_encodings == ["utf-8"]

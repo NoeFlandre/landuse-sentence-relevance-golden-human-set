@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from itertools import islice
+from itertools import islice, takewhile
 from math import isfinite
 from queue import Queue
 from threading import Event
@@ -439,6 +439,15 @@ class _ShardFailure:
         self.error = error
 
 
+class _ShardDone:
+    """Mark the end of one shard's rows on the queue."""
+
+    __slots__ = ()
+
+
+_SHARD_DONE = _ShardDone()
+
+
 def _parallel_shard_rows(
     shards: Iterable[RowStream],
     limit: int,
@@ -456,19 +465,33 @@ def _parallel_shard_rows(
     if max_workers <= 1 or len(streams) <= 1:
         yield from _bounded_shard_rows(streams, limit)
         return
-    queue: Queue[Any] = Queue(maxsize=_SHARD_QUEUE_CAPACITY)
+    # The four lines below carry `no mutate` because a mutant of any of them deadlocks the
+    # suite rather than failing it: a queue that cannot accept a put, a marker the consumer does
+    # not recognise, a callback that never runs, or a get that never happens all leave the
+    # consumer waiting on a message no longer coming. A hung test reports as a timeout, which
+    # says nothing, so the properties are pinned by assertion instead -- see
+    # TestShardReadingIsBounded in tests/unit/sources/test_v3.py, which checks the queue bound,
+    # the pool's size and name, and that every row of every shard arrives exactly once.
+    queue: Queue[Any] = Queue(maxsize=_SHARD_QUEUE_CAPACITY)  # pragma: no mutate
     finished = Event()
 
     def drain(rows: RowStream) -> None:
-        try:
-            for row in islice(rows, limit):
-                if finished.is_set():
-                    break
-                queue.put(row)
-        except BaseException as error:  # re-raised in the consuming generator
+        for row in takewhile(lambda _row: not finished.is_set(), islice(rows, limit)):
+            queue.put(row)
+
+    def announce(shard: Future[None]) -> None:
+        """Report one shard's outcome from the submitting side, not from inside the worker.
+
+        A worker that never starts -- because the pool rejected it, or it died before its first
+        statement -- cannot announce itself, and a consumer waiting on a sentinel that a dead
+        worker owed it waits forever. The callback runs whatever the worker did, so every shard
+        is accounted for exactly once.
+        """
+
+        error = shard.exception()
+        if error is not None:
             queue.put(_ShardFailure(error))
-        finally:
-            queue.put(None)
+        queue.put(_SHARD_DONE)  # pragma: no mutate
 
     executor = ThreadPoolExecutor(
         max_workers=min(len(streams), max_workers),
@@ -476,7 +499,7 @@ def _parallel_shard_rows(
     )
     try:
         for rows in streams:
-            executor.submit(drain, rows)
+            executor.submit(drain, rows).add_done_callback(announce)  # pragma: no mutate
         yield from _consume_shard_queue(queue, len(streams))
     finally:
         finished.set()
@@ -487,19 +510,19 @@ def _parallel_shard_rows(
 def _consume_shard_queue(queue: Queue[Any], shards: int) -> Iterator[Row]:
     """Yield rows until every shard has signalled that it finished.
 
-    Each worker puts exactly one ``None`` sentinel when it stops, so the consumer knows when all
-    of them are done without joining the pool. A ``_ShardFailure`` re-raises here rather than in
-    the worker thread, where it would be swallowed and the pool would simply come up short.
+    Exactly one ``_SHARD_DONE`` marker arrives per shard, so the consumer reads that many
+    shards' worth of rows and stops, without joining the pool. A ``_ShardFailure`` re-raises
+    here rather than in the worker thread, where it would be swallowed and the pool would
+    simply come up short.
     """
 
-    remaining = shards
-    while remaining:
-        item = queue.get()
-        if item is None:
-            remaining -= 1
-        elif isinstance(item, _ShardFailure):
-            raise item.error
-        else:
+    for _shard in range(shards):
+        while True:
+            item = queue.get()  # pragma: no mutate
+            if isinstance(item, _ShardDone):
+                break
+            if isinstance(item, _ShardFailure):
+                raise item.error
             yield item
 
 
@@ -547,7 +570,6 @@ def _sliding_window(
     pending: list[Future[Any]] = [executor.submit(build, rows) for rows in islice(streams, width)]
     while pending:
         head = pending.pop(0)
-        wait([head], return_when=FIRST_COMPLETED)
         next_rows = next(streams, None)
         if next_rows is not None:
             pending.append(executor.submit(build, next_rows))
