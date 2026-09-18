@@ -14,6 +14,7 @@ from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.sources.v3 import (
     _SHARD_QUEUE_CAPACITY,
     DescriptionSentenceSource,
+    JoinedPlace,
     WebsiteSentenceSource,
     WikipediaSentenceSource,
     _join_shard_rows,
@@ -1932,3 +1933,26 @@ def test_the_concurrent_path_skips_the_shards_it_already_read() -> None:
 
     assert sorted(opened) == [0, 3]
     assert sorted(row["n"] for row in rows) == [0, 3]
+
+
+def test_an_unlabelled_join_still_names_itself_when_its_index_fills() -> None:
+    """The join carries no label when called directly, and must still identify itself."""
+
+    from landuse_sentence_relevance.sources.v3 import _join_index
+
+    with pytest.raises(ValueError) as error:
+        _join_index(
+            (({"description_identity": "a" * 64, "osm_id": "1", "source_pbf": "r.osm.pbf"},), ({"x": 1},)),
+            key_for_row=lambda row: row.get("description_identity"),
+            place_for_row=lambda row: JoinedPlace(
+                latitude=1.0, longitude=2.0, place_name="P", region="r", record_id="1", source_url=None
+            ),
+            max_rows_per_shard=10,
+            max_entries=1,
+        )
+
+    assert str(error.value) == (
+        "V3 join index is full at 1 keys after 1 shard(s); "
+        "shard 2 and every later region would lose its geometry. "
+        "Raise max_join_entries so the index spans every shard."
+    )
