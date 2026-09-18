@@ -1703,3 +1703,116 @@ class TestShardLevelResume:
         )
 
         assert sorted(finished) == [2, 3]
+
+
+class TestAdaptersCarryTheirResumeState:
+    """The resume arguments are unobservable in an adapter's output, so they are asserted here.
+
+    Each adapter passes `skip_shards` and `on_shard_done` down to its own row stream. An adapter
+    that dropped either would re-read shards a run had already finished, silently, which is the
+    failure #20 exists to prevent.
+    """
+
+    def test_the_description_adapter_skips_the_shards_it_already_read(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield _description_row(identity=f"{index:064x}")
+
+        source = _description_source(
+            [shard(0), shard(1), shard(2)],
+            (iter([_geometry_row()]),),
+            skip_shards=frozenset({0, 2}),
+        )
+        list(source.iter_candidates())
+
+        assert opened == [1]
+
+    def test_the_wikipedia_adapter_skips_the_shards_it_already_read(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield _wikipedia_row(sentence_id=f"s{index}")
+
+        source = _wikipedia_source(
+            [shard(0), shard(1)], (iter([_polygon_row()]),), skip_shards=frozenset({0})
+        )
+        list(source.iter_candidates())
+
+        assert opened == [1]
+
+    def test_the_website_adapter_skips_the_shards_it_already_read(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield _website_row(polygon_id=f"p{index}")
+
+        source = _website_source(shard(0), shard(1), skip_shards=frozenset({1}))
+        list(source.iter_candidates())
+
+        assert opened == [0]
+
+    def test_each_adapter_reports_the_shards_it_finished(self) -> None:
+        for build in (
+            lambda done: _description_source(
+                (iter([_description_row(identity="a" * 64)]),),
+                (iter([_geometry_row()]),),
+                on_shard_done=done.append,
+            ),
+            lambda done: _wikipedia_source(
+                (iter([_wikipedia_row(sentence_id="s1")]),),
+                (iter([_polygon_row()]),),
+                on_shard_done=done.append,
+            ),
+            lambda done: _website_source(iter([_website_row()]), on_shard_done=done.append),
+        ):
+            finished: list[int] = []
+            list(build(finished).iter_candidates())
+            assert finished == [0], build
+
+
+class TestEachStreamIsNamedInTheLog:
+    """Five streams run; a progress line that does not say which one is moving is no use.
+
+    The labels are unobservable in the adapters' output, so they are asserted here -- an adapter
+    labelled with its neighbour's name would send an operator to the wrong stream.
+    """
+
+    def test_the_description_adapter_names_both_of_its_streams(self, caplog) -> None:
+        source = _description_source(
+            (iter([_description_row(identity="a" * 64)]),),
+            (iter([_geometry_row()]),),
+        )
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(source.iter_candidates())
+
+        messages = " ".join(r.getMessage() for r in caplog.records)
+        assert "description sentences" in messages
+        assert "description geometry" in messages
+
+    def test_the_wikipedia_adapter_names_both_of_its_streams(self, caplog) -> None:
+        source = _wikipedia_source((iter([_wikipedia_row(sentence_id="s1")]),), (iter([_polygon_row()]),))
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(source.iter_candidates())
+
+        messages = " ".join(r.getMessage() for r in caplog.records)
+        assert "wikipedia sentences" in messages
+        assert "wikipedia polygons" in messages
+
+    def test_the_website_adapter_names_its_stream(self, caplog) -> None:
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_website_source(iter([_website_row()])).iter_candidates())
+
+        assert "website rows" in " ".join(r.getMessage() for r in caplog.records)
+
+    def test_an_unlabelled_stream_reports_nothing(self) -> None:
+        """The label is what turns reporting on: the helpers stay silent without one, so a
+        caller that does not want progress does not pay for it."""
+        shards = [iter([{"n": 0}])]
+
+        assert list(_parallel_shard_rows(shards, limit=5, max_workers=1)) == [{"n": 0}]

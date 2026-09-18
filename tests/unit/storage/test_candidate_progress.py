@@ -319,3 +319,53 @@ def test_a_changed_pin_refuses_the_shard_record(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="metadata does not match"):
         store.load_completed_shards({"schema_version": 2, "revision": "b"})
+
+
+def test_save_writes_the_shard_record_in_a_stable_shape(tmp_path: Path) -> None:
+    """The payload is sorted and the indices are sorted, because an unstable checkpoint would
+    rewrite itself on every save and make a diff of two runs meaningless."""
+    from landuse_sentence_relevance.domain.models import Source
+
+    path = tmp_path / "progress.json"
+    CandidateProgressStore(path).save(
+        [],
+        {"schema_version": 2},
+        completed_sources=[Source.WEBSITE],
+        completed_shards={Source.WIKIPEDIA: frozenset({5, 1}), Source.WEBSITE: frozenset({2})},
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["completed_shards"] == {"website": [2], "wikipedia": [1, 5]}
+    assert list(payload["completed_shards"]) == ["website", "wikipedia"]
+
+
+def test_save_records_no_shards_when_none_are_given(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    CandidateProgressStore(path).save([], {"schema_version": 2})
+
+    assert json.loads(path.read_text(encoding="utf-8"))["completed_shards"] == {}
+
+
+def test_a_malformed_shard_record_reports_nothing(tmp_path: Path) -> None:
+    """Same rule the rest of the checkpoint follows: unreadable means re-read, never guess."""
+    path = tmp_path / "progress.json"
+    metadata = {"schema_version": 2}
+    path.write_text(
+        json.dumps({"metadata": metadata, "candidates": [], "completed_shards": "website"}),
+        encoding="utf-8",
+    )
+
+    assert CandidateProgressStore(path).load_completed_shards(metadata) == {}
+
+
+def test_a_shard_entry_that_is_not_a_list_is_ignored(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    metadata = {"schema_version": 2}
+    path.write_text(
+        json.dumps(
+            {"metadata": metadata, "candidates": [], "completed_shards": {"website": 3}},
+        ),
+        encoding="utf-8",
+    )
+
+    assert CandidateProgressStore(path).load_completed_shards(metadata) == {}
