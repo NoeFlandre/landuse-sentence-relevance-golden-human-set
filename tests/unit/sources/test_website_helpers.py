@@ -8,25 +8,25 @@ from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.sentence_selection import SentencePart
 from landuse_sentence_relevance.sources import website_discovery
 from landuse_sentence_relevance.sources.website_discovery import (
+    DiscoveryScan,
     _boundary_count,
     _compact_row,
-    _counts_by_cell,
     _discovery_row,
-    _discovery_row_rounds,
-    _DiscoveryScan,
     _interleave_discovery_rows,
     _merge_candidate_scan_results,
-    _scan_candidate_rows,
-    _scan_candidate_shards,
-    _select_discovery_rows,
+    counts_by_cell,
+    discovery_row_rounds,
+    scan_candidate_rows,
+    scan_candidate_shards,
+    select_discovery_rows,
 )
 from landuse_sentence_relevance.sources.website_text import (
+    FieldWork,
     _apply_language_selection_round,
-    _candidate_part_groups,
-    _FieldWork,
     _first_accepted_part,
     _language_selection_groups,
-    _location_from_row,
+    candidate_part_groups,
+    location_from_row,
 )
 
 
@@ -60,24 +60,24 @@ def _row(polygon_id: str, text: str) -> dict[str, object]:
 
 
 def test_location_uses_osm_fallback_and_requires_all_coordinates() -> None:
-    assert _location_from_row({"osm_id": 42, "lat": "1.5", "lon": "-2.5"}) == ("42", 1.5, -2.5)
-    assert _location_from_row({"polygon_id": "p1", "lat": None, "lon": 2.5}) is None
-    assert _location_from_row({"polygon_id": "p1", "lat": 1.5}) is None
-    assert _location_from_row({"polygon_id": 42, "lat": 1.5, "lon": -2.5}) == ("42", 1.5, -2.5)
+    assert location_from_row({"osm_id": 42, "lat": "1.5", "lon": "-2.5"}) == ("42", 1.5, -2.5)
+    assert location_from_row({"polygon_id": "p1", "lat": None, "lon": 2.5}) is None
+    assert location_from_row({"polygon_id": "p1", "lat": 1.5}) is None
+    assert location_from_row({"polygon_id": 42, "lat": 1.5, "lon": -2.5}) == ("42", 1.5, -2.5)
 
 
 def test_candidate_part_groups_use_field_specific_deterministic_seeds() -> None:
     work = (
-        _FieldWork(0, {}, "a", 1.0, 2.0, "cell-1", "website_text", "website", None, "text"),
-        _FieldWork(1, {}, "b", 1.0, 2.0, "cell-1", "website_text", "website", None, "text"),
+        FieldWork(0, {}, "a", 1.0, 2.0, "cell-1", "website_text", "website", None, "text"),
+        FieldWork(1, {}, "b", 1.0, 2.0, "cell-1", "website_text", "website", None, "text"),
     )
     sentences = (("Title.", "A.", "B.", "C.", "D.", "E."),) * 2
 
-    groups = _candidate_part_groups(work, sentences, "seed")
+    groups = candidate_part_groups(work, sentences, "seed")
 
     assert groups[0] != groups[1]
     with pytest.raises(ValueError):
-        _candidate_part_groups(work, sentences[:1], "seed")
+        candidate_part_groups(work, sentences[:1], "seed")
 
 
 def test_language_selection_groups_skip_empty_pending_groups() -> None:
@@ -109,7 +109,7 @@ def test_first_accepted_part_requires_a_prediction_for_each_part() -> None:
 
 
 def test_counts_by_cell_counts_duplicates_without_crossing_cells() -> None:
-    assert _counts_by_cell((_candidate("one", "a"), _candidate("two", "a"), _candidate("three", "b"))) == {
+    assert counts_by_cell((_candidate("one", "a"), _candidate("two", "a"), _candidate("three", "b"))) == {
         "a": 2,
         "b": 1,
     }
@@ -153,7 +153,7 @@ def test_scan_candidate_rows_reports_limits_cells_and_compact_rows(caplog: pytes
         {**_row("p2", "Second paragraph."), "cell": "cell-b"},
     )
 
-    result = _scan_candidate_rows(
+    result = scan_candidate_rows(
         rows,
         lambda row: str(row["cell"]),
         rows_per_cell=1,
@@ -171,10 +171,10 @@ def test_scan_candidate_rows_reports_limits_cells_and_compact_rows(caplog: pytes
 
 
 def test_scan_candidate_shards_handles_empty_and_parallel_streams() -> None:
-    empty = _scan_candidate_shards((), lambda row: "unused", 1, None, 4, 2)
-    assert empty == _DiscoveryScan(frozenset(), 0, (), True)
+    empty = scan_candidate_shards((), lambda row: "unused", 1, None, 4, 2)
+    assert empty == DiscoveryScan(frozenset(), 0, (), True)
 
-    result = _scan_candidate_shards(
+    result = scan_candidate_shards(
         ((_row("a", "Alpha paragraph."),), (_row("b", "Beta paragraph."),)),
         lambda row: str(row["polygon_id"]),
         rows_per_cell=1,
@@ -198,7 +198,7 @@ def test_single_discovery_shard_preserves_limits_and_progress_label(
         {**_row("single-2", "Fallback paragraph."), "cell": "cell-a"},
     )
 
-    result = _scan_candidate_shards(
+    result = scan_candidate_shards(
         (rows,),
         lambda row: str(row["cell"]),
         rows_per_cell=1,
@@ -246,7 +246,7 @@ def test_multiple_discovery_shards_honor_worker_and_cell_limits(
         ),
     )
 
-    result = _scan_candidate_shards(
+    result = scan_candidate_shards(
         streams,
         lambda row: str(row["cell"]),
         rows_per_cell=1,
@@ -266,12 +266,12 @@ def test_multiple_discovery_shards_honor_worker_and_cell_limits(
 def test_merge_candidate_scan_results_unions_rows_counts_and_completion() -> None:
     merged = _merge_candidate_scan_results(
         (
-            _DiscoveryScan(frozenset({"a"}), 2, (("a", {"id": "a"}),), True),
-            _DiscoveryScan(frozenset({"b"}), 3, (("b", {"id": "b"}),), False),
+            DiscoveryScan(frozenset({"a"}), 2, (("a", {"id": "a"}),), True),
+            DiscoveryScan(frozenset({"b"}), 3, (("b", {"id": "b"}),), False),
         )
     )
 
-    assert merged == _DiscoveryScan(
+    assert merged == DiscoveryScan(
         frozenset({"a", "b"}),
         5,
         (("a", {"id": "a"}), ("b", {"id": "b"})),
@@ -286,7 +286,7 @@ def test_select_discovery_rows_ranks_and_limits_each_cell() -> None:
         ("b", {"website_text": "Other."}),
     )
 
-    assert _select_discovery_rows(rows, max_rows_per_cell=1) == (
+    assert select_discovery_rows(rows, max_rows_per_cell=1) == (
         {"website_text": "Long. More context."},
         {"website_text": "Other."},
     )
@@ -295,8 +295,8 @@ def test_select_discovery_rows_ranks_and_limits_each_cell() -> None:
 def test_discovery_row_rounds_handle_empty_and_multiple_rows_per_round() -> None:
     ranked = (({"id": "a1"}, {"id": "a2"}, {"id": "a3"}), ({"id": "b1"},))
 
-    assert tuple(_discovery_row_rounds((), 2)) == ()
-    assert tuple(_discovery_row_rounds(ranked, 2)) == (
+    assert tuple(discovery_row_rounds((), 2)) == ()
+    assert tuple(discovery_row_rounds(ranked, 2)) == (
         ({"id": "a1"}, {"id": "b1"}, {"id": "a2"}),
         ({"id": "a3"},),
     )

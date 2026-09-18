@@ -14,13 +14,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from landuse_sentence_relevance.bootstrap.runtime import (
-    _candidate_pool_digest,
-    _h3_geometry,
-    _sha256_file,
+    candidate_pool_digest,
+    h3_geometry,
+    sha256_file,
 )
 from landuse_sentence_relevance.bootstrap.streams import (
-    _v3_rows,
     v3_remote_files,
+    v3_rows,
     v3_stream_specs,
 )
 from landuse_sentence_relevance.config import V3Settings
@@ -69,9 +69,9 @@ def build_v3_source_adapters(
 ) -> V3SourceAdapters:
     """Compose V3 adapters over immutable, streaming-only source revisions."""
     if cell_for_location is None:
-        cell_for_location, _ = _h3_geometry(settings)
+        cell_for_location, _ = h3_geometry(settings)
     remote_files = v3_remote_files(settings)
-    rows = {spec.name: _v3_rows(spec, remote_files, loader) for spec in v3_stream_specs(settings)}
+    rows = {spec.name: v3_rows(spec, remote_files, loader) for spec in v3_stream_specs(settings)}
 
     return V3SourceAdapters(
         description=DescriptionSentenceSource(
@@ -181,7 +181,7 @@ def build_v3_annotation_seed(
         quotas=quotas,
         candidate_cells_per_source=settings.candidate_cells_per_source,
     )
-    benchmark_sha256 = _sha256_file(settings.benchmark_path)
+    benchmark_sha256 = sha256_file(settings.benchmark_path)
     metadata = _v3_annotation_seed_metadata(settings, quotas, pool_result.pool, benchmark_sha256)
     store = V3AnnotationSeedStore(settings.annotation_seed_path)
     cached = store.load(metadata)
@@ -205,7 +205,7 @@ def _resolve_v3_geometry(
 ) -> tuple[Callable[[float, float], str], Callable[[str], tuple[float, float]]]:
     if cell_for_location is not None and center_of_cell is not None:
         return cell_for_location, center_of_cell
-    default_cell_for_location, default_center_of_cell = _h3_geometry(settings)
+    default_cell_for_location, default_center_of_cell = h3_geometry(settings)
     return cell_for_location or default_cell_for_location, center_of_cell or default_center_of_cell
 
 
@@ -416,7 +416,7 @@ def _v3_candidate_pool_metadata(
         "h3_resolution": settings.h3_resolution,
         "benchmark": {
             "path": str(settings.benchmark_path),
-            "sha256": _sha256_file(settings.benchmark_path),
+            "sha256": sha256_file(settings.benchmark_path),
         },
         "quotas": {
             source.value: {label.value: quotas.required(source, label) for label in quotas.labels}
@@ -461,7 +461,7 @@ def _v3_annotation_seed_metadata(
         "benchmark": {"path": str(settings.benchmark_path), "sha256": benchmark_sha256},
         "candidate_pool": {
             "path": str(settings.candidate_pool_path),
-            "sha256": _candidate_pool_digest(pool),
+            "sha256": candidate_pool_digest(pool),
             "candidate_count": len(pool.candidates),
         },
         "quotas": {

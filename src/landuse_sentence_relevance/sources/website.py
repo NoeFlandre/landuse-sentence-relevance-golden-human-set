@@ -24,22 +24,22 @@ from landuse_sentence_relevance.sources.website_candidates import (
 )
 from landuse_sentence_relevance.sources.website_discovery import (
     DiscoveryRow,
+    DiscoveryScan,
     RowShardsLoader,
-    _bounded_candidates,
-    _budgeted_rows,
-    _candidate_cells,
-    _counts_by_cell,
-    _discovery_row_rounds,
-    _DiscoveryScan,
-    _ranked_discovery_rows,
-    _scan_candidate_rows,
-    _scan_candidate_shards,
-    _select_discovery_rows,
-    _source_budget_filled,
+    bounded_candidates,
+    budgeted_rows,
+    candidate_cells,
+    counts_by_cell,
+    discovery_row_rounds,
+    ranked_discovery_rows,
+    scan_candidate_rows,
+    scan_candidate_shards,
+    select_discovery_rows,
+    source_budget_filled,
 )
 from landuse_sentence_relevance.sources.website_text import (
     WEBSITE_FIELD_SPECS,
-    _location_from_row,
+    location_from_row,
 )
 
 logger = logging.getLogger(__name__)
@@ -135,7 +135,7 @@ class WebsiteCandidateSource:
             for candidate in row_candidates:
                 candidates_seen += 1
                 yield candidate
-        if _source_budget_filled(
+        if source_budget_filled(
             candidate_counts,
             self._candidate_quota,
             self._minimum_candidate_cells,
@@ -177,7 +177,7 @@ class WebsiteCandidateSource:
         rows_seen = 0
         row_sources = (
             self._reusable_discovery_rows(),
-            _budgeted_rows(
+            budgeted_rows(
                 self._row_loader,
                 candidate_counts,
                 self._candidate_quota,
@@ -222,12 +222,12 @@ class WebsiteCandidateSource:
         self._discovery_scan_complete = scan.complete
         return self._candidate_cells
 
-    def _selected_discovery_cells(self, scan: _DiscoveryScan) -> tuple[str, ...]:
+    def _selected_discovery_cells(self, scan: DiscoveryScan) -> tuple[str, ...]:
         if not self._should_prefilter_discovery():
             return self._selected_candidate_cells(scan.cells)
         validation_cells = self._prefilter_discovery_cells(scan.cells)
         candidates, row_counts = self._prefilter_discovery_rows(scan.rows, validation_cells)
-        selected = self._selected_candidate_cells(_candidate_cells(candidates))
+        selected = self._selected_candidate_cells(candidate_cells(candidates))
         self._cache_prefiltered_discovery(candidates, row_counts, selected)
         return selected
 
@@ -259,7 +259,7 @@ class WebsiteCandidateSource:
         self._discovery_candidates = tuple(
             candidate for candidate in candidates if candidate.h3_cell in selected_cells
         )
-        self._discovery_candidate_counts = _counts_by_cell(self._discovery_candidates)
+        self._discovery_candidate_counts = counts_by_cell(self._discovery_candidates)
         self._discovery_row_counts = {
             cell: count for cell, count in row_counts.items() if cell in selected_cells
         }
@@ -289,7 +289,7 @@ class WebsiteCandidateSource:
     ) -> tuple[tuple[Candidate, ...], dict[str, int]]:
         selected_cells = frozenset(cells)
         rows = tuple((cell, row) for cell, row in discovery_rows if cell in selected_cells)
-        ranked_rows = _ranked_discovery_rows(rows, max_rows_per_cell=self._discovery_row_limit())
+        ranked_rows = ranked_discovery_rows(rows, max_rows_per_cell=self._discovery_row_limit())
         row_counts: dict[str, int] = {}
         candidate_counts: dict[str, int] = {}
         if isinstance(self._splitter, BatchSentenceSplitter):
@@ -305,7 +305,7 @@ class WebsiteCandidateSource:
         candidate_counts: dict[str, int],
     ) -> list[Candidate]:
         return self._collect_prefilter_rounds(
-            _discovery_row_rounds(ranked_rows, _DISCOVERY_PREFILTER_ROWS_PER_ROUND),
+            discovery_row_rounds(ranked_rows, _DISCOVERY_PREFILTER_ROWS_PER_ROUND),
             lambda row_round: self._prefilter_batch_round(
                 row_round,
                 row_counts,
@@ -338,7 +338,7 @@ class WebsiteCandidateSource:
         candidate_counts: dict[str, int],
     ) -> list[Candidate]:
         return self._collect_prefilter_rounds(
-            _discovery_row_rounds(ranked_rows, _DISCOVERY_PREFILTER_ROWS_PER_ROUND),
+            discovery_row_rounds(ranked_rows, _DISCOVERY_PREFILTER_ROWS_PER_ROUND),
             lambda row_round: self._prefilter_scalar_round(row_round, row_counts, candidate_counts),
             row_counts,
             candidate_counts,
@@ -375,7 +375,7 @@ class WebsiteCandidateSource:
         candidate_counts: Mapping[str, int],
         row_counts: Mapping[str, int],
     ) -> bool:
-        return _source_budget_filled(
+        return source_budget_filled(
             candidate_counts,
             self._candidate_quota,
             self._minimum_candidate_cells,
@@ -399,7 +399,7 @@ class WebsiteCandidateSource:
         discovery_rows: Iterable[DiscoveryRow],
     ) -> tuple[Mapping[str, Any], ...]:
         selected_cells = frozenset(selected)
-        return _select_discovery_rows(
+        return select_discovery_rows(
             ((cell, row) for cell, row in discovery_rows if cell in selected_cells),
             max_rows_per_cell=self._discovery_row_limit(),
         )
@@ -407,10 +407,10 @@ class WebsiteCandidateSource:
     def _discovery_row_limit(self) -> int:
         return 1 if self._row_quota is None else self._row_quota.capacity
 
-    def _scan_candidate_cells(self) -> _DiscoveryScan:
+    def _scan_candidate_cells(self) -> DiscoveryScan:
         rows_per_cell = None if self._row_quota is None else self._row_quota.capacity
         if self._row_shards_loader is None:
-            return _scan_candidate_rows(
+            return scan_candidate_rows(
                 self._row_loader(),
                 self._candidate_cell,
                 rows_per_cell,
@@ -418,7 +418,7 @@ class WebsiteCandidateSource:
                 self._max_text_characters,
                 "Website cell discovery",
             )
-        return _scan_candidate_shards(
+        return scan_candidate_shards(
             tuple(self._row_shards_loader()),
             self._candidate_cell,
             rows_per_cell,
@@ -456,7 +456,7 @@ class WebsiteCandidateSource:
         row_counts: Mapping[str, int],
     ) -> bool:
         return (
-            _source_budget_filled(
+            source_budget_filled(
                 candidate_counts,
                 self._candidate_quota,
                 self._minimum_candidate_cells,
@@ -480,7 +480,7 @@ class WebsiteCandidateSource:
         yield from self._reusable_discovery_rows()
         if self._candidate_scan_complete(candidate_counts, row_counts):
             return
-        yield from _budgeted_rows(
+        yield from budgeted_rows(
             self._row_loader,
             candidate_counts,
             self._candidate_quota,
@@ -492,7 +492,7 @@ class WebsiteCandidateSource:
     def _candidate_cell(self, row: Mapping[str, Any]) -> str | None:
         if not self._candidate_builder.has_eligible_text(row):
             return None
-        location = _location_from_row(row)
+        location = location_from_row(row)
         if location is None:
             return None
         _, latitude, longitude = location
@@ -509,7 +509,7 @@ class WebsiteCandidateSource:
         if eligible is None:
             return
         _, cell = eligible
-        yield from _bounded_candidates(
+        yield from bounded_candidates(
             self._row_candidates(row, cell),
             candidate_counts,
             self._candidate_quota,
@@ -552,7 +552,7 @@ class WebsiteCandidateSource:
     ) -> Iterable[Candidate]:
         candidate_groups = self._row_candidates_batch(rows)
         for (_, cell), candidates in zip(rows, candidate_groups, strict=True):
-            yield from _bounded_candidates(candidates, candidate_counts, self._candidate_quota, cell)
+            yield from bounded_candidates(candidates, candidate_counts, self._candidate_quota, cell)
 
     def _candidate_cell_is_full(self, cell: str, candidate_counts: Mapping[str, int]) -> bool:
         return self._candidate_quota is not None and self._candidate_quota.is_full(cell, candidate_counts)
@@ -567,7 +567,7 @@ class WebsiteCandidateSource:
         for (_, cell), candidates in zip(rows, candidate_groups, strict=True):
             if self._candidate_cell_is_full(cell, candidate_counts):
                 continue
-            selected = tuple(_bounded_candidates(candidates, candidate_counts, self._candidate_quota, cell))
+            selected = tuple(bounded_candidates(candidates, candidate_counts, self._candidate_quota, cell))
             if selected:
                 yield from selected
 
@@ -585,7 +585,7 @@ class WebsiteCandidateSource:
         return row, cell
 
     def _eligible_cell(self, row: Mapping[str, Any]) -> str | None:
-        location = _location_from_row(row)
+        location = location_from_row(row)
         if location is None:
             return None
         _, latitude, longitude = location

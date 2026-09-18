@@ -24,7 +24,7 @@ from landuse_sentence_relevance.workflow import AnnotationWorkflow
 logger = logging.getLogger(__name__)
 
 
-def _prepare_runtime(settings: Settings) -> ManagedCache:
+def prepare_runtime(settings: Settings) -> ManagedCache:
     cache = ManagedCache(settings.model_cache_dir)
     cache.prepare()
     logger.info("Disposable runtime cache prepared at %s", cache.root)
@@ -39,7 +39,7 @@ def _prepare_runtime(settings: Settings) -> ManagedCache:
     return cache
 
 
-def _h3_geometry(
+def h3_geometry(
     settings: Settings | V3Settings,
 ) -> tuple[Callable[[float, float], str], Callable[[str], tuple[float, float]]]:
     try:
@@ -56,7 +56,7 @@ def _h3_geometry(
     return cell_for_location, center_of_cell
 
 
-def _workflow(
+def workflow(
     settings: Settings,
     cache: ManagedCache,
     pool: Any,
@@ -75,7 +75,7 @@ def _workflow(
     )
 
 
-def _candidate_pool_digest(pool: FinalizedCandidatePool) -> str:
+def candidate_pool_digest(pool: FinalizedCandidatePool) -> str:
     payload = json.dumps(
         {
             "candidates": [candidate.to_dict() for candidate in pool.candidates],
@@ -88,7 +88,7 @@ def _candidate_pool_digest(pool: FinalizedCandidatePool) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _sha256_file(path: Path) -> str:
+def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):

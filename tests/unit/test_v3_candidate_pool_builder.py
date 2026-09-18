@@ -20,7 +20,7 @@ from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool
 from landuse_sentence_relevance.domain.v3_preflight import V3PreflightError
 from landuse_sentence_relevance.sources.v3 import V3SourceAdapters
 from landuse_sentence_relevance.storage.candidate_progress import CandidateProgressStore
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +195,7 @@ def test_builder_resolves_default_h3_geometry_when_callers_do_not_inject_it(
         return (1.0, 2.0)
 
     monkeypatch.setattr(
-        "landuse_sentence_relevance.bootstrap.v3._h3_geometry",
+        "landuse_sentence_relevance.bootstrap.v3.h3_geometry",
         lambda settings: (expected_cell, expected_center),
     )
 

@@ -444,7 +444,7 @@ def test_builder_rejects_mismatched_batch_inputs(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(ValueError):
         builder._group_row_candidates(rows, work, ())
 
-    monkeypatch.setattr(website_candidates, "_select_batch_parts", lambda parts, identifier: ())
+    monkeypatch.setattr(website_candidates, "select_batch_parts", lambda parts, identifier: ())
     with pytest.raises(ValueError):
         builder._append_batch_language_candidates(
             [[]],

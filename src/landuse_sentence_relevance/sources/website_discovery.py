@@ -14,8 +14,8 @@ from landuse_sentence_relevance.domain.models import Candidate
 from landuse_sentence_relevance.observability import log_stream_progress
 from landuse_sentence_relevance.sources.website_text import (
     WEBSITE_FIELD_SPECS,
-    _bounded_text,
-    _field_text,
+    bounded_text,
+    field_text,
 )
 
 DiscoveryRow = tuple[str, Mapping[str, Any]]
@@ -24,21 +24,21 @@ logger = logging.getLogger("landuse_sentence_relevance.sources.website")
 
 
 @dataclass(frozen=True, slots=True)
-class _DiscoveryScan:
+class DiscoveryScan:
     cells: frozenset[str]
     rows_seen: int
     rows: tuple[DiscoveryRow, ...]
     complete: bool
 
 
-def _counts_by_cell(candidates: Iterable[Candidate]) -> dict[str, int]:
+def counts_by_cell(candidates: Iterable[Candidate]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for candidate in candidates:
         counts[candidate.h3_cell] = counts.get(candidate.h3_cell, 0) + 1
     return counts
 
 
-def _candidate_cells(candidates: Iterable[Candidate]) -> set[str]:
+def candidate_cells(candidates: Iterable[Candidate]) -> set[str]:
     return {candidate.h3_cell for candidate in candidates}
 
 
@@ -57,20 +57,20 @@ def _compact_row(row: Mapping[str, Any], max_text_characters: int | None) -> Map
         )
     }
     for text_field, _ in WEBSITE_FIELD_SPECS:
-        text = _field_text(row, text_field)
+        text = field_text(row, text_field)
         if text is not None:
-            fields[text_field] = _bounded_text(text, max_text_characters)
+            fields[text_field] = bounded_text(text, max_text_characters)
     return fields
 
 
-def _scan_candidate_rows(
+def scan_candidate_rows(
     rows: Iterable[Mapping[str, Any]],
     candidate_cell: Callable[[Mapping[str, Any]], str | None],
     rows_per_cell: int | None,
     max_rows: int | None,
     max_text_characters: int | None,
     progress_label: str,
-) -> _DiscoveryScan:
+) -> DiscoveryScan:
     cells: set[str] = set()
     discovery_rows: list[DiscoveryRow] = []
     row_counts: dict[str, int] = {}
@@ -86,7 +86,7 @@ def _scan_candidate_rows(
                 discovery_rows.append(discovery)
         if _scan_limit_reached(rows_seen, max_rows):
             break
-    return _DiscoveryScan(
+    return DiscoveryScan(
         cells=frozenset(cells),
         rows_seen=rows_seen,
         rows=tuple(discovery_rows),
@@ -111,19 +111,19 @@ def _scan_limit_reached(rows_seen: int, max_rows: int | None) -> bool:
     return max_rows is not None and rows_seen >= max_rows
 
 
-def _scan_candidate_shards(
+def scan_candidate_shards(
     streams: tuple[Iterable[Mapping[str, Any]], ...],
     candidate_cell: Callable[[Mapping[str, Any]], str | None],
     rows_per_cell: int | None,
     max_rows: int | None,
     max_text_characters: int | None,
     max_workers: int,
-) -> _DiscoveryScan:
+) -> DiscoveryScan:
     if not streams:
-        return _DiscoveryScan(cells=frozenset(), rows_seen=0, rows=(), complete=True)
+        return DiscoveryScan(cells=frozenset(), rows_seen=0, rows=(), complete=True)
     if len(streams) == 1:
         results = (
-            _scan_candidate_rows(
+            scan_candidate_rows(
                 streams[0],
                 candidate_cell,
                 rows_per_cell,
@@ -144,13 +144,13 @@ def _scan_candidate_shards(
         with ThreadPoolExecutor(
             max_workers=min(max_workers, len(streams)),
         ) as executor:
-            results = executor.map(_scan_candidate_rows, *arguments)
+            results = executor.map(scan_candidate_rows, *arguments)
     return _merge_candidate_scan_results(results)
 
 
 def _merge_candidate_scan_results(
-    results: Iterable[_DiscoveryScan],
-) -> _DiscoveryScan:
+    results: Iterable[DiscoveryScan],
+) -> DiscoveryScan:
     cells: set[str] = set()
     discovery_rows: list[DiscoveryRow] = []
     rows_seen = 0
@@ -160,7 +160,7 @@ def _merge_candidate_scan_results(
         rows_seen += result.rows_seen
         discovery_rows.extend(result.rows)
         complete = complete and result.complete
-    return _DiscoveryScan(
+    return DiscoveryScan(
         cells=frozenset(cells),
         rows_seen=rows_seen,
         rows=tuple(discovery_rows),
@@ -168,14 +168,14 @@ def _merge_candidate_scan_results(
     )
 
 
-def _select_discovery_rows(
+def select_discovery_rows(
     rows: Iterable[DiscoveryRow],
     max_rows_per_cell: int,
 ) -> tuple[Mapping[str, Any], ...]:
-    return _interleave_discovery_rows(_ranked_discovery_rows(rows, max_rows_per_cell))
+    return _interleave_discovery_rows(ranked_discovery_rows(rows, max_rows_per_cell))
 
 
-def _ranked_discovery_rows(
+def ranked_discovery_rows(
     rows: Iterable[DiscoveryRow],
     max_rows_per_cell: int,
 ) -> tuple[tuple[Mapping[str, Any], ...], ...]:
@@ -188,7 +188,7 @@ def _ranked_discovery_rows(
     )
 
 
-def _discovery_row_rounds(
+def discovery_row_rounds(
     ranked_rows: tuple[tuple[Mapping[str, Any], ...], ...],
     rows_per_round: int,
 ) -> Iterable[tuple[Mapping[str, Any], ...]]:
@@ -212,7 +212,7 @@ def _discovery_score(row: Mapping[str, Any]) -> tuple[int, int]:
 
 def _discovery_texts(row: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(
-        text for text_field, _ in WEBSITE_FIELD_SPECS if (text := _field_text(row, text_field)) is not None
+        text for text_field, _ in WEBSITE_FIELD_SPECS if (text := field_text(row, text_field)) is not None
     )
 
 
@@ -220,7 +220,7 @@ def _boundary_count(texts: Iterable[str]) -> int:
     return sum(sum(text.count(marker) for marker in ".!?") for text in texts)
 
 
-def _budgeted_rows(
+def budgeted_rows(
     row_loader: Callable[[], Iterable[Mapping[str, Any]]],
     candidate_counts: Mapping[str, int],
     candidate_quota: CellQuota | None,
@@ -229,7 +229,7 @@ def _budgeted_rows(
     row_quota: CellQuota | None,
 ) -> Iterable[Mapping[str, Any]]:
     rows = iter(row_loader())
-    while not _source_budget_filled(
+    while not source_budget_filled(
         candidate_counts,
         candidate_quota,
         minimum_candidate_cells,
@@ -242,7 +242,7 @@ def _budgeted_rows(
             return
 
 
-def _source_budget_filled(
+def source_budget_filled(
     candidate_counts: Mapping[str, int],
     candidate_quota: CellQuota | None,
     minimum_candidate_cells: int | None,
@@ -270,7 +270,7 @@ def _budget_reached(
     )
 
 
-def _bounded_candidates(
+def bounded_candidates(
     candidates: Iterable[Candidate],
     candidate_counts: dict[str, int],
     candidate_quota: CellQuota | None,
@@ -284,3 +284,28 @@ def _bounded_candidates(
             return
         candidate_counts[candidate.h3_cell] = candidate_counts.get(candidate.h3_cell, 0) + 1
         yield candidate
+
+
+logger = logging.getLogger(__name__)
+
+#: What this module offers the website source, and nothing else.
+#:
+#: These names carried a leading underscore while `website.py` imported all eleven of them --
+#: the split moved the code out but never promoted its contract, so the marker said "internal"
+#: while another module depended on every one. They are listed here rather than left implicit
+#: because eleven names for one consumer is a surface worth seeing in one place.
+__all__ = [
+    "DiscoveryRow",
+    "DiscoveryScan",
+    "RowShardsLoader",
+    "bounded_candidates",
+    "budgeted_rows",
+    "candidate_cells",
+    "counts_by_cell",
+    "discovery_row_rounds",
+    "ranked_discovery_rows",
+    "scan_candidate_rows",
+    "scan_candidate_shards",
+    "select_discovery_rows",
+    "source_budget_filled",
+]

@@ -12,9 +12,9 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from landuse_sentence_relevance.bootstrap.runtime import (
-    _h3_geometry,
-    _prepare_runtime,
-    _workflow,
+    h3_geometry,
+    prepare_runtime,
+    workflow,
 )
 from landuse_sentence_relevance.config import Settings
 from landuse_sentence_relevance.domain.models import Candidate, Source
@@ -363,7 +363,7 @@ def _collect_website_candidates(
 
 def build_workflow(settings: Settings) -> AnnotationWorkflow:
     logger.info("Starting annotation workflow")
-    cache = _prepare_runtime(settings)
+    cache = prepare_runtime(settings)
     pool_store = CandidatePoolStore(settings.candidate_pool_path)
     progress_store = CandidateProgressStore(settings.candidate_progress_path)
     metadata = _candidate_pool_metadata(settings)
@@ -373,10 +373,10 @@ def build_workflow(settings: Settings) -> AnnotationWorkflow:
             "Reusable candidate pool found at %s; skipping streamed rows and sentence splitting",
             settings.candidate_pool_path,
         )
-        return _workflow(settings, cache, persisted_pool)
+        return workflow(settings, cache, persisted_pool)
 
     pool = _load_candidate_pool(settings, progress_store, metadata)
-    cell_for_location, center_of_cell = _h3_geometry(settings)
+    cell_for_location, center_of_cell = h3_geometry(settings)
     resumed_pool = _try_finalize(
         pool,
         target_cells_per_source=settings.candidate_pool_cells_per_source,
@@ -386,7 +386,7 @@ def build_workflow(settings: Settings) -> AnnotationWorkflow:
     if resumed_pool is not None:
         logger.info("Candidate progress already satisfies the final pool constraints")
         pool_store.save(resumed_pool, metadata)
-        return _workflow(settings, cache, resumed_pool)
+        return workflow(settings, cache, resumed_pool)
 
     wikipedia_remote_files, website_remote_files = _remote_files(settings)
     wikipedia_rows, wikipedia_row_shards = _wikipedia_row_loaders(settings, wikipedia_remote_files)
@@ -430,7 +430,7 @@ def build_workflow(settings: Settings) -> AnnotationWorkflow:
     )
     pool_store.save(finalized_pool, metadata)
     logger.info("Saved reusable candidate pool to %s", settings.candidate_pool_path)
-    return _workflow(settings, cache, finalized_pool)
+    return workflow(settings, cache, finalized_pool)
 
 
 def _candidate_pool_metadata(settings: Settings) -> dict[str, Any]:

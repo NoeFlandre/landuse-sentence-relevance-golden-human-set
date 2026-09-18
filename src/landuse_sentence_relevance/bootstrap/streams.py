@@ -196,7 +196,7 @@ def v3_row_config(spec: V3StreamSpec, remote_files: tuple[str, ...]) -> HuggingF
     )
 
 
-def _v3_rows(
+def v3_rows(
     spec: V3StreamSpec,
     remote_files: Mapping[str, tuple[str, ...]],
     loader: HuggingFaceDatasetLoader | None,

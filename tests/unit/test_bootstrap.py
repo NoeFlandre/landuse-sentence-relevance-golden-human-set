@@ -20,8 +20,7 @@ from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
 from landuse_sentence_relevance.storage.candidate_pool import CandidatePoolStore
 from landuse_sentence_relevance.storage.candidate_progress import CandidateProgressStore
-from tests.unit.test_constraints import make_annotations
-from tests.unit.test_models import make_candidate
+from tests.builders import make_annotations, make_candidate
 
 
 def test_collect_candidates_checkpoints_before_a_source_failure(tmp_path: Path) -> None:

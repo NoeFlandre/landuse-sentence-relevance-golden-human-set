@@ -15,6 +15,26 @@ from landuse_sentence_relevance.domain.sentence_selection import (
 )
 from landuse_sentence_relevance.sources.protocols import BatchLanguageIdentifier
 
+#: The text-shaping vocabulary the website sources share.
+#:
+#: `website.py` and `website_candidates.py` both read rows through these, so they are the
+#: module's contract whatever they were called: an underscore on a name two other modules import
+#: tells a reader it is safe to change when it is not.
+__all__ = [
+    "WEBSITE_FIELD_SPECS",
+    "FieldSpec",
+    "FieldWork",
+    "Location",
+    "bounded_text",
+    "candidate_part_groups",
+    "field_text",
+    "field_url",
+    "is_contextual_text",
+    "location_from_row",
+    "pending_field_indexes",
+    "select_batch_parts",
+]
+
 Location = tuple[str, float, float]
 FieldSpec = tuple[str, str]
 WEBSITE_FIELD_SPECS: tuple[FieldSpec, ...] = (
@@ -27,7 +47,7 @@ _MIN_CONTEXTUAL_BOUNDARIES = 2
 
 
 @dataclass(frozen=True, slots=True)
-class _FieldWork:
+class FieldWork:
     row_index: int
     row: Mapping[str, Any]
     polygon_id: str
@@ -40,7 +60,7 @@ class _FieldWork:
     text: str
 
 
-def _location_from_row(row: Mapping[str, Any]) -> Location | None:
+def location_from_row(row: Mapping[str, Any]) -> Location | None:
     polygon_id = row.get("polygon_id") or row.get("osm_id")
     latitude = row.get("lat")
     longitude = row.get("lon")
@@ -49,18 +69,18 @@ def _location_from_row(row: Mapping[str, Any]) -> Location | None:
     return str(polygon_id), float(latitude), float(longitude)
 
 
-def _field_text(row: Mapping[str, Any], field: str) -> str | None:
+def field_text(row: Mapping[str, Any], field: str) -> str | None:
     text = row.get(field)
     return text.strip() if isinstance(text, str) and text.strip() else None
 
 
-def _field_url(row: Mapping[str, Any], field: str) -> str | None:
+def field_url(row: Mapping[str, Any], field: str) -> str | None:
     url = row.get(field)
     return url if isinstance(url, str) else None
 
 
-def _candidate_part_groups(
-    work: tuple[_FieldWork, ...],
+def candidate_part_groups(
+    work: tuple[FieldWork, ...],
     sentence_groups: Iterable[Iterable[str]],
     seed: str,
 ) -> tuple[tuple[SentencePart, ...], ...]:
@@ -73,7 +93,7 @@ def _candidate_part_groups(
     )
 
 
-def _select_batch_parts(
+def select_batch_parts(
     part_groups: tuple[tuple[SentencePart, ...], ...],
     language_identifier: BatchLanguageIdentifier,
 ) -> tuple[SentencePart | None, ...]:
@@ -136,16 +156,16 @@ def _first_accepted_part(
     )
 
 
-def _bounded_text(text: str, max_characters: int | None) -> str:
+def bounded_text(text: str, max_characters: int | None) -> str:
     return text if max_characters is None else text[:max_characters]
 
 
-def _pending_field_indexes(
+def pending_field_indexes(
     pending_indexes: tuple[int, ...],
     candidates: list[list[Candidate]],
 ) -> tuple[int, ...]:
     return tuple(index for index in pending_indexes if not candidates[index])
 
 
-def _is_contextual_text(text: str) -> bool:
+def is_contextual_text(text: str) -> bool:
     return len(_CONTEXTUAL_BOUNDARY_PATTERN.findall(text)) >= _MIN_CONTEXTUAL_BOUNDARIES

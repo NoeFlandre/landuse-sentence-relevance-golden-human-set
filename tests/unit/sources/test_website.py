@@ -8,9 +8,9 @@ from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.sentence_selection import SentencePart
 from landuse_sentence_relevance.sources.website import (
     WebsiteCandidateSource,
-    _select_discovery_rows,
+    select_discovery_rows,
 )
-from landuse_sentence_relevance.sources.website_text import _select_batch_parts
+from landuse_sentence_relevance.sources.website_text import select_batch_parts
 
 
 class FakeSplitter:
@@ -238,7 +238,7 @@ def test_batch_language_selection_stops_after_the_first_accepted_sentence() -> N
 
     def select() -> None:
         try:
-            selected.append(_select_batch_parts((first_group, second_group), language_identifier))
+            selected.append(select_batch_parts((first_group, second_group), language_identifier))
         except Exception as error:
             errors.append(error)
 
@@ -806,7 +806,7 @@ def test_discovery_rows_are_interleaved_across_cells_for_batch_progress() -> Non
         ("cell-2", {"polygon_id": "cell-2-second"}),
     )
 
-    selected = _select_discovery_rows(rows, max_rows_per_cell=2)
+    selected = select_discovery_rows(rows, max_rows_per_cell=2)
 
     assert [row["polygon_id"] for row in selected] == [
         "cell-1-first",
