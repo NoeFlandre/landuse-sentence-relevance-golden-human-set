@@ -420,17 +420,38 @@ def _feasible_source_cells(
     selected = set(selected_cells)
     remaining = {other: available[other] - selected for other in sources}
     required = {
-        other: target_count - len(selected_by_source[other]) - (1 if other is source else 0)
-        for other in sources
+        other: _cells_still_required(other, source, selected_by_source, target_count) for other in sources
     }
     return [
         candidate
         for candidate in sorted(remaining[source])
-        if all(
-            len(remaining[other]) - (1 if candidate in remaining[other] else 0) >= required[other]
-            for other in sources
-        )
+        if _leaves_every_source_feasible(candidate, remaining, required, sources)
     ]
+
+
+def _cells_still_required(
+    other: Source,
+    source: Source,
+    selected_by_source: Mapping[Source, list[str]],
+    target_count: int,
+) -> int:
+    """Return how many cells ``other`` must still find, once ``source`` takes one."""
+
+    return target_count - len(selected_by_source[other]) - (1 if other is source else 0)
+
+
+def _leaves_every_source_feasible(
+    candidate: str,
+    remaining: Mapping[Source, set[str]],
+    required: Mapping[Source, int],
+    sources: tuple[Source, ...],
+) -> bool:
+    """Check that taking ``candidate`` still leaves every source enough cells."""
+
+    return all(
+        len(remaining[other]) - (1 if candidate in remaining[other] else 0) >= required[other]
+        for other in sources
+    )
 
 
 def _distant_cells(
