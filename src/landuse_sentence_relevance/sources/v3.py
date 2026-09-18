@@ -506,65 +506,129 @@ def _parallel_shard_rows(
     hash rank, not by arrival order, so interleaving shards cannot change which
     candidates survive. Memory stays bounded by a fixed queue, and a shard that
     raises re-raises here rather than being silently dropped.
+
+    A shard in ``skip_shards`` is never opened: the checkpoint says it was read to the end, and
+    reading it again would cost hours for nothing (#20). Positions are the original ones, so a
+    resumed run records the same number for the same shard as the run before it.
     """
 
-    streams = tuple(shards)
-    if max_workers <= 1 or len(streams) <= 1:
-        yield from _bounded_shard_rows(streams, limit, label, len(streams), skip_shards, on_shard_done)
+    numbered = _unread_shards(shards, skip_shards)
+    if max_workers <= 1 or len(numbered) <= 1:
+        yield from _sequential_shard_rows(numbered, limit, label, on_shard_done)
         return
-    # The four lines below carry `no mutate` because a mutant of any of them deadlocks the
-    # suite rather than failing it: a queue that cannot accept a put, a marker the consumer does
-    # not recognise, a callback that never runs, or a get that never happens all leave the
+    # The four lines marked `no mutate` below carry it because a mutant of any of them deadlocks
+    # the suite rather than failing it: a queue that cannot accept a put, a marker the consumer
+    # does not recognise, a callback that never runs, or a get that never happens all leave the
     # consumer waiting on a message no longer coming. A hung test reports as a timeout, which
     # says nothing, so the properties are pinned by assertion instead -- see
     # TestShardReadingIsBounded in tests/unit/sources/test_v3.py, which checks the queue bound,
     # the pool's size and name, and that every row of every shard arrives exactly once.
     queue: Queue[Any] = Queue(maxsize=_SHARD_QUEUE_CAPACITY)  # pragma: no mutate
     finished = Event()
-    # Each worker takes its position as it starts, so a shard is named by submission order rather
-    # than by whichever raced ahead.
-    numbering = iter(range(len(streams)))
+    total = len(numbered)
 
-    def drain(rows: RowStream) -> tuple[int, int]:
-        """Read one shard, returning its position and how many rows it held."""
-        shard_index = next(numbering)
+    drain = _shard_drainer(queue, finished, limit)
+    announce = _shard_announcer(queue, label, total, on_shard_done)
+
+    executor = ThreadPoolExecutor(
+        max_workers=min(len(numbered), max_workers),
+        thread_name_prefix="v3-shard",
+    )
+    try:
+        for shard_index, rows in numbered:
+            executor.submit(drain, shard_index, rows).add_done_callback(announce)  # pragma: no mutate
+        yield from _consume_shard_queue(queue, len(numbered))
+    finally:
+        finished.set()
+        _drain_queue(queue)
+        executor.shutdown(wait=True)
+
+
+def _unread_shards(
+    shards: Iterable[RowStream], skip_shards: frozenset[int]
+) -> tuple[tuple[int, RowStream], ...]:
+    """The shards still to read, each with its position in the full list.
+
+    Positions survive the filtering so a resumed run records the same number for the same shard
+    as the run before it -- an index that shifted when earlier shards were skipped would make the
+    checkpoint mean something different on each attempt.
+    """
+    return tuple((index, rows) for index, rows in enumerate(shards) if index not in skip_shards)
+
+
+def _shard_drainer(
+    queue: Queue[Any], finished: Event, limit: int
+) -> Callable[[int, RowStream], tuple[int, int]]:
+    """A worker that reads one shard onto the queue, returning its position and row count.
+
+    ``takewhile`` rather than a break: the flag is checked before each row, so a generator
+    abandoned when the consumer goes away stops at the next row instead of draining the shard.
+    """
+
+    def drain(shard_index: int, rows: RowStream) -> tuple[int, int]:
         seen = 0
         for row in takewhile(lambda _row: not finished.is_set(), islice(rows, limit)):
             seen += 1
             queue.put(row)
         return shard_index, seen
 
+    return drain
+
+
+def _shard_announcer(
+    queue: Queue[Any],
+    label: str,
+    total: int,
+    on_shard_done: Callable[[int], None] | None,
+) -> Callable[[Future[tuple[int, int]]], None]:
+    """A done-callback that accounts for one shard from the submitting side.
+
+    A worker that never starts -- because the pool rejected it, or it died before its first
+    statement -- cannot announce itself, and a consumer waiting on a sentinel that a dead worker
+    owed it waits forever. The callback runs whatever the worker did.
+
+    The sentinel goes first, before anything that could raise. Reporting a shard is best-effort;
+    delivering its completion is not, and an exception inside a done-callback is swallowed by the
+    executor -- so a failure after the sentinel costs a log line, while a failure before it would
+    hang the read.
+    """
+
     def announce(shard: Future[tuple[int, int]]) -> None:
-        """Report one shard's outcome from the submitting side, not from inside the worker.
-
-        A worker that never starts -- because the pool rejected it, or it died before its first
-        statement -- cannot announce itself, and a consumer waiting on a sentinel that a dead
-        worker owed it waits forever. The callback runs whatever the worker did, so every shard
-        is accounted for exactly once.
-        """
-
         error = shard.exception()
         if error is not None:
             queue.put(_ShardFailure(error))
-        elif label:
-            shard_index, seen = shard.result()
-            log_shard_progress(
-                logger, label, shard_index=shard_index, total_shards=len(streams), rows_seen=seen
-            )
         queue.put(_SHARD_DONE)  # pragma: no mutate
+        if error is None:
+            _report_finished_shard(shard.result(), label, total, on_shard_done)
 
-    executor = ThreadPoolExecutor(
-        max_workers=min(len(streams), max_workers),
-        thread_name_prefix="v3-shard",
-    )
-    try:
-        for rows in streams:
-            executor.submit(drain, rows).add_done_callback(announce)  # pragma: no mutate
-        yield from _consume_shard_queue(queue, len(streams))
-    finally:
-        finished.set()
-        _drain_queue(queue)
-        executor.shutdown(wait=True)
+    return announce
+
+
+def _report_finished_shard(
+    outcome: tuple[int, int],
+    label: str,
+    total: int,
+    on_shard_done: Callable[[int], None] | None,
+) -> None:
+    """Log a completed shard and record it, in that order."""
+    shard_index, seen = outcome
+    if label:
+        log_shard_progress(logger, label, shard_index=shard_index, total_shards=total, rows_seen=seen)
+    if on_shard_done is not None:
+        on_shard_done(shard_index)
+
+
+def _sequential_shard_rows(
+    numbered: tuple[tuple[int, RowStream], ...],
+    limit: int,
+    label: str,
+    on_shard_done: Callable[[int], None] | None,
+) -> Iterator[Row]:
+    """Read shards one at a time, reporting each as the consumer finishes it."""
+    for shard_index, rows in numbered:
+        yield from _reported_rows(
+            _bounded_rows(rows, limit), label, shard_index, len(numbered), on_shard_done
+        )
 
 
 def _consume_shard_queue(queue: Queue[Any], shards: int) -> Iterator[Row]:
@@ -634,20 +698,6 @@ def _sliding_window(
         if next_rows is not None:
             pending.append(executor.submit(build, next_rows))
         yield head.result()
-
-
-def _bounded_shard_rows(
-    shards: Iterable[RowStream],
-    limit: int,
-    label: str = "",
-    total: int | None = None,
-    skip_shards: frozenset[int] = frozenset(),
-    on_shard_done: Callable[[int], None] | None = None,
-) -> Iterator[Row]:
-    for shard_index, rows in enumerate(shards):
-        if shard_index in skip_shards:
-            continue
-        yield from _reported_rows(_bounded_rows(rows, limit), label, shard_index, total, on_shard_done)
 
 
 def _reported_rows(

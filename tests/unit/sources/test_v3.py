@@ -1816,3 +1816,34 @@ class TestEachStreamIsNamedInTheLog:
         shards = [iter([{"n": 0}])]
 
         assert list(_parallel_shard_rows(shards, limit=5, max_workers=1)) == [{"n": 0}]
+
+
+def test_the_concurrent_path_records_the_shards_it_finished() -> None:
+    """REGRESSION: `on_shard_done` was wired into the sequential branch only.
+
+    Every resume test used one worker, so a source running with a worker budget -- which is the
+    configuration the long runs actually use -- recorded nothing and re-read every shard on the
+    next attempt. The bug #20 exists to fix, reintroduced inside its own fix.
+    """
+    finished: list[int] = []
+    shards = [iter([{"n": index}]) for index in range(4)]
+
+    list(_parallel_shard_rows(shards, limit=10, max_workers=3, on_shard_done=finished.append))
+
+    assert sorted(finished) == [0, 1, 2, 3]
+
+
+def test_the_concurrent_path_skips_the_shards_it_already_read() -> None:
+    opened: list[int] = []
+
+    def shard(index: int) -> Iterator[Mapping[str, Any]]:
+        opened.append(index)
+        yield {"n": index}
+
+    shards = [shard(index) for index in range(4)]
+    rows = list(
+        _parallel_shard_rows(shards, limit=10, max_workers=3, skip_shards=frozenset({1, 2}))
+    )
+
+    assert sorted(opened) == [0, 3]
+    assert sorted(row["n"] for row in rows) == [0, 3]

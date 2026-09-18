@@ -369,3 +369,25 @@ def test_a_shard_entry_that_is_not_a_list_is_ignored(tmp_path: Path) -> None:
     )
 
     assert CandidateProgressStore(path).load_completed_shards(metadata) == {}
+
+
+def test_completed_shards_are_read_with_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asserted at ``read_text``: ``io.text_encoding`` turns ``None`` into ``utf-8`` wherever
+    UTF-8 mode is on, so a spy any lower cannot tell a pinned encoding from an unpinned one."""
+    from landuse_sentence_relevance.domain.models import Source
+
+    path = tmp_path / "progress.json"
+    store = CandidateProgressStore(path)
+    metadata = {"schema_version": 2, "fingerprint": "encoding"}
+    store.save([], metadata, completed_shards={Source.WEBSITE: frozenset({1})})
+    requested: list[str | None] = []
+    original_read_text = Path.read_text
+
+    def spy_read_text(self, encoding=None, errors=None):
+        requested.append(encoding)
+        return original_read_text(self, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+    assert store.load_completed_shards(metadata) == {Source.WEBSITE: frozenset({1})}
+    assert requested == ["utf-8"]

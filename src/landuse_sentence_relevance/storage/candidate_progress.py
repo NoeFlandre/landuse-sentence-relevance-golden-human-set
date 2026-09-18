@@ -92,11 +92,11 @@ class CandidateProgressStore:
             "metadata": dict(metadata),
             "candidates": [candidate.to_dict() for candidate in candidates],
             "completed_sources": sorted(source.value for source in completed_sources),
+            # Sorted by source and by index: an unstable payload would rewrite itself on every
+            # save and make a diff of two runs meaningless. `Source` is a `StrEnum`, so sorting
+            # the items needs no key -- and a redundant one would be an untestable argument.
             "completed_shards": {
-                source.value: sorted(indices)
-                for source, indices in sorted(
-                    (completed_shards or {}).items(), key=lambda item: item[0].value
-                )
+                source.value: sorted(indices) for source, indices in sorted((completed_shards or {}).items())
             },
         }
 
