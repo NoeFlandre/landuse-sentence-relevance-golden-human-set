@@ -272,7 +272,15 @@ def test_description_adapter_bounds_each_side_of_the_geometry_join() -> None:
     assert geometry_rows.seen == 1
 
 
-def test_description_adapter_stops_indexing_geometry_at_the_configured_join_bound() -> None:
+def test_description_adapter_fails_when_the_join_index_cannot_hold_every_shard() -> None:
+    """A truncated join silently drops whole regions, so it must stop the build.
+
+    Shards arrive in a fixed order, so an index that fills part way through
+    leaves every later region without geometry. Those sentences then yield no
+    candidates, the per-source quota still passes, and the gap reaches the pool
+    with nothing recording it. Failing here is the only way that cannot happen.
+    """
+
     sentence_rows = CountingRows(
         [_description_row(identity="a" * 64, osm_id="1"), _description_row(identity="b" * 64, osm_id="2")]
     )
@@ -282,10 +290,34 @@ def test_description_adapter_stops_indexing_geometry_at_the_configured_join_boun
     )
     source = _description_source((sentence_rows,), geometry_shards, max_join_entries=1)
 
-    candidates = list(source.iter_candidates())
+    with pytest.raises(ValueError, match=r"max_join_entries"):
+        list(source.iter_candidates())
+
+    assert geometry_shards[1].seen == 0, "the build must stop before reading further shards"
+
+
+def test_wikipedia_adapter_fails_when_the_join_index_cannot_hold_every_shard() -> None:
+    polygon_shards = (
+        CountingRows([_polygon_row(polygon_id="p1", wikidata="Q1")]),
+        CountingRows([_polygon_row(polygon_id="p2", wikidata="Q2")]),
+    )
+    source = _wikipedia_source(
+        ((_wikipedia_row(sentence_id="s1", wikidata="Q1"),),), polygon_shards, max_join_entries=1
+    )
+
+    with pytest.raises(ValueError, match=r"max_join_entries"):
+        list(source.iter_candidates())
+
+
+def test_a_join_index_that_fits_every_shard_does_not_fail() -> None:
+    sentence_rows = CountingRows([_description_row(identity="a" * 64, osm_id="1")])
+    geometry_shards = (CountingRows([_geometry_row(osm_id="1")]),)
+
+    candidates = list(
+        _description_source((sentence_rows,), geometry_shards, max_join_entries=500).iter_candidates()
+    )
 
     assert [candidate.source_record_id for candidate in candidates] == ["a" * 64]
-    assert geometry_shards[1].seen == 0
 
 
 def test_description_adapter_can_resolve_coordinates_from_an_upstream_bbox() -> None:
