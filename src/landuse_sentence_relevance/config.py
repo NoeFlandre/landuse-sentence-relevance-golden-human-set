@@ -151,7 +151,7 @@ class V3Settings:
     minimum_cell_distance_km: float = 0.0
     remote_file_sample_count: int = 386
     max_rows_per_shard: int = 20_000
-    max_join_entries: int = 1_200_000
+    max_join_entries: int = 1_000_000
     stream_workers: int = 32
     description_min_language_score: float = 0.90
     website_min_language_probability: float = 0.90
@@ -201,7 +201,7 @@ class V3Settings:
             candidate_cells_per_source=int(env.get("V3_CANDIDATE_CELLS_PER_SOURCE", "400")),
             remote_file_sample_count=int(env.get("V3_REMOTE_FILE_SAMPLE_COUNT", "386")),
             max_rows_per_shard=int(env.get("V3_MAX_ROWS_PER_SHARD", "20000")),
-            max_join_entries=int(env.get("V3_MAX_JOIN_ENTRIES", "1200000")),
+            max_join_entries=int(env.get("V3_MAX_JOIN_ENTRIES", "1000000")),
             stream_workers=int(env.get("STREAM_WORKERS", "32")),
             hf_token=env.get("HF_TOKEN"),
         )

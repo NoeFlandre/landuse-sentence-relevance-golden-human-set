@@ -1128,7 +1128,16 @@ def test_the_join_counts_every_shard_it_read(caplog: pytest.LogCaptureFixture) -
     assert "V3 join indexed 2 join keys from 3 shard(s)" in [record.getMessage() for record in caplog.records]
 
 
-def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCaptureFixture) -> None:
+def test_the_join_names_the_shard_that_would_lose_its_geometry_when_the_cap_stops_it() -> None:
+    """This used to warn and continue. A warning in a log cannot protect the pool.
+
+    The truncated source still cleared its quota and still read its own stream to
+    the end, so it was recorded complete and the missing regions reached the
+    artifact with nothing recording them. The message now has to carry which
+    shard was abandoned, because that is what tells an operator how much of the
+    world was dropped.
+    """
+
     source = _wikipedia_source(
         (CountingRows([_wikipedia_row(sentence_id="good")]),),
         (
@@ -1138,15 +1147,14 @@ def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCapture
         max_join_entries=1,
     )
 
-    with caplog.at_level("INFO", logger="landuse_sentence_relevance.sources.v3"):
+    with pytest.raises(ValueError) as error:
         list(source.iter_candidates())
 
-    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
-    assert warnings == [
-        "V3 join index is full at 1 keys after 1 shard(s); stopping before shard 2. "
-        "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it."
-    ]
-    assert "V3 join indexed 1 join keys from 1 shard(s)" in [record.getMessage() for record in caplog.records]
+    assert str(error.value) == (
+        "wikipedia polygons join index is full at 1 keys after 1 shard(s); "
+        "shard 2 and every later region would lose its geometry. "
+        "Raise max_join_entries so the index spans every shard."
+    )
 
 
 class BlockingRows:
