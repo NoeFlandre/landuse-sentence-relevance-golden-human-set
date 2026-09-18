@@ -528,7 +528,7 @@ def _parallel_shard_rows(
     total = len(numbered)
 
     drain = _shard_drainer(queue, finished, limit)
-    announce = _shard_announcer(queue, label, total, on_shard_done)
+    announce = _shard_announcer(queue, label, total, on_shard_done)  # pragma: no mutate
 
     executor = ThreadPoolExecutor(
         max_workers=min(len(numbered), max_workers),

@@ -1606,6 +1606,19 @@ class TestShardProgressIsReported:
             "website: finished shard 2/2 (1 rows)",
         ]
 
+    def test_the_concurrent_path_reports_how_many_rows_each_shard_held(self, caplog) -> None:
+        """The row count is the number an operator reads to tell a fat shard from a thin one."""
+        shards = [iter([{"n": index}] * (index + 1)) for index in range(3)]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=3, label="website rows"))
+
+        assert {r.getMessage() for r in caplog.records} == {
+            "website rows: finished shard 1/3 (1 rows)",
+            "website rows: finished shard 2/3 (2 rows)",
+            "website rows: finished shard 3/3 (3 rows)",
+        }
+
     def test_the_concurrent_path_reports_every_shard(self, caplog) -> None:
         """Order is not asserted -- shards race by design -- but none may go unreported."""
         shards = [iter([{"n": index}]) for index in range(4)]
@@ -1790,9 +1803,9 @@ class TestEachStreamIsNamedInTheLog:
         with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
             list(source.iter_candidates())
 
-        messages = " ".join(r.getMessage() for r in caplog.records)
-        assert "description sentences" in messages
-        assert "description geometry" in messages
+        messages = {r.getMessage() for r in caplog.records}
+        assert "description sentences: finished shard 1/1 (1 rows)" in messages
+        assert "description geometry: finished shard 1/? (1 rows)" in messages
 
     def test_the_wikipedia_adapter_names_both_of_its_streams(self, caplog) -> None:
         source = _wikipedia_source((iter([_wikipedia_row(sentence_id="s1")]),), (iter([_polygon_row()]),))
@@ -1800,22 +1813,30 @@ class TestEachStreamIsNamedInTheLog:
         with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
             list(source.iter_candidates())
 
-        messages = " ".join(r.getMessage() for r in caplog.records)
-        assert "wikipedia sentences" in messages
-        assert "wikipedia polygons" in messages
+        messages = {r.getMessage() for r in caplog.records}
+        assert "wikipedia sentences: finished shard 1/1 (1 rows)" in messages
+        assert "wikipedia polygons: finished shard 1/? (1 rows)" in messages
 
     def test_the_website_adapter_names_its_stream(self, caplog) -> None:
         with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
             list(_website_source(iter([_website_row()])).iter_candidates())
 
-        assert "website rows" in " ".join(r.getMessage() for r in caplog.records)
+        assert "website rows: finished shard 1/1 (1 rows)" in {r.getMessage() for r in caplog.records}
 
-    def test_an_unlabelled_stream_reports_nothing(self) -> None:
+    def test_an_unlabelled_stream_reports_nothing(self, caplog) -> None:
         """The label is what turns reporting on: the helpers stay silent without one, so a
-        caller that does not want progress does not pay for it."""
+        caller that does not want progress does not pay for it.
+
+        Silence is asserted, not assumed -- a default label of anything truthy would log under a
+        meaningless name rather than not logging.
+        """
         shards = [iter([{"n": 0}])]
 
-        assert list(_parallel_shard_rows(shards, limit=5, max_workers=1)) == [{"n": 0}]
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            rows = list(_parallel_shard_rows(shards, limit=5, max_workers=1))
+
+        assert rows == [{"n": 0}]
+        assert [r.getMessage() for r in caplog.records] == []
 
 
 def test_the_concurrent_path_records_the_shards_it_finished() -> None:
@@ -1841,9 +1862,7 @@ def test_the_concurrent_path_skips_the_shards_it_already_read() -> None:
         yield {"n": index}
 
     shards = [shard(index) for index in range(4)]
-    rows = list(
-        _parallel_shard_rows(shards, limit=10, max_workers=3, skip_shards=frozenset({1, 2}))
-    )
+    rows = list(_parallel_shard_rows(shards, limit=10, max_workers=3, skip_shards=frozenset({1, 2})))
 
     assert sorted(opened) == [0, 3]
     assert sorted(row["n"] for row in rows) == [0, 3]
