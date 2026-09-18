@@ -14,6 +14,7 @@ from threading import Event
 from typing import Any, Protocol
 
 from landuse_sentence_relevance.domain.models import Candidate, Source
+from landuse_sentence_relevance.observability import log_shard_progress
 from landuse_sentence_relevance.sources.validation import validate_positive_limit
 
 type Row = Mapping[str, Any]
@@ -126,6 +127,7 @@ class DescriptionSentenceSource:
     def iter_candidates(self) -> Iterator[Candidate]:
         geometry_by_identity = _join_index(
             self._geometry_shards_loader(),
+            label="description geometry",
             key_for_row=_description_join_key,
             place_for_row=_description_place,
             max_rows_per_shard=self.max_rows_per_shard,
@@ -133,7 +135,10 @@ class DescriptionSentenceSource:
             max_workers=self.max_stream_workers,
         )
         rows = _parallel_shard_rows(
-            self._sentence_shards_loader(), self.max_rows_per_shard, self.max_stream_workers
+            self._sentence_shards_loader(),
+            self.max_rows_per_shard,
+            self.max_stream_workers,
+            label="description sentences",
         )
         for row in rows:
             yield from self._row_candidates(row, geometry_by_identity)
@@ -199,6 +204,7 @@ class WikipediaSentenceSource:
     def iter_candidates(self) -> Iterator[Candidate]:
         polygons_by_wikidata = _join_index(
             self._polygon_shards_loader(),
+            label="wikipedia polygons",
             key_for_row=_wikidata_key,
             place_for_row=_wikipedia_polygon_place,
             max_rows_per_shard=self.max_rows_per_shard,
@@ -206,7 +212,10 @@ class WikipediaSentenceSource:
             max_workers=self.max_stream_workers,
         )
         rows = _parallel_shard_rows(
-            self._sentence_shards_loader(), self.max_rows_per_shard, self.max_stream_workers
+            self._sentence_shards_loader(),
+            self.max_rows_per_shard,
+            self.max_stream_workers,
+            label="wikipedia sentences",
         )
         for row in rows:
             candidate = self._candidate_for(row, polygons_by_wikidata)
@@ -263,7 +272,10 @@ class WebsiteSentenceSource:
 
     def iter_candidates(self) -> Iterator[Candidate]:
         rows = _parallel_shard_rows(
-            self._row_shards_loader(), self.max_rows_per_shard, self.max_stream_workers
+            self._row_shards_loader(),
+            self.max_rows_per_shard,
+            self.max_stream_workers,
+            label="website rows",
         )
         for row in rows:
             yield from self._row_candidates(row)
@@ -337,6 +349,7 @@ def _join_index(
     max_rows_per_shard: int,
     max_entries: int,
     max_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
+    label: str = "",
 ) -> dict[str, JoinedPlace]:
     """Index the lookup side of a join across every shard, first key wins.
 
@@ -348,7 +361,7 @@ def _join_index(
 
     index: dict[str, JoinedPlace] = {}
     shards_read = 0
-    for rows in _join_shard_rows(shards, max_rows_per_shard, max_workers):
+    for rows in _join_shard_rows(shards, max_rows_per_shard, max_workers, label):
         if len(index) >= max_entries:
             _log_full_join_index(len(index), shards_read)
             break
@@ -368,6 +381,7 @@ def _join_shard_rows(
     shards: Iterable[RowStream],
     max_rows_per_shard: int,
     max_workers: int,
+    label: str = "",
 ) -> Iterator[Iterable[Row]]:
     """Yield each shard's bounded rows, prefetching only when workers are enabled.
 
@@ -377,8 +391,8 @@ def _join_shard_rows(
     """
 
     if max_workers <= 1:
-        for rows in shards:
-            yield _bounded_rows(rows, max_rows_per_shard)
+        for shard_index, rows in enumerate(shards):
+            yield _reported_rows(_bounded_rows(rows, max_rows_per_shard), label, shard_index, None)
         return
     yield from _ordered_parallel_shards(
         shards,
@@ -452,6 +466,7 @@ def _parallel_shard_rows(
     shards: Iterable[RowStream],
     limit: int,
     max_workers: int,
+    label: str = "",
 ) -> Iterator[Row]:
     """Read shards concurrently and yield their rows as they arrive.
 
@@ -463,7 +478,7 @@ def _parallel_shard_rows(
 
     streams = tuple(shards)
     if max_workers <= 1 or len(streams) <= 1:
-        yield from _bounded_shard_rows(streams, limit)
+        yield from _bounded_shard_rows(streams, limit, label, len(streams))
         return
     # The four lines below carry `no mutate` because a mutant of any of them deadlocks the
     # suite rather than failing it: a queue that cannot accept a put, a marker the consumer does
@@ -474,12 +489,20 @@ def _parallel_shard_rows(
     # the pool's size and name, and that every row of every shard arrives exactly once.
     queue: Queue[Any] = Queue(maxsize=_SHARD_QUEUE_CAPACITY)  # pragma: no mutate
     finished = Event()
+    # Each worker takes its position as it starts, so a shard is named by submission order rather
+    # than by whichever raced ahead.
+    numbering = iter(range(len(streams)))
 
-    def drain(rows: RowStream) -> None:
+    def drain(rows: RowStream) -> tuple[int, int]:
+        """Read one shard, returning its position and how many rows it held."""
+        shard_index = next(numbering)
+        seen = 0
         for row in takewhile(lambda _row: not finished.is_set(), islice(rows, limit)):
+            seen += 1
             queue.put(row)
+        return shard_index, seen
 
-    def announce(shard: Future[None]) -> None:
+    def announce(shard: Future[tuple[int, int]]) -> None:
         """Report one shard's outcome from the submitting side, not from inside the worker.
 
         A worker that never starts -- because the pool rejected it, or it died before its first
@@ -491,6 +514,11 @@ def _parallel_shard_rows(
         error = shard.exception()
         if error is not None:
             queue.put(_ShardFailure(error))
+        elif label:
+            shard_index, seen = shard.result()
+            log_shard_progress(
+                logger, label, shard_index=shard_index, total_shards=len(streams), rows_seen=seen
+            )
         queue.put(_SHARD_DONE)  # pragma: no mutate
 
     executor = ThreadPoolExecutor(
@@ -576,9 +604,27 @@ def _sliding_window(
         yield head.result()
 
 
-def _bounded_shard_rows(shards: Iterable[RowStream], limit: int) -> Iterator[Row]:
-    for rows in shards:
-        yield from _bounded_rows(rows, limit)
+def _bounded_shard_rows(
+    shards: Iterable[RowStream], limit: int, label: str = "", total: int | None = None
+) -> Iterator[Row]:
+    for shard_index, rows in enumerate(shards):
+        yield from _reported_rows(_bounded_rows(rows, limit), label, shard_index, total)
+
+
+def _reported_rows(rows: Iterator[Row], label: str, shard_index: int, total: int | None) -> Iterator[Row]:
+    """Yield a shard's rows, reporting it once the consumer has read them all.
+
+    Lazy on purpose. Materialising the shard to count its rows would read the next one before the
+    caller asked for it, and the join index stops opening shards once it holds enough keys -- so
+    counting eagerly would undo the bound it relies on. A shard the consumer abandons half way is
+    not reported, because it did not finish.
+    """
+    seen = 0
+    for row in rows:
+        seen += 1
+        yield row
+    if label:
+        log_shard_progress(logger, label, shard_index=shard_index, total_shards=total, rows_seen=seen)
 
 
 def _bounded_rows(rows: RowStream, limit: int) -> Iterator[Row]:

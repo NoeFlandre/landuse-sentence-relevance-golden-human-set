@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -1588,3 +1589,59 @@ class TestOrderedShardsPrefetchWithinItsBudget:
         assert submitted_before_first_result <= 3, recorded_pools.submits
         assert [first[0]["n"], *[rows[0]["n"] for rows in rest]] == list(range(6))
         assert len(recorded_pools.submits) == 6
+
+
+class TestShardProgressIsReported:
+    """A source that streams for hours must say where it is. See #21."""
+
+    def test_the_sequential_path_reports_each_shard_as_it_finishes(self, caplog) -> None:
+        shards = [iter([{"n": 0}, {"n": 1}]), iter([{"n": 2}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=1, label="website"))
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages == [
+            "website: finished shard 1/2 (2 rows)",
+            "website: finished shard 2/2 (1 rows)",
+        ]
+
+    def test_the_concurrent_path_reports_every_shard(self, caplog) -> None:
+        """Order is not asserted -- shards race by design -- but none may go unreported."""
+        shards = [iter([{"n": index}]) for index in range(4)]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=3, label="description"))
+
+        reported = [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()]
+        assert len(reported) == 4
+        assert all("description" in message for message in reported)
+        assert all("/4" in message for message in reported)
+
+    def test_the_join_index_reports_its_shards_too(self, caplog) -> None:
+        """The join side is the slow half of both joined adapters.
+
+        The rows are consumed, not just collected: the sequential path hands back lazy streams so
+        the join index can stop opening shards once it holds enough keys, and a shard nobody reads
+        has not finished.
+        """
+        shards = [iter([{"n": 0}]), iter([{"n": 1}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            for shard in _join_shard_rows(
+                shards, max_rows_per_shard=5, max_workers=1, label="wikipedia"
+            ):
+                list(shard)
+
+        reported = [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()]
+        assert len(reported) == 2
+        assert all("wikipedia" in message for message in reported)
+
+    def test_no_row_content_reaches_the_log(self, caplog) -> None:
+        secret = "a sentence that must never be logged"
+        shards = [iter([{"text": secret}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=1, label="website"))
+
+        assert all(secret not in record.getMessage() for record in caplog.records)
