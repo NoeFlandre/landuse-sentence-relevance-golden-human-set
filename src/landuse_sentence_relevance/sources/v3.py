@@ -110,6 +110,8 @@ class DescriptionSentenceSource:
         max_text_characters: int = _DEFAULT_MAX_TEXT_CHARACTERS,
         max_join_entries: int = _DEFAULT_MAX_JOIN_ENTRIES,
         max_stream_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
+        skip_shards: frozenset[int] = frozenset(),
+        on_shard_done: Callable[[int], None] | None = None,
     ) -> None:
         self._sentence_shards_loader = sentence_shards_loader
         self._geometry_shards_loader = geometry_shards_loader
@@ -123,6 +125,12 @@ class DescriptionSentenceSource:
         self.max_join_entries = max_join_entries
         validate_positive_limit(max_stream_workers, "max_stream_workers")
         self.max_stream_workers = max_stream_workers
+        #: Shard positions this source already read to the end, from the checkpoint. Skipped
+        #: rather than re-read; see #20.
+        self.skip_shards = skip_shards
+        #: Called with a shard's position once its rows are exhausted, so the checkpoint can
+        #: record it. A shard the run is interrupted in the middle of is never reported.
+        self.on_shard_done = on_shard_done
 
     def iter_candidates(self) -> Iterator[Candidate]:
         geometry_by_identity = _join_index(
@@ -139,6 +147,8 @@ class DescriptionSentenceSource:
             self.max_rows_per_shard,
             self.max_stream_workers,
             label="description sentences",
+            skip_shards=self.skip_shards,
+            on_shard_done=self.on_shard_done,
         )
         for row in rows:
             yield from self._row_candidates(row, geometry_by_identity)
@@ -188,6 +198,8 @@ class WikipediaSentenceSource:
         max_text_characters: int = _DEFAULT_MAX_TEXT_CHARACTERS,
         max_join_entries: int = _DEFAULT_MAX_JOIN_ENTRIES,
         max_stream_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
+        skip_shards: frozenset[int] = frozenset(),
+        on_shard_done: Callable[[int], None] | None = None,
     ) -> None:
         self._sentence_shards_loader = sentence_shards_loader
         self._polygon_shards_loader = polygon_shards_loader
@@ -200,6 +212,12 @@ class WikipediaSentenceSource:
         self.max_join_entries = max_join_entries
         validate_positive_limit(max_stream_workers, "max_stream_workers")
         self.max_stream_workers = max_stream_workers
+        #: Shard positions this source already read to the end, from the checkpoint. Skipped
+        #: rather than re-read; see #20.
+        self.skip_shards = skip_shards
+        #: Called with a shard's position once its rows are exhausted, so the checkpoint can
+        #: record it. A shard the run is interrupted in the middle of is never reported.
+        self.on_shard_done = on_shard_done
 
     def iter_candidates(self) -> Iterator[Candidate]:
         polygons_by_wikidata = _join_index(
@@ -216,6 +234,8 @@ class WikipediaSentenceSource:
             self.max_rows_per_shard,
             self.max_stream_workers,
             label="wikipedia sentences",
+            skip_shards=self.skip_shards,
+            on_shard_done=self.on_shard_done,
         )
         for row in rows:
             candidate = self._candidate_for(row, polygons_by_wikidata)
@@ -257,6 +277,8 @@ class WebsiteSentenceSource:
         min_language_probability: float = 0.90,
         max_text_characters: int = _DEFAULT_MAX_TEXT_CHARACTERS,
         max_stream_workers: int = _DEFAULT_MAX_STREAM_WORKERS,
+        skip_shards: frozenset[int] = frozenset(),
+        on_shard_done: Callable[[int], None] | None = None,
     ) -> None:
         self._row_shards_loader = row_shards_loader
         self._cell_for_location = cell_for_location
@@ -269,6 +291,12 @@ class WebsiteSentenceSource:
         self.max_text_characters = max_text_characters
         validate_positive_limit(max_stream_workers, "max_stream_workers")
         self.max_stream_workers = max_stream_workers
+        #: Shard positions this source already read to the end, from the checkpoint. Skipped
+        #: rather than re-read; see #20.
+        self.skip_shards = skip_shards
+        #: Called with a shard's position once its rows are exhausted, so the checkpoint can
+        #: record it. A shard the run is interrupted in the middle of is never reported.
+        self.on_shard_done = on_shard_done
 
     def iter_candidates(self) -> Iterator[Candidate]:
         rows = _parallel_shard_rows(
@@ -276,6 +304,8 @@ class WebsiteSentenceSource:
             self.max_rows_per_shard,
             self.max_stream_workers,
             label="website rows",
+            skip_shards=self.skip_shards,
+            on_shard_done=self.on_shard_done,
         )
         for row in rows:
             yield from self._row_candidates(row)
@@ -467,6 +497,8 @@ def _parallel_shard_rows(
     limit: int,
     max_workers: int,
     label: str = "",
+    skip_shards: frozenset[int] = frozenset(),
+    on_shard_done: Callable[[int], None] | None = None,
 ) -> Iterator[Row]:
     """Read shards concurrently and yield their rows as they arrive.
 
@@ -478,7 +510,7 @@ def _parallel_shard_rows(
 
     streams = tuple(shards)
     if max_workers <= 1 or len(streams) <= 1:
-        yield from _bounded_shard_rows(streams, limit, label, len(streams))
+        yield from _bounded_shard_rows(streams, limit, label, len(streams), skip_shards, on_shard_done)
         return
     # The four lines below carry `no mutate` because a mutant of any of them deadlocks the
     # suite rather than failing it: a queue that cannot accept a put, a marker the consumer does
@@ -605,19 +637,33 @@ def _sliding_window(
 
 
 def _bounded_shard_rows(
-    shards: Iterable[RowStream], limit: int, label: str = "", total: int | None = None
+    shards: Iterable[RowStream],
+    limit: int,
+    label: str = "",
+    total: int | None = None,
+    skip_shards: frozenset[int] = frozenset(),
+    on_shard_done: Callable[[int], None] | None = None,
 ) -> Iterator[Row]:
     for shard_index, rows in enumerate(shards):
-        yield from _reported_rows(_bounded_rows(rows, limit), label, shard_index, total)
+        if shard_index in skip_shards:
+            continue
+        yield from _reported_rows(_bounded_rows(rows, limit), label, shard_index, total, on_shard_done)
 
 
-def _reported_rows(rows: Iterator[Row], label: str, shard_index: int, total: int | None) -> Iterator[Row]:
+def _reported_rows(
+    rows: Iterator[Row],
+    label: str,
+    shard_index: int,
+    total: int | None,
+    on_shard_done: Callable[[int], None] | None = None,
+) -> Iterator[Row]:
     """Yield a shard's rows, reporting it once the consumer has read them all.
 
     Lazy on purpose. Materialising the shard to count its rows would read the next one before the
     caller asked for it, and the join index stops opening shards once it holds enough keys -- so
     counting eagerly would undo the bound it relies on. A shard the consumer abandons half way is
-    not reported, because it did not finish.
+    not reported, because it did not finish -- which is exactly what shard-level resume needs: an
+    interrupted shard must be re-read next time, not recorded as done.
     """
     seen = 0
     for row in rows:
@@ -625,6 +671,8 @@ def _reported_rows(rows: Iterator[Row], label: str, shard_index: int, total: int
         yield row
     if label:
         log_shard_progress(logger, label, shard_index=shard_index, total_shards=total, rows_seen=seen)
+    if on_shard_done is not None:
+        on_shard_done(shard_index)
 
 
 def _bounded_rows(rows: RowStream, limit: int) -> Iterator[Row]:

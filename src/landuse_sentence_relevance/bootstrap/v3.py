@@ -61,13 +61,35 @@ class V3CandidatePoolResult:
     seed_plan: SeedPlan
 
 
+def _resume_state_for(source: Source, completed_shards: Mapping[Source, frozenset[int]]) -> frozenset[int]:
+    """The shard positions this source already read to the end."""
+    return completed_shards.get(source, frozenset())
+
+
+def _shard_recorder(source: Source, recorded: dict[Source, set[int]]) -> Callable[[int], None]:
+    """A callback that files a finished shard under the source that read it.
+
+    Called only when a shard's rows are exhausted, so an interrupted shard is re-read next time
+    rather than skipped -- which is the whole point of recording them.
+    """
+
+    def record(shard_index: int) -> None:
+        recorded.setdefault(source, set()).add(shard_index)
+
+    return record
+
+
 def build_v3_source_adapters(
     settings: V3Settings,
     *,
     cell_for_location: Callable[[float, float], str] | None = None,
     loader: HuggingFaceDatasetLoader | None = None,
+    completed_shards: Mapping[Source, frozenset[int]] | None = None,
+    on_shard_done: Mapping[Source, Callable[[int], None]] | None = None,
 ) -> V3SourceAdapters:
     """Compose V3 adapters over immutable, streaming-only source revisions."""
+    done = completed_shards or {}
+    callbacks = on_shard_done or {}
     if cell_for_location is None:
         cell_for_location, _ = h3_geometry(settings)
     remote_files = v3_remote_files(settings)
@@ -75,6 +97,8 @@ def build_v3_source_adapters(
 
     return V3SourceAdapters(
         description=DescriptionSentenceSource(
+            skip_shards=_resume_state_for(Source.DESCRIPTION, done),
+            on_shard_done=callbacks.get(Source.DESCRIPTION),
             sentence_shards_loader=rows["description_sentences"].shards,
             geometry_shards_loader=rows["description_geometry"].shards,
             cell_for_location=cell_for_location,
@@ -85,6 +109,8 @@ def build_v3_source_adapters(
             max_stream_workers=settings.stream_workers,
         ),
         wikipedia=WikipediaSentenceSource(
+            skip_shards=_resume_state_for(Source.WIKIPEDIA, done),
+            on_shard_done=callbacks.get(Source.WIKIPEDIA),
             sentence_shards_loader=rows["wikipedia_sentences"].shards,
             polygon_shards_loader=rows["wikipedia_polygons"].shards,
             cell_for_location=cell_for_location,
@@ -94,6 +120,8 @@ def build_v3_source_adapters(
             max_stream_workers=settings.stream_workers,
         ),
         website=WebsiteSentenceSource(
+            skip_shards=_resume_state_for(Source.WEBSITE, done),
+            on_shard_done=callbacks.get(Source.WEBSITE),
             row_shards_loader=rows["website_polygons"].shards,
             cell_for_location=cell_for_location,
             max_rows_per_shard=settings.max_rows_per_shard,
@@ -257,6 +285,9 @@ def _collect_v3_sources(
     }
     available = _v3_available_cells(pool)
     completed = set(progress_store.load_completed_sources(metadata))
+    completed_shards = {
+        source: set(indices) for source, indices in progress_store.load_completed_shards(metadata).items()
+    }
     for source in V3_SOURCES:
         if source in completed and available.get(source.value, 0) >= target_cells_per_source:
             logger.info(
@@ -274,6 +305,7 @@ def _collect_v3_sources(
             metadata,
             reserved_cells,
             completed,
+            completed_shards=completed_shards,
         )
 
 
@@ -286,6 +318,7 @@ def _collect_v3_source(
     reserved_cells: frozenset[str],
     completed: set[Source],
     now: Callable[[], float] = time.monotonic,
+    completed_shards: dict[Source, set[int]] | None = None,
 ) -> int:
     """Stream one source, recording completion only when its rows truly ran out.
 
@@ -297,24 +330,39 @@ def _collect_v3_source(
     preserve the candidate set, never a position in the stream.
     """
 
+    shards = completed_shards if completed_shards is not None else {}
     collected = 0
     last_saved = now()
     try:
         for candidate in candidates:
-            if candidate.source is not source:
-                raise ValueError(f"V3 {source.value} adapter yielded {candidate.source.value} candidate")
-            if candidate.h3_cell in reserved_cells:
+            if not _admits(candidate, source, reserved_cells):
                 continue
             pool.add(candidate)
             collected += 1
             current = now()
             if current - last_saved >= _V3_PROGRESS_CHECKPOINT_SECONDS:
-                progress_store.save(pool.snapshot(), metadata, completed)
+                progress_store.save(pool.snapshot(), metadata, completed, _frozen(shards))
                 last_saved = current
         completed.add(source)
     finally:
-        progress_store.save(pool.snapshot(), metadata, completed)
+        progress_store.save(pool.snapshot(), metadata, completed, _frozen(shards))
     return collected
+
+
+def _admits(candidate: Candidate, source: Source, reserved_cells: frozenset[str]) -> bool:
+    """Whether this candidate belongs in the pool, refusing one from the wrong adapter.
+
+    A reserved cell is skipped silently -- V2 already owns it. A candidate from another source is
+    a wiring mistake and stops the run, because a pool that quietly mixes sources would produce a
+    quota matrix nobody could reproduce.
+    """
+    if candidate.source is not source:
+        raise ValueError(f"V3 {source.value} adapter yielded {candidate.source.value} candidate")
+    return candidate.h3_cell not in reserved_cells
+
+
+def _frozen(shards: Mapping[Source, set[int]]) -> dict[Source, frozenset[int]]:
+    return {source: frozenset(indices) for source, indices in shards.items()}
 
 
 def _add_v3_candidate(

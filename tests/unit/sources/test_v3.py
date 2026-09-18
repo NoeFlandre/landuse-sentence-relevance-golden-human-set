@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Generator, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Any, ClassVar, cast
@@ -1628,9 +1628,7 @@ class TestShardProgressIsReported:
         shards = [iter([{"n": 0}]), iter([{"n": 1}])]
 
         with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
-            for shard in _join_shard_rows(
-                shards, max_rows_per_shard=5, max_workers=1, label="wikipedia"
-            ):
+            for shard in _join_shard_rows(shards, max_rows_per_shard=5, max_workers=1, label="wikipedia"):
                 list(shard)
 
         reported = [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()]
@@ -1645,3 +1643,63 @@ class TestShardProgressIsReported:
             list(_parallel_shard_rows(shards, limit=10, max_workers=1, label="website"))
 
         assert all(secret not in record.getMessage() for record in caplog.records)
+
+
+class TestShardLevelResume:
+    """A source interrupted part way must reopen only its unread shards. See #20.
+
+    The website source is ~386 shards read in alphabetical order. It was re-streamed from
+    `afghanistan` three times in one day because each run was interrupted before `zimbabwe`, and
+    each interruption threw away every shard it had processed -- one leg ran 5h12m and had not
+    cleared `sri-lanka`.
+    """
+
+    def test_read_shards_are_not_reopened(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield {"n": index}
+
+        shards = [shard(index) for index in range(4)]
+        rows = list(_parallel_shard_rows(shards, limit=10, max_workers=1, skip_shards=frozenset({0, 2})))
+
+        assert opened == [1, 3], "a skipped shard is never opened, not merely discarded"
+        assert [row["n"] for row in rows] == [1, 3]
+
+    def test_finished_shards_are_reported_by_index(self) -> None:
+        finished: list[int] = []
+        shards = [iter([{"n": index}]) for index in range(3)]
+
+        list(_parallel_shard_rows(shards, limit=10, max_workers=1, on_shard_done=finished.append))
+
+        assert sorted(finished) == [0, 1, 2]
+
+    def test_a_shard_abandoned_part_way_is_not_reported(self) -> None:
+        """The whole point: an interrupted shard must be re-read, not skipped next time."""
+        finished: list[int] = []
+        shards = [iter([{"n": 0}, {"n": 1}]), iter([{"n": 2}])]
+
+        stream = _parallel_shard_rows(shards, limit=10, max_workers=1, on_shard_done=finished.append)
+        next(stream)
+        cast(Generator[Any, None, None], stream).close()
+
+        assert finished == []
+
+    def test_skipping_preserves_the_index_of_the_shards_that_remain(self) -> None:
+        """Indices name positions in the resolved shard list, so a resumed run records the same
+        number for the same shard as the run before it."""
+        finished: list[int] = []
+        shards = [iter([{"n": index}]) for index in range(4)]
+
+        list(
+            _parallel_shard_rows(
+                shards,
+                limit=10,
+                max_workers=1,
+                skip_shards=frozenset({0, 1}),
+                on_shard_done=finished.append,
+            )
+        )
+
+        assert sorted(finished) == [2, 3]

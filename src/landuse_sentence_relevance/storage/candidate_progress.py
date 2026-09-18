@@ -59,16 +59,45 @@ class CandidateProgressStore:
             return frozenset()
         return frozenset(Source(value) for value in completed)
 
+    def load_completed_shards(self, expected_metadata: Mapping[str, Any]) -> dict[Source, frozenset[int]]:
+        """Which shards of each source were read to the end, by source.
+
+        Held to a stricter standard than the candidate list. A larger ``remote_file_sample_count``
+        may reuse candidates -- they are still valid rows, drawn from a smaller sample -- but it
+        may not reuse shard indices, because the resolved shard list is a different list. Shard 3
+        of a 32-shard sample is not shard 3 of a 128-shard one, and skipping it would silently
+        omit data the run believes it has read.
+
+        A checkpoint written before shards were tracked reports nothing, so every shard is
+        re-read: the safe answer, and the same default ``load_completed_sources`` takes.
+        """
+
+        if not self._path.exists():
+            return {}
+        payload = json.loads(self._path.read_text(encoding="utf-8"))
+        saved_metadata = payload.get("metadata")
+        _require_matching_metadata(saved_metadata, expected_metadata)
+        if not _metadata_is_identical(saved_metadata, expected_metadata):
+            return {}
+        return _parse_completed_shards(payload.get("completed_shards"))
+
     def save(
         self,
         candidates: Iterable[Candidate],
         metadata: Mapping[str, Any],
         completed_sources: Iterable[Source] = (),
+        completed_shards: Mapping[Source, frozenset[int]] | None = None,
     ) -> None:
         payload = {
             "metadata": dict(metadata),
             "candidates": [candidate.to_dict() for candidate in candidates],
             "completed_sources": sorted(source.value for source in completed_sources),
+            "completed_shards": {
+                source.value: sorted(indices)
+                for source, indices in sorted(
+                    (completed_shards or {}).items(), key=lambda item: item[0].value
+                )
+            },
         }
 
         def write_payload(handle: TextWriter) -> None:
@@ -83,6 +112,26 @@ def _semantic_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
         key: _without_keys(value, _IGNORED_METADATA_KEYS[key]) if key in _IGNORED_METADATA_KEYS else value
         for key, value in metadata.items()
     }
+
+
+def _parse_completed_shards(recorded: Any) -> dict[Source, frozenset[int]]:
+    """Read the recorded shard positions, ignoring anything that is not a list of them."""
+    if not isinstance(recorded, Mapping):
+        return {}
+    return {
+        Source(name): frozenset(int(index) for index in indices)
+        for name, indices in recorded.items()
+        if isinstance(indices, list)
+    }
+
+
+def _metadata_is_identical(saved: Any, expected: Mapping[str, Any]) -> bool:
+    """Whether the configurations are the same, with no allowance for an expanded sample.
+
+    ``_metadata_matches`` deliberately tolerates a grown ``remote_file_sample_count``. Shard
+    bookkeeping cannot, because the indices are positions in a list that changed.
+    """
+    return isinstance(saved, Mapping) and _semantic_metadata(saved) == _semantic_metadata(expected)
 
 
 def _metadata_matches(saved: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
