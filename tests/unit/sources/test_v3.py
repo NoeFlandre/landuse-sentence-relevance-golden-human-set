@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable, Iterator, Mapping
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
+from typing import Any, ClassVar, cast
 
 import pytest
 
+import landuse_sentence_relevance.sources.v3 as v3_module
 from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.sources.v3 import (
+    _SHARD_QUEUE_CAPACITY,
     DescriptionSentenceSource,
     WebsiteSentenceSource,
     WikipediaSentenceSource,
+    _join_shard_rows,
+    _ordered_parallel_shards,
+    _parallel_shard_rows,
+    _sliding_window,
 )
 
 
@@ -129,6 +138,22 @@ def _polygon_row(
         "lon": 2.0,
         "name": "Place",
         "region": "Region",
+        **overrides,
+    }
+
+
+def _website_row(*, polygon_id: str = "p1", **overrides: Any) -> dict[str, Any]:
+    """Shape a website polygon row the way the pinned revision publishes it."""
+    return {
+        "polygon_id": polygon_id,
+        "lat": 45.0,
+        "lon": 2.0,
+        "name": "Place",
+        "region": "Region",
+        "website": "https://example.test",
+        "website_language": "eng_Latn",
+        "website_language_probability": 0.95,
+        "website_sentences": ["The upstream website sentence."],
         **overrides,
     }
 
@@ -1089,3 +1114,477 @@ def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCapture
         "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it."
     ]
     assert "V3 join indexed 1 join keys from 1 shard(s)" in [record.getMessage() for record in caplog.records]
+
+
+class BlockingRows:
+    """A shard that blocks until released, to prove shards are read concurrently."""
+
+    def __init__(self, rows: Iterable[Mapping[str, Any]], barrier: Any) -> None:
+        self._rows = tuple(rows)
+        self._barrier = barrier
+
+    def __iter__(self) -> Iterator[Mapping[str, Any]]:
+        self._barrier.wait(timeout=10)
+        yield from self._rows
+
+
+def test_website_adapter_reads_shards_concurrently() -> None:
+    """Each shard blocks until every other shard has started, so a sequential read deadlocks."""
+
+    import threading
+
+    shard_count = 4
+    barrier = threading.Barrier(shard_count)
+    shards = tuple(
+        BlockingRows([_website_row(polygon_id=f"p{index}")], barrier) for index in range(shard_count)
+    )
+    source = WebsiteSentenceSource(
+        row_shards_loader=lambda: shards,
+        cell_for_location=_cell,
+        max_stream_workers=shard_count,
+    )
+
+    candidates = list(source.iter_candidates())
+
+    assert len(candidates) == shard_count
+
+
+def test_website_adapter_yields_same_candidates_with_and_without_workers() -> None:
+    rows = [_website_row(polygon_id=f"p{index}") for index in range(6)]
+    shards = tuple((row,) for row in rows)
+
+    sequential = _website_source(*shards, max_stream_workers=1)
+    parallel = WebsiteSentenceSource(
+        row_shards_loader=lambda: shards,
+        cell_for_location=_cell,
+        max_stream_workers=4,
+    )
+
+    sequential_ids = sorted(candidate.candidate_id for candidate in sequential.iter_candidates())
+    parallel_ids = sorted(candidate.candidate_id for candidate in parallel.iter_candidates())
+    assert sequential_ids == parallel_ids
+    assert sequential_ids != []
+
+
+def test_website_adapter_propagates_shard_failures_with_workers() -> None:
+    def failing_rows() -> Iterator[Mapping[str, Any]]:
+        yield _website_row(polygon_id="p0")
+        raise RuntimeError("upstream shard failed")
+
+    source = WebsiteSentenceSource(
+        row_shards_loader=lambda: ((_website_row(polygon_id="p1"),), failing_rows()),
+        cell_for_location=_cell,
+        max_stream_workers=2,
+    )
+
+    with pytest.raises(RuntimeError, match="upstream shard failed"):
+        list(source.iter_candidates())
+
+
+def test_every_adapter_names_max_stream_workers_when_it_rejects_it() -> None:
+    """The message is the only thing an operator sees: it has to name the setting to change.
+
+    All three adapters take the same bound, so all three are checked -- a copied constructor
+    that validates the wrong name would otherwise pass on the strength of its neighbours.
+    """
+
+    shards: tuple[()] = ()
+    expected = r"^max_stream_workers must be positive$"
+    with pytest.raises(ValueError, match=expected):
+        _website_source(shards, max_stream_workers=0)
+    with pytest.raises(ValueError, match=expected):
+        _description_source(shards, shards, max_stream_workers=0)
+    with pytest.raises(ValueError, match=expected):
+        _wikipedia_source(shards, shards, max_stream_workers=0)
+
+
+# --------------------------------------------------------------- concurrent shard reading
+
+
+def _slow_rows(rows: Iterable[Mapping[str, Any]], delay: float = 0.0) -> Iterator[Mapping[str, Any]]:
+    import time
+
+    for row in rows:
+        if delay:
+            time.sleep(delay)
+        yield row
+
+
+class TestOrderedParallelShards:
+    """`_ordered_parallel_shards` prefetches concurrently but must preserve shard order.
+
+    The join index keeps the first value seen for a key, so its result depends on shard order.
+    Prefetching that reordered shards would silently change which record wins a key -- a
+    correctness bug that no amount of retrying would surface.
+    """
+
+    def test_a_single_worker_reads_sequentially(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        shards = [iter([{"n": 0}]), iter([{"n": 1}]), iter([{"n": 2}])]
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=1))
+        assert built == [[{"n": 0}], [{"n": 1}], [{"n": 2}]]
+
+    def test_results_come_back_in_shard_order_despite_uneven_timing(self) -> None:
+        """The first shard is the slowest, so arrival order and shard order disagree."""
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        delays = {0: 0.05, 1: 0.0, 2: 0.0, 3: 0.0}
+        shards = [_slow_rows([{"n": index}], delays[index]) for index in range(4)]
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=3))
+        assert built == [[{"n": index}] for index in range(4)]
+
+    def test_every_shard_is_built_when_there_are_more_than_workers(self) -> None:
+        """The sliding window must keep submitting past the initial batch."""
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        shards = [iter([{"n": index}]) for index in range(9)]
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=2))
+        assert [rows[0]["n"] for rows in built] == list(range(9))
+
+    def test_no_shards_yields_nothing(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        assert list(_ordered_parallel_shards([], lambda rows: list(rows), max_workers=4)) == []
+
+    def test_a_shard_that_raises_propagates_rather_than_being_dropped(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _ordered_parallel_shards
+
+        def build(rows: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+            materialised = list(rows)
+            if materialised and materialised[0]["n"] == 1:
+                raise RuntimeError("shard failed")
+            return materialised
+
+        shards = [iter([{"n": index}]) for index in range(3)]
+        with pytest.raises(RuntimeError, match="shard failed"):
+            list(_ordered_parallel_shards(shards, build, max_workers=2))
+
+
+class TestParallelShardRows:
+    """`_parallel_shard_rows` interleaves shards, which is safe only because the pool ranks
+    candidates by hash rather than by arrival order."""
+
+    def test_a_single_worker_reads_shards_in_order(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        shards = [iter([{"n": 0}, {"n": 1}]), iter([{"n": 2}])]
+        assert list(_parallel_shard_rows(shards, limit=10, max_workers=1)) == [
+            {"n": 0},
+            {"n": 1},
+            {"n": 2},
+        ]
+
+    def test_one_shard_is_read_sequentially_whatever_the_worker_count(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        rows = list(_parallel_shard_rows([iter([{"n": 0}, {"n": 1}])], limit=10, max_workers=4))
+        assert rows == [{"n": 0}, {"n": 1}]
+
+    def test_every_row_arrives_when_shards_are_read_concurrently(self) -> None:
+        """Order is not asserted -- interleaving is the point -- but nothing may be lost."""
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        shards = [iter([{"n": index}, {"n": index + 100}]) for index in range(4)]
+        rows = list(_parallel_shard_rows(shards, limit=10, max_workers=3))
+        assert sorted(row["n"] for row in rows) == sorted(
+            [index for index in range(4)] + [index + 100 for index in range(4)]
+        )
+
+    def test_the_limit_is_applied_per_shard(self) -> None:
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        shards = [iter([{"n": index} for index in range(10)]) for _ in range(3)]
+        rows = list(_parallel_shard_rows(shards, limit=2, max_workers=3))
+        assert len(rows) == 6
+
+    def test_a_failing_shard_re_raises_in_the_consumer(self) -> None:
+        """A shard that raises must not be silently dropped: the pool would be short and
+        nothing would say so."""
+        from landuse_sentence_relevance.sources.v3 import _parallel_shard_rows
+
+        def exploding() -> Iterator[Mapping[str, Any]]:
+            yield {"n": 0}
+            raise RuntimeError("upstream died")
+
+        shards = [exploding(), iter([{"n": 1}]), iter([{"n": 2}])]
+        with pytest.raises(RuntimeError, match="upstream died"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=3))
+
+
+# --------------------------------------------- the contracts the concurrency arguments carry
+
+
+class _RecordingExecutor(ThreadPoolExecutor):
+    """A pool that records how it was constructed and shut down.
+
+    The arguments matter and are otherwise unobservable: the worker count is what bounds
+    concurrent upstream reads, the thread prefix is what lets a stack dump name the shard that
+    is stuck, and ``wait=True`` on shutdown is what stops a generator from returning while its
+    threads are still reading. Asserting them here is how those stay true.
+    """
+
+    constructed: ClassVar[list[dict[str, Any]]] = []
+    shutdowns: ClassVar[list[dict[str, Any]]] = []
+    submits: ClassVar[list[str]] = []
+
+    def __init__(self, max_workers: Any = None, thread_name_prefix: Any = "", **kwargs: Any) -> None:
+        type(self).constructed.append({"max_workers": max_workers, "thread_name_prefix": thread_name_prefix})
+        super().__init__(
+            max_workers=max_workers if isinstance(max_workers, int) and max_workers > 0 else 2,
+            thread_name_prefix=thread_name_prefix if isinstance(thread_name_prefix, str) else "",
+            **kwargs,
+        )
+
+    def submit(self, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
+        type(self).submits.append(getattr(fn, "__name__", type(fn).__name__))
+        return super().submit(fn, *args, **kwargs)
+
+    def shutdown(self, wait: Any = True, **kwargs: Any) -> None:
+        type(self).shutdowns.append({"wait": wait})
+        super().shutdown(wait=bool(wait), **kwargs)
+
+
+class _RecordingQueue(Queue):  # type: ignore[type-arg]
+    """A queue that records the bound it was asked for, then works regardless.
+
+    The bound is what keeps memory flat while shards race ahead of the consumer. Recording the
+    requested value rather than trusting the constructor means an unusable bound is reported by
+    a failing assertion instead of by a hung test.
+    """
+
+    requested: ClassVar[list[Any]] = []
+
+    def __init__(self, maxsize: Any = 0) -> None:
+        type(self).requested.append(maxsize)
+        super().__init__(maxsize=maxsize if isinstance(maxsize, int) else 0)
+
+
+@pytest.fixture
+def recorded_pools(monkeypatch: pytest.MonkeyPatch) -> type[_RecordingExecutor]:
+    _RecordingExecutor.constructed = []
+    _RecordingExecutor.shutdowns = []
+    _RecordingExecutor.submits = []
+    _RecordingQueue.requested = []
+    monkeypatch.setattr(v3_module, "ThreadPoolExecutor", _RecordingExecutor)
+    monkeypatch.setattr(v3_module, "Queue", _RecordingQueue)
+    return _RecordingExecutor
+
+
+class TestShardReadingIsBounded:
+    """What `_parallel_shard_rows` asks the runtime for, which its output cannot show."""
+
+    def test_the_pool_is_sized_to_the_smaller_of_shards_and_workers(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        shards = [iter([{"n": index}]) for index in range(3)]
+
+        list(_parallel_shard_rows(shards, limit=10, max_workers=8))
+
+        assert recorded_pools.constructed == [{"max_workers": 3, "thread_name_prefix": "v3-shard"}]
+
+    def test_the_pool_never_exceeds_the_worker_budget(self, recorded_pools: type[_RecordingExecutor]) -> None:
+        shards = [iter([{"n": index}]) for index in range(6)]
+
+        list(_parallel_shard_rows(shards, limit=10, max_workers=2))
+
+        assert recorded_pools.constructed == [{"max_workers": 2, "thread_name_prefix": "v3-shard"}]
+
+    def test_the_generator_waits_for_its_threads_before_returning(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        """Returning while a worker still reads would leave an upstream stream being consumed
+        after the caller believes the read is over."""
+        shards = [iter([{"n": index}]) for index in range(3)]
+
+        list(_parallel_shard_rows(shards, limit=10, max_workers=3))
+
+        assert recorded_pools.shutdowns == [{"wait": True}]
+
+    def test_the_queue_is_bounded_to_the_configured_capacity(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        shards = [iter([{"n": index}]) for index in range(3)]
+
+        list(_parallel_shard_rows(shards, limit=10, max_workers=3))
+
+        assert _RecordingQueue.requested == [_SHARD_QUEUE_CAPACITY]
+
+    def test_rows_are_read_on_the_pool_threads(self) -> None:
+        """The prefix is what identifies a stuck shard in a stack dump."""
+        seen: list[str] = []
+
+        def observing() -> Iterator[Mapping[str, Any]]:
+            seen.append(threading.current_thread().name)
+            yield {"n": 0}
+
+        list(_parallel_shard_rows([observing(), observing()], limit=10, max_workers=2))
+
+        assert seen and all(name.startswith("v3-shard") for name in seen), seen
+
+    @pytest.mark.parametrize(
+        ("shards", "workers", "concurrent"),
+        [
+            (3, 1, False),
+            (1, 4, False),
+            (2, 2, True),
+            (3, 2, True),
+        ],
+    )
+    def test_the_pool_is_built_only_when_there_is_something_to_overlap(
+        self,
+        recorded_pools: type[_RecordingExecutor],
+        shards: int,
+        workers: int,
+        concurrent: bool,
+    ) -> None:
+        """One shard, or one worker, has nothing to overlap: paying for a thread pool there is
+        pure cost, and the sequential path also keeps the read lazy."""
+        streams = [iter([{"n": index}]) for index in range(shards)]
+
+        rows = list(_parallel_shard_rows(streams, limit=10, max_workers=workers))
+
+        assert len(rows) == shards
+        assert bool(recorded_pools.constructed) is concurrent
+
+
+class TestJoinShardRows:
+    """`_join_shard_rows` feeds the join index, which depends on shard order."""
+
+    def test_each_shard_is_bounded_and_kept_in_order_when_prefetching(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        shards = [iter([{"n": index}, {"n": index + 100}, {"n": index + 200}]) for index in range(4)]
+
+        built = [tuple(rows) for rows in _join_shard_rows(shards, max_rows_per_shard=2, max_workers=3)]
+
+        assert built == [({"n": index}, {"n": index + 100}) for index in range(4)]
+        assert recorded_pools.constructed == [{"max_workers": 3, "thread_name_prefix": "v3-join"}]
+
+    def test_a_single_worker_stays_lazy_and_opens_no_pool(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        """The sequential path must not touch the next shard before the caller asks for it."""
+        opened: list[int] = []
+
+        def tracked(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield {"n": index}
+
+        shards = [tracked(0), tracked(1), tracked(2)]
+        stream = _join_shard_rows(shards, max_rows_per_shard=5, max_workers=1)
+
+        first = tuple(next(stream))
+
+        assert first == ({"n": 0},)
+        assert opened == [0]
+        assert recorded_pools.constructed == []
+
+    def test_two_workers_prefetch_rather_than_waiting_to_be_asked(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        """Two is already a worker budget: the boundary between lazy and prefetching sits
+        below it, not above."""
+        shards = [iter([{"n": index}]) for index in range(2)]
+
+        stream = _join_shard_rows(shards, max_rows_per_shard=5, max_workers=2)
+        next(stream)
+
+        assert recorded_pools.constructed == [{"max_workers": 2, "thread_name_prefix": "v3-join"}]
+        list(stream)
+
+
+class TestSlidingWindow:
+    """The window is what keeps prefetching from reading the whole source into memory."""
+
+    def test_only_the_window_is_submitted_before_the_first_result_is_taken(self) -> None:
+        """A source is 386 shards; submitting them all at once would hold every shard's rows.
+
+        Submissions are counted rather than started builds: with a bounded pool, an unbounded
+        submission still shows only a couple of builds running, so counting builds would let
+        the bound disappear unnoticed.
+        """
+
+        class CountingExecutor:
+            def __init__(self, inner: ThreadPoolExecutor) -> None:
+                self._inner = inner
+                self.submits = 0
+
+            def submit(self, fn: Any, *args: Any) -> Any:
+                self.submits += 1
+                return self._inner.submit(fn, *args)
+
+        shards = iter([iter([{"n": index}]) for index in range(6)])
+        with ThreadPoolExecutor(max_workers=2) as inner:
+            executor = CountingExecutor(inner)
+            window = _sliding_window(
+                shards, lambda rows: list(rows), cast(ThreadPoolExecutor, executor), width=2
+            )
+            first = next(window)
+            submitted_before_first_result = executor.submits
+            rest = list(window)
+
+        assert submitted_before_first_result <= 3, submitted_before_first_result
+        assert [first[0]["n"], *[rows[0]["n"] for rows in rest]] == list(range(6))
+        assert executor.submits == 6
+
+
+class TestTheWorkerBudgetReachesTheShardReaders:
+    """`max_stream_workers` is configuration; these check it arrives where it is spent."""
+
+    def test_the_joined_adapters_read_their_join_index_with_the_configured_workers(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        """The join index is the slow half of both joined adapters: a budget that stopped short
+        of it would leave the run reading one shard at a time while reporting three workers."""
+        sentences = (iter([_description_row(identity="a" * 64)]),)
+        geometry = (iter([_geometry_row()]), iter([_geometry_row()]))
+
+        list(_description_source(sentences, geometry, max_stream_workers=3).iter_candidates())
+
+        assert {"max_workers": 3, "thread_name_prefix": "v3-join"} in recorded_pools.constructed
+
+    def test_the_wikipedia_adapter_reads_its_polygon_index_with_the_configured_workers(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        sentences = (iter([_wikipedia_row(sentence_id="s1")]),)
+        polygons = (iter([_polygon_row()]), iter([_polygon_row()]))
+
+        list(_wikipedia_source(sentences, polygons, max_stream_workers=3).iter_candidates())
+
+        assert {"max_workers": 3, "thread_name_prefix": "v3-join"} in recorded_pools.constructed
+
+
+class TestOrderedShardsPrefetchWithinItsBudget:
+    """`_ordered_parallel_shards` decides whether to open a pool at all, and how far to run ahead."""
+
+    def test_a_single_worker_opens_no_pool(self, recorded_pools: type[_RecordingExecutor]) -> None:
+        """One worker has nothing to overlap, and the sequential path also stays lazy."""
+        shards = [iter([{"n": index}]) for index in range(3)]
+
+        built = list(_ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=1))
+
+        assert [rows[0]["n"] for rows in built] == [0, 1, 2]
+        assert recorded_pools.constructed == []
+
+    def test_only_the_worker_budget_is_submitted_before_the_first_result(
+        self, recorded_pools: type[_RecordingExecutor]
+    ) -> None:
+        """A source is hundreds of shards; a window that ran ahead without bound would submit
+        every one of them and hold their rows at once.
+
+        Submissions are counted rather than completed builds: with a bounded pool, an unbounded
+        window still shows only a couple of builds *finished*, so counting those would let the
+        bound disappear unnoticed.
+        """
+
+        shards = [iter([{"n": index}]) for index in range(6)]
+        stream = _ordered_parallel_shards(shards, lambda rows: list(rows), max_workers=2)
+
+        first = next(stream)
+        submitted_before_first_result = len(recorded_pools.submits)
+        rest = list(stream)
+
+        assert submitted_before_first_result <= 3, recorded_pools.submits
+        assert [first[0]["n"], *[rows[0]["n"] for rows in rest]] == list(range(6))
+        assert len(recorded_pools.submits) == 6

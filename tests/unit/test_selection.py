@@ -11,7 +11,7 @@ from landuse_sentence_relevance.domain.selection import (
     select_final_annotations,
 )
 from landuse_sentence_relevance.domain.stratification import DEFAULT_SOURCES
-from tests.unit.test_constraints import make_annotations
+from tests.builders import make_annotations
 
 
 def test_selection_finds_a_balanced_subset_from_extra_annotations() -> None:

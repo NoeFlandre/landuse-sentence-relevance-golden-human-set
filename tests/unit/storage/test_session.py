@@ -3,7 +3,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import ANY, Mock
 
-from tests.unit.test_constraints import make_annotations
+from tests.builders import make_annotations
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.storage.session import AnnotationStore
@@ -103,3 +103,30 @@ def test_annotation_store_records_and_loads_using_explicit_utf8(tmp_path, monkey
     AnnotationStore(path).record(annotation)
     assert AnnotationStore(path).load() == {annotation.candidate.candidate_id: annotation}
     assert encodings == ["utf-8", "utf-8"]
+
+
+def test_annotation_store_load_asks_for_utf8_rather_than_the_platform_default(tmp_path, monkeypatch) -> None:
+    """Asserted at ``read_text`` rather than at ``open``.
+
+    ``Path.read_text`` passes its argument through ``io.text_encoding``, which turns ``None``
+    into ``utf-8`` wherever UTF-8 mode is on -- so a spy on ``Path.open`` sees ``utf-8`` either
+    way and cannot tell a pinned encoding from an unpinned one. On a machine with a non-UTF-8
+    locale and UTF-8 mode off, the unpinned read decodes a session written here as something
+    else, and an annotation carrying a non-ASCII sentence comes back wrong or not at all.
+    """
+
+    path = tmp_path / "annotations.jsonl"
+    first = make_annotations()[0]
+    annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
+    AnnotationStore(path).record(annotation)
+    requested: list[str | None] = []
+    original_read_text = Path.read_text
+
+    def spy_read_text(self, encoding=None, errors=None):
+        requested.append(encoding)
+        return original_read_text(self, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+    assert AnnotationStore(path).load() == {annotation.candidate.candidate_id: annotation}
+    assert requested == ["utf-8"]

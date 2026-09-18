@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label, Source
-from landuse_sentence_relevance.domain.profile import V3_SOURCES, balanced_quotas
+from landuse_sentence_relevance.domain.models import Annotation, Label
 from landuse_sentence_relevance.domain.v3_annotation import (
     V3AnnotationSeed,
-    V3SeedRow,
-    V3SelectionMetadata,
 )
 from landuse_sentence_relevance.domain.v3_progress import V3AnnotationProgressError
 from landuse_sentence_relevance.storage.session import AnnotationStore
@@ -19,50 +15,11 @@ from landuse_sentence_relevance.workflow import (
     UnknownCandidateError,
     V3AnnotationWorkflow,
 )
-from tests.unit.test_models import make_candidate
-
-
-def _candidate(candidate_id: str, source: Source, cell: str) -> Candidate:
-    return replace(
-        make_candidate(candidate_id),
-        sentence=f"Sentence for {candidate_id}.",
-        source=source,
-        h3_cell=cell,
-    )
-
-
-def _seed() -> V3AnnotationSeed:
-    quotas = balanced_quotas(V3_SOURCES, rows_per_source_label=1)
-    rows: list[V3SeedRow] = []
-    for index, (source, label) in enumerate(quotas.counts):
-        candidate = _candidate(
-            f"{source.value}-{label.value}",
-            source,
-            f"{source.value}-{label.value}-cell",
-        )
-        annotation = Annotation(candidate, label) if index == 0 else None
-        rows.append(
-            V3SeedRow(
-                candidate=candidate,
-                quota_source=source,
-                quota_label=label,
-                origin="v2" if annotation is not None else "v3",
-                annotation=annotation,
-                selection=V3SelectionMetadata(seed="workflow-test", rank="0" * 64, slot_index=index),
-            )
-        )
-    return V3AnnotationSeed(
-        rows=tuple(rows),
-        excluded_v2_rows=(),
-        reserved_v2_cells=frozenset({"wikipedia-yes-cell"}),
-        quotas=quotas,
-        benchmark_sha256="0" * 64,
-        seed="workflow-test",
-    )
+from tests.builders import make_annotation_seed
 
 
 def _workflow(tmp_path: Path) -> tuple[V3AnnotationWorkflow, V3AnnotationSeed, AnnotationStore]:
-    seed = _seed()
+    seed = make_annotation_seed()
     store = AnnotationStore(tmp_path / "results" / "annotations" / "sessions" / "v3.jsonl")
     return V3AnnotationWorkflow(seed, store), seed, store
 
@@ -131,7 +88,7 @@ def test_v3_workflow_never_allows_a_seeded_v2_row_to_be_edited(tmp_path: Path) -
 
 
 def test_v3_workflow_rejects_a_session_that_contains_a_seeded_row(tmp_path: Path) -> None:
-    seed = _seed()
+    seed = make_annotation_seed()
     store = AnnotationStore(tmp_path / "v3.jsonl")
     seeded = seed.seeded_annotations[0]
     store.save((seeded,))

@@ -20,16 +20,16 @@ from landuse_sentence_relevance.sources.protocols import (
 from landuse_sentence_relevance.sources.website_text import (
     WEBSITE_FIELD_SPECS,
     FieldSpec,
+    FieldWork,
     Location,
-    _bounded_text,
-    _candidate_part_groups,
-    _field_text,
-    _field_url,
-    _FieldWork,
-    _is_contextual_text,
-    _location_from_row,
-    _pending_field_indexes,
-    _select_batch_parts,
+    bounded_text,
+    candidate_part_groups,
+    field_text,
+    field_url,
+    is_contextual_text,
+    location_from_row,
+    pending_field_indexes,
+    select_batch_parts,
 )
 
 EligibleRow = tuple[Mapping[str, Any], str]
@@ -58,13 +58,13 @@ class WebsiteCandidateBuilder:
 
     def has_eligible_text(self, row: Mapping[str, Any]) -> bool:
         return any(
-            text is not None and self._is_eligible_text(_bounded_text(text, self._max_text_characters))
+            text is not None and self._is_eligible_text(bounded_text(text, self._max_text_characters))
             for text_field, _ in self._FIELD_SPECS
-            if (text := _field_text(row, text_field)) is not None
+            if (text := field_text(row, text_field)) is not None
         )
 
     def candidates_for_row(self, row: Mapping[str, Any], cell: str) -> Iterable[Candidate]:
-        location = _location_from_row(row)
+        location = location_from_row(row)
         if location is None:
             return
         polygon_id, latitude, longitude = location
@@ -119,21 +119,21 @@ class WebsiteCandidateBuilder:
             return pending_indexes
         sentence_groups = split_sentences_many(self._splitter, (field.text for field in work))
         self._append_batch_field_candidates(candidates, work, sentence_groups)
-        return _pending_field_indexes(pending_indexes, candidates)
+        return pending_field_indexes(pending_indexes, candidates)
 
     def _field_batch_work(
         self,
         rows: tuple[EligibleRow, ...],
         pending_indexes: tuple[int, ...],
         field_spec: FieldSpec,
-    ) -> tuple[_FieldWork, ...]:
+    ) -> tuple[FieldWork, ...]:
         pending_rows = tuple(rows[index] for index in pending_indexes)
         return self._field_work_for_rows(pending_rows, (field_spec,), pending_indexes)
 
     def _append_batch_field_candidates(
         self,
         candidates: list[list[Candidate]],
-        work: tuple[_FieldWork, ...],
+        work: tuple[FieldWork, ...],
         sentence_groups: Iterable[Iterable[str]],
     ) -> None:
         language_identifier = self._language_identifier
@@ -150,7 +150,7 @@ class WebsiteCandidateBuilder:
     def _append_scalar_field_candidates(
         self,
         candidates: list[list[Candidate]],
-        work: tuple[_FieldWork, ...],
+        work: tuple[FieldWork, ...],
         sentence_groups: Iterable[Iterable[str]],
     ) -> None:
         for field, sentences in zip(work, sentence_groups, strict=True):
@@ -161,12 +161,12 @@ class WebsiteCandidateBuilder:
     def _append_batch_language_candidates(
         self,
         candidates: list[list[Candidate]],
-        work: tuple[_FieldWork, ...],
+        work: tuple[FieldWork, ...],
         sentence_groups: Iterable[Iterable[str]],
         language_identifier: BatchLanguageIdentifier,
     ) -> None:
-        part_groups = _candidate_part_groups(work, sentence_groups, self._seed)
-        selected_parts = _select_batch_parts(part_groups, language_identifier)
+        part_groups = candidate_part_groups(work, sentence_groups, self._seed)
+        selected_parts = select_batch_parts(part_groups, language_identifier)
         for field, part in zip(work, selected_parts, strict=True):
             if part is not None:
                 candidate = self._candidate_for_sentence(
@@ -185,7 +185,7 @@ class WebsiteCandidateBuilder:
 
     def _first_field_candidate(
         self,
-        field: _FieldWork,
+        field: FieldWork,
         sentences: Iterable[str],
     ) -> Candidate | None:
         part = first_prioritized_sentence(
@@ -212,8 +212,8 @@ class WebsiteCandidateBuilder:
         rows: tuple[EligibleRow, ...],
         field_specs: tuple[FieldSpec, ...] | None = None,
         row_indexes: tuple[int, ...] | None = None,
-    ) -> tuple[_FieldWork, ...]:
-        work: list[_FieldWork] = []
+    ) -> tuple[FieldWork, ...]:
+        work: list[FieldWork] = []
         indexes = tuple(range(len(rows))) if row_indexes is None else row_indexes
         specs = self._FIELD_SPECS if field_specs is None else field_specs
         for row_index, (row, cell) in zip(indexes, rows, strict=True):
@@ -223,7 +223,7 @@ class WebsiteCandidateBuilder:
     def _group_row_candidates(
         self,
         rows: tuple[EligibleRow, ...],
-        work: tuple[_FieldWork, ...],
+        work: tuple[FieldWork, ...],
         sentence_groups: Iterable[Iterable[str]],
     ) -> tuple[tuple[Candidate, ...], ...]:
         candidates: list[list[Candidate]] = [[] for _ in rows]
@@ -233,7 +233,7 @@ class WebsiteCandidateBuilder:
 
     def _field_candidates_for_work(
         self,
-        field: _FieldWork,
+        field: FieldWork,
         sentences: Iterable[str],
     ) -> Iterable[Candidate]:
         return self._field_candidates(
@@ -254,8 +254,8 @@ class WebsiteCandidateBuilder:
         row: Mapping[str, Any],
         cell: str,
         field_specs: tuple[FieldSpec, ...] | None = None,
-    ) -> tuple[_FieldWork, ...]:
-        location = _location_from_row(row)
+    ) -> tuple[FieldWork, ...]:
+        location = location_from_row(row)
         if location is None:
             return ()
         specs = self._FIELD_SPECS if field_specs is None else field_specs
@@ -268,18 +268,18 @@ class WebsiteCandidateBuilder:
         cell: str,
         location: Location,
         specs: tuple[FieldSpec, ...],
-    ) -> tuple[_FieldWork, ...]:
+    ) -> tuple[FieldWork, ...]:
         polygon_id, latitude, longitude = location
-        work: list[_FieldWork] = []
+        work: list[FieldWork] = []
         for text_field, url_field in specs:
-            text = _field_text(row, text_field)
+            text = field_text(row, text_field)
             if text is None:
                 continue
-            bounded = _bounded_text(text, self._max_text_characters)
+            bounded = bounded_text(text, self._max_text_characters)
             if not self._is_eligible_text(bounded):
                 continue
             work.append(
-                _FieldWork(
+                FieldWork(
                     row_index=row_index,
                     row=row,
                     polygon_id=polygon_id,
@@ -288,7 +288,7 @@ class WebsiteCandidateBuilder:
                     cell=cell,
                     text_field=text_field,
                     url_field=url_field,
-                    website_url=_field_url(row, url_field),
+                    website_url=field_url(row, url_field),
                     text=bounded,
                 )
             )
@@ -306,11 +306,11 @@ class WebsiteCandidateBuilder:
         text: str | None = None,
         sentences: Iterable[str] | None = None,
     ) -> Iterable[Candidate]:
-        text = _field_text(row, text_field) if text is None else text
-        if text is None or not self._is_eligible_text(_bounded_text(text, self._max_text_characters)):
+        text = field_text(row, text_field) if text is None else text
+        if text is None or not self._is_eligible_text(bounded_text(text, self._max_text_characters)):
             return
-        text = _bounded_text(text, self._max_text_characters)
-        website_url = _field_url(row, url_field)
+        text = bounded_text(text, self._max_text_characters)
+        website_url = field_url(row, url_field)
         yield from self._field_candidate_parts(
             self._sentences_for_text(text, sentences),
             seed=f"{self._seed}:{polygon_id}:{text_field}",
@@ -333,7 +333,7 @@ class WebsiteCandidateBuilder:
         return self._splitter.split(text)
 
     def _is_eligible_text(self, text: str) -> bool:
-        return not self._require_paragraph or _is_contextual_text(text)
+        return not self._require_paragraph or is_contextual_text(text)
 
     def _field_candidate_parts(
         self,

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
-import landuse_sentence_relevance.bootstrap as bootstrap
+import landuse_sentence_relevance.bootstrap.v3 as bootstrap
 from landuse_sentence_relevance.bootstrap import V3CandidatePoolResult
 from landuse_sentence_relevance.config import V3Settings
 from landuse_sentence_relevance.domain.models import Label, Source

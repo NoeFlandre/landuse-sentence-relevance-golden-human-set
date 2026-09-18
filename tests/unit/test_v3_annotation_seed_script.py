@@ -11,7 +11,7 @@ from landuse_sentence_relevance.domain.v3_annotation import (
     V3SeedRow,
     V3SelectionMetadata,
 )
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 
 def _annotation(candidate_id: str, cell: str, label: Label) -> Annotation:

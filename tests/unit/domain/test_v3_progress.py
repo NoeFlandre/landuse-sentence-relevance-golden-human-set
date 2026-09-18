@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label, Source
 from landuse_sentence_relevance.domain.profile import V3_SOURCES, balanced_quotas

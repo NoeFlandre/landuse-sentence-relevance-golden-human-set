@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 import landuse_sentence_relevance.bootstrap as bootstrap
+import landuse_sentence_relevance.bootstrap.v3 as bootstrap_v3
 import landuse_sentence_relevance.config as config
 import landuse_sentence_relevance.web.app as app
 from landuse_sentence_relevance.config import V3Settings
@@ -29,10 +30,10 @@ def test_build_v3_workflow_uses_the_seed_and_v3_session_path(monkeypatch, tmp_pa
         captured["store"] = store
         return sentinel_workflow
 
-    monkeypatch.setattr(bootstrap, "build_v3_annotation_seed", build_seed)
-    monkeypatch.setattr(bootstrap, "V3AnnotationWorkflow", build_workflow)
+    monkeypatch.setattr(bootstrap_v3, "build_v3_annotation_seed", build_seed)
+    monkeypatch.setattr(bootstrap_v3, "V3AnnotationWorkflow", build_workflow)
 
-    result = bootstrap.build_v3_workflow(settings)
+    result = bootstrap_v3.build_v3_workflow(settings)
 
     assert result is sentinel_workflow
     assert captured["seed"] is sentinel_seed
@@ -48,12 +49,12 @@ def test_build_v3_workflow_refuses_to_start_when_seed_preflight_fails(
 
     def fail_preflight(received_settings: V3Settings) -> V3AnnotationSeed:
         assert received_settings is settings
-        raise bootstrap.V3PreflightError("candidate preflight failed")
+        raise bootstrap_v3.V3PreflightError("candidate preflight failed")
 
-    monkeypatch.setattr(bootstrap, "build_v3_annotation_seed", fail_preflight)
+    monkeypatch.setattr(bootstrap_v3, "build_v3_annotation_seed", fail_preflight)
 
-    with pytest.raises(bootstrap.V3PreflightError, match="candidate preflight failed"):
-        bootstrap.build_v3_workflow(settings)
+    with pytest.raises(bootstrap_v3.V3PreflightError, match="candidate preflight failed"):
+        bootstrap_v3.build_v3_workflow(settings)
 
 
 def test_annotation_entrypoint_selects_v3_only_when_requested(

@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.domain.profile import V3_SOURCES, balanced_quotas

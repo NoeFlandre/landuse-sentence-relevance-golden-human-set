@@ -8,22 +8,7 @@ from landuse_sentence_relevance.domain.constraints import (
     validate_final_dataset,
 )
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
-from tests.unit.test_models import make_candidate
-
-
-def make_annotations() -> list[Annotation]:
-    annotations: list[Annotation] = []
-    for cell_number in range(100):
-        cell = f"cell-{cell_number:02d}"
-        source = Source.WIKIPEDIA if cell_number < 50 else Source.WEBSITE
-        candidate = replace(
-            make_candidate(f"{source.value}-{cell}"),
-            source=source,
-            h3_cell=cell,
-        )
-        label = Label.YES if cell_number < 50 else Label.NO
-        annotations.append(Annotation(candidate=candidate, label=label))
-    return annotations
+from tests.builders import make_annotations
 
 
 def with_invalid_resolution(rows: list[Annotation]) -> list[Annotation]:

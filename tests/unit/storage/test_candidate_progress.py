@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 import landuse_sentence_relevance.storage.candidate_progress as candidate_progress_module
 from landuse_sentence_relevance.storage.atomic import TextWriter
@@ -184,3 +184,81 @@ def test_candidate_progress_store_rejects_a_changed_semantic_nested_value(tmp_pa
         match=r"^candidate progress metadata does not match the current configuration$",
     ):
         CandidateProgressStore(path).load({"schema_version": 2, "sentence_splitter": {"id": "different"}})
+
+
+# ------------------------------------------------- completed sources (shard-level resume)
+
+
+def test_completed_sources_is_empty_when_no_checkpoint_exists(tmp_path: Path) -> None:
+    """Nothing recorded means nothing may be skipped."""
+    store = CandidateProgressStore(tmp_path / "missing.json")
+    assert store.load_completed_sources({"schema_version": 2}) == frozenset()
+
+
+def test_a_checkpoint_written_before_the_field_existed_reports_nothing(tmp_path: Path) -> None:
+    """The safe default, and the one the docstring promises.
+
+    A source stopped part way through holds only the shards it reached, so treating an absent
+    record as "complete" would freeze a partial read into the pool with nothing saying so.
+    """
+    path = tmp_path / "progress.json"
+    metadata = {"schema_version": 2, "fingerprint": "stable"}
+    path.write_text(json.dumps({"metadata": metadata, "candidates": []}, sort_keys=True), encoding="utf-8")
+    assert CandidateProgressStore(path).load_completed_sources(metadata) == frozenset()
+
+
+def test_a_malformed_completed_list_reports_nothing_rather_than_guessing(tmp_path: Path) -> None:
+    path = tmp_path / "progress.json"
+    metadata = {"schema_version": 2, "fingerprint": "stable"}
+    path.write_text(
+        json.dumps(
+            {"metadata": metadata, "candidates": [], "completed_sources": "wikipedia"},
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    assert CandidateProgressStore(path).load_completed_sources(metadata) == frozenset()
+
+
+def test_completed_sources_round_trip_through_save(tmp_path: Path) -> None:
+    from landuse_sentence_relevance.domain.models import Source
+
+    store = CandidateProgressStore(tmp_path / "progress.json")
+    metadata = {"schema_version": 2, "fingerprint": "stable"}
+    store.save([], metadata, completed_sources=[Source.WIKIPEDIA])
+    assert store.load_completed_sources(metadata) == frozenset({Source.WIKIPEDIA})
+
+
+def test_a_changed_configuration_refuses_the_checkpoint(tmp_path: Path) -> None:
+    """A changed pin must invalidate the record rather than silently skip different data."""
+    store = CandidateProgressStore(tmp_path / "progress.json")
+    store.save([], {"schema_version": 2, "fingerprint": "stable"}, completed_sources=[])
+    with pytest.raises(
+        ValueError,
+        match=r"^candidate progress metadata does not match the current configuration$",
+    ):
+        store.load_completed_sources({"schema_version": 2, "fingerprint": "changed"})
+
+
+def test_completed_sources_are_read_with_utf8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The checkpoint is written as UTF-8, so it must be read back as UTF-8 rather than as
+    whatever the platform happens to default to -- a source name outside ASCII would otherwise
+    decode differently on another machine and re-stream a source that was already finished."""
+
+    from landuse_sentence_relevance.domain.models import Source
+
+    path = tmp_path / "progress.json"
+    store = CandidateProgressStore(path)
+    metadata = {"schema_version": 2, "fingerprint": "encoding"}
+    store.save([], metadata, completed_sources=[Source.WIKIPEDIA])
+    read_encodings: list[str | None] = []
+    original_read_text = Path.read_text
+
+    def read_text(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        read_encodings.append(encoding)
+        return original_read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+    assert store.load_completed_sources(metadata) == frozenset({Source.WIKIPEDIA})
+    assert read_encodings == ["utf-8"]

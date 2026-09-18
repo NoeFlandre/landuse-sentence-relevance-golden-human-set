@@ -5,7 +5,7 @@ from typing import NoReturn, cast
 
 import pytest
 
-from landuse_sentence_relevance.bootstrap import (
+from landuse_sentence_relevance.bootstrap.v2 import (
     _candidate_cells_to_collect,
     _candidate_pool_metadata,
     _collect_candidates,
@@ -20,8 +20,7 @@ from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.sampling import BoundedCandidatePool, FinalizedCandidatePool
 from landuse_sentence_relevance.storage.candidate_pool import CandidatePoolStore
 from landuse_sentence_relevance.storage.candidate_progress import CandidateProgressStore
-from tests.unit.test_constraints import make_annotations
-from tests.unit.test_models import make_candidate
+from tests.builders import make_annotations, make_candidate
 
 
 def test_collect_candidates_checkpoints_before_a_source_failure(tmp_path: Path) -> None:
@@ -136,7 +135,8 @@ def test_build_workflow_reuses_a_persisted_pool(tmp_path) -> None:
 def test_build_workflow_collects_and_saves_a_new_pool(monkeypatch, tmp_path) -> None:
     import h3
 
-    import landuse_sentence_relevance.bootstrap as bootstrap
+    import landuse_sentence_relevance.bootstrap.runtime as runtime
+    import landuse_sentence_relevance.bootstrap.v2 as bootstrap
 
     settings = replace(
         Settings.from_env(
@@ -205,7 +205,7 @@ def test_build_workflow_collects_and_saves_a_new_pool(monkeypatch, tmp_path) -> 
             tuple(self.kwargs["row_shards_loader"]())
             return iter((website_candidate,))
 
-    monkeypatch.setattr(bootstrap, "HuggingFaceAuth", Auth)
+    monkeypatch.setattr(runtime, "HuggingFaceAuth", Auth)
     monkeypatch.setattr(bootstrap, "HuggingFaceDatasetRows", EmptyRows)
     monkeypatch.setattr(bootstrap, "WikipediaCandidateSource", WikipediaSource)
     monkeypatch.setattr(bootstrap, "WebsiteCandidateSource", WebsiteSource)
@@ -237,7 +237,7 @@ def test_build_workflow_collects_and_saves_a_new_pool(monkeypatch, tmp_path) -> 
 def test_build_workflow_finalizes_resumable_progress_before_streaming(monkeypatch, tmp_path) -> None:
     import h3
 
-    import landuse_sentence_relevance.bootstrap as bootstrap
+    import landuse_sentence_relevance.bootstrap.v2 as bootstrap
 
     settings = replace(
         Settings.from_env(
