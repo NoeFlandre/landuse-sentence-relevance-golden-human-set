@@ -1838,6 +1838,32 @@ class TestEachStreamIsNamedInTheLog:
         assert rows == [{"n": 0}]
         assert [r.getMessage() for r in caplog.records] == []
 
+    def test_an_unlabelled_join_stream_reports_nothing(self, caplog) -> None:
+        """Same for the join side, which has its own default."""
+        shards = [iter([{"n": 0}]), iter([{"n": 1}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            for shard in _join_shard_rows(shards, max_rows_per_shard=5, max_workers=1):
+                list(shard)
+
+        assert [r.getMessage() for r in caplog.records] == []
+
+    def test_an_unlabelled_join_index_reports_nothing(self, caplog) -> None:
+        """`_join_index` carries the default down to the reader, so it needs its own check: a
+        truthy default there would label every join with a meaningless name."""
+        from landuse_sentence_relevance.sources.v3 import _join_index
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            _join_index(
+                [iter([{"wikidata": "Q1", "lat": 1.0, "lon": 2.0}])],
+                key_for_row=lambda row: str(row.get("wikidata")),
+                place_for_row=lambda _row: None,
+                max_rows_per_shard=5,
+                max_entries=10,
+            )
+
+        assert [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()] == []
+
 
 def test_the_concurrent_path_records_the_shards_it_finished() -> None:
     """REGRESSION: `on_shard_done` was wired into the sequential branch only.
