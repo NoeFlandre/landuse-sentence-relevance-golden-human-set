@@ -81,15 +81,50 @@ def next_v3_candidate(
     seed: V3AnnotationSeed,
     annotations: Mapping[str, Annotation],
 ) -> Candidate | None:
-    """Return the next unlabeled fresh candidate, never a seeded V2 row."""
+    """Return the next candidate worth a human's time, never a seeded V2 row.
+
+    Seed rows come first, then the reserve. A reserve candidate is only offered
+    while its source still has an unfilled quota, because a fresh row records the
+    label its slot hoped for rather than the one a human gives: a "yes" slot
+    answered "no" leaves that quota open and needs another candidate.
+    """
 
     labeled_ids = {
         annotation.candidate.candidate_id for annotation in ordered_v3_annotations(seed, annotations)
     }
-    return next(
+    pending = next(
         (row.candidate for row in seed.pending_rows if row.candidate.candidate_id not in labeled_ids),
         None,
     )
+    if pending is not None:
+        return pending
+    return _next_reserve_candidate(seed, annotations, labeled_ids)
+
+
+def _next_reserve_candidate(
+    seed: V3AnnotationSeed,
+    annotations: Mapping[str, Annotation],
+    labeled_ids: set[str],
+) -> Candidate | None:
+    short = _sources_short_of_quota(seed, annotations)
+    if not short:
+        return None
+    return next(
+        (
+            candidate
+            for candidate in seed.reserve_candidates
+            if candidate.candidate_id not in labeled_ids and candidate.source in short
+        ),
+        None,
+    )
+
+
+def _sources_short_of_quota(
+    seed: V3AnnotationSeed,
+    annotations: Mapping[str, Annotation],
+) -> set[Source]:
+    remaining = summarize_v3_progress(seed, annotations).remaining_quotas
+    return {source for (source, _label), missing in remaining.items() if missing > 0}
 
 
 def summarize_v3_progress(
@@ -119,7 +154,7 @@ def summarize_v3_progress(
 def _session_candidates(
     seed: V3AnnotationSeed,
 ) -> tuple[dict[str, Candidate], set[str]]:
-    pending = {row.candidate.candidate_id: row.candidate for row in seed.pending_rows}
+    pending = {candidate.candidate_id: candidate for candidate in seed.offerable_candidates}
     seeded_ids = {row.candidate.candidate_id for row in seed.seeded_rows}
     return pending, seeded_ids
 
@@ -138,9 +173,9 @@ def _ordered_pending_annotations(
     annotations: Mapping[str, Annotation],
 ) -> tuple[Annotation, ...]:
     return tuple(
-        annotations[row.candidate.candidate_id]
-        for row in seed.pending_rows
-        if row.candidate.candidate_id in annotations
+        annotations[candidate.candidate_id]
+        for candidate in seed.offerable_candidates
+        if candidate.candidate_id in annotations
     )
 
 

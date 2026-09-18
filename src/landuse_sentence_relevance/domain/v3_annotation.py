@@ -114,6 +114,14 @@ class V3AnnotationSeed:
     benchmark_sha256: str
     seed: str
     excluded_v2_reasons: Mapping[str, str] = field(default_factory=dict)
+    reserve_candidates: tuple[Candidate, ...] = ()
+    """Spare pool candidates offered when a fresh label leaves its quota short.
+
+    A fresh row records the label a slot hoped for, not the one a human gives.
+    When those disagree the quota stays open, so the oversized pool keeps a
+    deterministic remainder here to offer next. They are not part of the 300-row
+    contract and carry no quota slot until a label decides which one they fill.
+    """
 
     def __post_init__(self) -> None:
         _validate_seed_identity(self.seed, self.benchmark_sha256)
@@ -135,6 +143,12 @@ class V3AnnotationSeed:
     @property
     def pending_candidates(self) -> tuple[Candidate, ...]:
         return tuple(row.candidate for row in self.pending_rows)
+
+    @property
+    def offerable_candidates(self) -> tuple[Candidate, ...]:
+        """Every candidate a human may still be shown, seed rows before reserve."""
+
+        return (*self.pending_candidates, *self.reserve_candidates)
 
     @property
     def seeded_annotations(self) -> tuple[Annotation, ...]:
@@ -173,6 +187,7 @@ class V3AnnotationSeed:
             "benchmark_sha256": self.benchmark_sha256,
             "excluded_v2_rows": [annotation.to_dict() for annotation in self.excluded_v2_rows],
             "excluded_v2_reasons": dict(self.excluded_v2_reasons),
+            "reserve_candidates": [candidate.to_dict() for candidate in self.reserve_candidates],
             "quotas": _quotas_to_dict(self.quotas),
             "reserved_v2_cells": sorted(self.reserved_v2_cells),
             "rows": [row.to_dict() for row in self.rows],
@@ -189,6 +204,9 @@ class V3AnnotationSeed:
             benchmark_sha256=str(payload["benchmark_sha256"]),
             seed=str(payload["seed"]),
             excluded_v2_reasons=dict(payload.get("excluded_v2_reasons", {})),
+            reserve_candidates=tuple(
+                Candidate.from_dict(dict(row)) for row in payload.get("reserve_candidates", ())
+            ),
         )
 
 
@@ -208,12 +226,46 @@ def select_v3_annotation_seed(
     pending_rows = _pending_rows(seed_plan, pool, quotas, seed)
     return V3AnnotationSeed(
         rows=(*seeded_rows, *pending_rows),
+        reserve_candidates=_reserve_candidates(pool, (*seeded_rows, *pending_rows), seed),
         excluded_v2_rows=seed_plan.excluded,
         reserved_v2_cells=seed_plan.reserved_cells,
         quotas=quotas,
         benchmark_sha256=benchmark_sha256,
         seed=seed,
         excluded_v2_reasons=_excluded_v2_reasons(seed_plan),
+    )
+
+
+def _reserve_candidates(
+    pool: FinalizedCandidatePool,
+    rows: tuple[V3SeedRow, ...],
+    seed: str,
+) -> tuple[Candidate, ...]:
+    """Hold back every pool candidate the 300 rows did not use, in hash-rank order.
+
+    These are what a slot falls back to when a human's label leaves its quota
+    short, and excluding the cells the rows already occupy keeps the set globally
+    H3-unique. Ranking by seeded hash rather than pool order does two things: the
+    reserve no longer changes when the pool is permuted, and an annotator is not
+    walked through one region at a time, since a candidate id begins with its
+    region.
+    """
+
+    used_ids = {row.candidate.candidate_id for row in rows}
+    used_cells = {row.candidate.h3_cell for row in rows}
+    spare = [
+        candidate
+        for candidate in pool.candidates
+        if candidate.candidate_id not in used_ids and candidate.h3_cell not in used_cells
+    ]
+    return tuple(
+        sorted(
+            spare,
+            key=lambda candidate: (
+                _rank(f"{seed}:reserve", candidate.candidate_id),
+                candidate.candidate_id,
+            ),
+        )
     )
 
 
