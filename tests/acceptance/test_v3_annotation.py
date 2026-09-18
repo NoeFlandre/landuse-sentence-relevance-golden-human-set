@@ -10,7 +10,7 @@ import pytest
 import uvicorn
 from playwright.sync_api import Page, sync_playwright
 from pytest_bdd import given, parsers, scenarios, then, when
-from tests.unit.test_v3_workflow import _seed
+from tests.builders import make_annotation_seed
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.storage.session import AnnotationStore
@@ -28,7 +28,7 @@ def v3_annotation_store(tmp_path: Path) -> AnnotationStore:
 
 @pytest.fixture
 def v3_browser_workflow(v3_annotation_store: AnnotationStore) -> V3AnnotationWorkflow:
-    return V3AnnotationWorkflow(_seed(), v3_annotation_store)
+    return V3AnnotationWorkflow(make_annotation_seed(), v3_annotation_store)
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import ANY, Mock
 
-from tests.unit.test_constraints import make_annotations
+from tests.builders import make_annotations
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.storage.session import AnnotationStore

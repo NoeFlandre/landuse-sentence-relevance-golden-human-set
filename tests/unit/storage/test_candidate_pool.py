@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import ANY, Mock
 
 import pytest
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool

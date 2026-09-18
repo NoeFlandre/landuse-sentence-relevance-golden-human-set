@@ -2,7 +2,7 @@ import logging
 from threading import Event, Lock, Thread
 
 import pytest
-from tests.unit.test_constraints import make_annotations
+from tests.builders import make_annotations
 
 from landuse_sentence_relevance.storage.cache import ManagedCache
 from landuse_sentence_relevance.storage.publisher import DatasetPublisher, DatasetUploader

@@ -14,7 +14,7 @@ from landuse_sentence_relevance.workflow import (
     UnknownCandidateError,
     WorkflowCompleteError,
 )
-from tests.unit.test_constraints import make_annotations
+from tests.builders import make_annotations
 
 
 class RecordingPublisher:

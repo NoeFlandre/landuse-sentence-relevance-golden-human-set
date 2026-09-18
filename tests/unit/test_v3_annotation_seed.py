@@ -16,7 +16,7 @@ from landuse_sentence_relevance.domain.profile import V3_QUOTAS
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
 from landuse_sentence_relevance.domain.v3_preflight import preflight_v3_candidate_pool
 from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 ROOT = Path(__file__).parents[2]
 

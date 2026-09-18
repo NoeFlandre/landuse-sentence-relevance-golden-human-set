@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 from landuse_sentence_relevance.bootstrap import V3CandidatePoolResult, build_v3_candidate_pool
 from landuse_sentence_relevance.config import V3Settings

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from fastapi.testclient import TestClient
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label
 from landuse_sentence_relevance.web.app import create_app

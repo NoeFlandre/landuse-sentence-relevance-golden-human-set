@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from tests.unit.test_v3_workflow import _seed
+from tests.builders import make_annotation_seed
 
 from landuse_sentence_relevance.storage.session import AnnotationStore
 from landuse_sentence_relevance.web.app import create_app
@@ -12,7 +12,7 @@ from landuse_sentence_relevance.workflow import V3AnnotationWorkflow
 
 def _client(tmp_path: Path) -> tuple[TestClient, V3AnnotationWorkflow]:
     workflow = V3AnnotationWorkflow(
-        _seed(),
+        make_annotation_seed(),
         AnnotationStore(tmp_path / "results" / "annotations" / "sessions" / "v3.jsonl"),
     )
     return TestClient(create_app(workflow)), workflow

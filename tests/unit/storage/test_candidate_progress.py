@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from tests.unit.test_models import make_candidate
+from tests.builders import make_candidate
 
 import landuse_sentence_relevance.storage.candidate_progress as candidate_progress_module
 from landuse_sentence_relevance.storage.atomic import TextWriter

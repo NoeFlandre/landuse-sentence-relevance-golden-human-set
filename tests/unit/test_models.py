@@ -3,24 +3,8 @@ from typing import cast
 
 import pytest
 
-from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label, Source
-
-
-def make_candidate(candidate_id: str = "c-1") -> Candidate:
-    return Candidate(
-        candidate_id=candidate_id,
-        sentence="A sentence about a visible landscape.",
-        source=Source.WIKIPEDIA,
-        source_record_id="polygon-1",
-        source_field="wikipedia_section",
-        h3_cell="832830fffffffff",
-        h3_resolution=3,
-        latitude=45.0,
-        longitude=2.0,
-        place_name="A place",
-        region="A region",
-        source_url="https://example.test/article",
-    )
+from landuse_sentence_relevance.domain.models import Annotation, Label, Source
+from tests.builders import make_candidate
 
 
 def test_annotation_round_trip_preserves_provenance() -> None:
