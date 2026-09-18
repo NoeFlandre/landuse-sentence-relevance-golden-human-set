@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import threading
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Generator, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from typing import Any, ClassVar, cast
@@ -1588,3 +1589,306 @@ class TestOrderedShardsPrefetchWithinItsBudget:
         assert submitted_before_first_result <= 3, recorded_pools.submits
         assert [first[0]["n"], *[rows[0]["n"] for rows in rest]] == list(range(6))
         assert len(recorded_pools.submits) == 6
+
+
+class TestShardProgressIsReported:
+    """A source that streams for hours must say where it is. See #21."""
+
+    def test_the_sequential_path_reports_each_shard_as_it_finishes(self, caplog) -> None:
+        shards = [iter([{"n": 0}, {"n": 1}]), iter([{"n": 2}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=1, label="website"))
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages == [
+            "website: finished shard 1/2 (2 rows)",
+            "website: finished shard 2/2 (1 rows)",
+        ]
+
+    def test_the_concurrent_path_reports_how_many_rows_each_shard_held(self, caplog) -> None:
+        """The row count is the number an operator reads to tell a fat shard from a thin one."""
+        shards = [iter([{"n": index}] * (index + 1)) for index in range(3)]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=3, label="website rows"))
+
+        assert {r.getMessage() for r in caplog.records} == {
+            "website rows: finished shard 1/3 (1 rows)",
+            "website rows: finished shard 2/3 (2 rows)",
+            "website rows: finished shard 3/3 (3 rows)",
+        }
+
+    def test_the_concurrent_path_reports_every_shard(self, caplog) -> None:
+        """Order is not asserted -- shards race by design -- but none may go unreported."""
+        shards = [iter([{"n": index}]) for index in range(4)]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=3, label="description"))
+
+        reported = [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()]
+        assert len(reported) == 4
+        assert all("description" in message for message in reported)
+        assert all("/4" in message for message in reported)
+
+    def test_the_join_index_reports_its_shards_too(self, caplog) -> None:
+        """The join side is the slow half of both joined adapters.
+
+        The rows are consumed, not just collected: the sequential path hands back lazy streams so
+        the join index can stop opening shards once it holds enough keys, and a shard nobody reads
+        has not finished.
+        """
+        shards = [iter([{"n": 0}]), iter([{"n": 1}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            for shard in _join_shard_rows(shards, max_rows_per_shard=5, max_workers=1, label="wikipedia"):
+                list(shard)
+
+        reported = [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()]
+        assert len(reported) == 2
+        assert all("wikipedia" in message for message in reported)
+
+    def test_no_row_content_reaches_the_log(self, caplog) -> None:
+        secret = "a sentence that must never be logged"
+        shards = [iter([{"text": secret}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_parallel_shard_rows(shards, limit=10, max_workers=1, label="website"))
+
+        assert all(secret not in record.getMessage() for record in caplog.records)
+
+
+class TestShardLevelResume:
+    """A source interrupted part way must reopen only its unread shards. See #20.
+
+    The website source is ~386 shards read in alphabetical order. It was re-streamed from
+    `afghanistan` three times in one day because each run was interrupted before `zimbabwe`, and
+    each interruption threw away every shard it had processed -- one leg ran 5h12m and had not
+    cleared `sri-lanka`.
+    """
+
+    def test_read_shards_are_not_reopened(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield {"n": index}
+
+        shards = [shard(index) for index in range(4)]
+        rows = list(_parallel_shard_rows(shards, limit=10, max_workers=1, skip_shards=frozenset({0, 2})))
+
+        assert opened == [1, 3], "a skipped shard is never opened, not merely discarded"
+        assert [row["n"] for row in rows] == [1, 3]
+
+    def test_finished_shards_are_reported_by_index(self) -> None:
+        finished: list[int] = []
+        shards = [iter([{"n": index}]) for index in range(3)]
+
+        list(_parallel_shard_rows(shards, limit=10, max_workers=1, on_shard_done=finished.append))
+
+        assert sorted(finished) == [0, 1, 2]
+
+    def test_a_shard_abandoned_part_way_is_not_reported(self) -> None:
+        """The whole point: an interrupted shard must be re-read, not skipped next time."""
+        finished: list[int] = []
+        shards = [iter([{"n": 0}, {"n": 1}]), iter([{"n": 2}])]
+
+        stream = _parallel_shard_rows(shards, limit=10, max_workers=1, on_shard_done=finished.append)
+        next(stream)
+        cast(Generator[Any, None, None], stream).close()
+
+        assert finished == []
+
+    def test_skipping_preserves_the_index_of_the_shards_that_remain(self) -> None:
+        """Indices name positions in the resolved shard list, so a resumed run records the same
+        number for the same shard as the run before it."""
+        finished: list[int] = []
+        shards = [iter([{"n": index}]) for index in range(4)]
+
+        list(
+            _parallel_shard_rows(
+                shards,
+                limit=10,
+                max_workers=1,
+                skip_shards=frozenset({0, 1}),
+                on_shard_done=finished.append,
+            )
+        )
+
+        assert sorted(finished) == [2, 3]
+
+
+class TestAdaptersCarryTheirResumeState:
+    """The resume arguments are unobservable in an adapter's output, so they are asserted here.
+
+    Each adapter passes `skip_shards` and `on_shard_done` down to its own row stream. An adapter
+    that dropped either would re-read shards a run had already finished, silently, which is the
+    failure #20 exists to prevent.
+    """
+
+    def test_the_description_adapter_skips_the_shards_it_already_read(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield _description_row(identity=f"{index:064x}")
+
+        source = _description_source(
+            [shard(0), shard(1), shard(2)],
+            (iter([_geometry_row()]),),
+            skip_shards=frozenset({0, 2}),
+        )
+        list(source.iter_candidates())
+
+        assert opened == [1]
+
+    def test_the_wikipedia_adapter_skips_the_shards_it_already_read(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield _wikipedia_row(sentence_id=f"s{index}")
+
+        source = _wikipedia_source(
+            [shard(0), shard(1)], (iter([_polygon_row()]),), skip_shards=frozenset({0})
+        )
+        list(source.iter_candidates())
+
+        assert opened == [1]
+
+    def test_the_website_adapter_skips_the_shards_it_already_read(self) -> None:
+        opened: list[int] = []
+
+        def shard(index: int) -> Iterator[Mapping[str, Any]]:
+            opened.append(index)
+            yield _website_row(polygon_id=f"p{index}")
+
+        source = _website_source(shard(0), shard(1), skip_shards=frozenset({1}))
+        list(source.iter_candidates())
+
+        assert opened == [0]
+
+    def test_each_adapter_reports_the_shards_it_finished(self) -> None:
+        for build in (
+            lambda done: _description_source(
+                (iter([_description_row(identity="a" * 64)]),),
+                (iter([_geometry_row()]),),
+                on_shard_done=done.append,
+            ),
+            lambda done: _wikipedia_source(
+                (iter([_wikipedia_row(sentence_id="s1")]),),
+                (iter([_polygon_row()]),),
+                on_shard_done=done.append,
+            ),
+            lambda done: _website_source(iter([_website_row()]), on_shard_done=done.append),
+        ):
+            finished: list[int] = []
+            list(build(finished).iter_candidates())
+            assert finished == [0], build
+
+
+class TestEachStreamIsNamedInTheLog:
+    """Five streams run; a progress line that does not say which one is moving is no use.
+
+    The labels are unobservable in the adapters' output, so they are asserted here -- an adapter
+    labelled with its neighbour's name would send an operator to the wrong stream.
+    """
+
+    def test_the_description_adapter_names_both_of_its_streams(self, caplog) -> None:
+        source = _description_source(
+            (iter([_description_row(identity="a" * 64)]),),
+            (iter([_geometry_row()]),),
+        )
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(source.iter_candidates())
+
+        messages = {r.getMessage() for r in caplog.records}
+        assert "description sentences: finished shard 1/1 (1 rows)" in messages
+        assert "description geometry: finished shard 1/? (1 rows)" in messages
+
+    def test_the_wikipedia_adapter_names_both_of_its_streams(self, caplog) -> None:
+        source = _wikipedia_source((iter([_wikipedia_row(sentence_id="s1")]),), (iter([_polygon_row()]),))
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(source.iter_candidates())
+
+        messages = {r.getMessage() for r in caplog.records}
+        assert "wikipedia sentences: finished shard 1/1 (1 rows)" in messages
+        assert "wikipedia polygons: finished shard 1/? (1 rows)" in messages
+
+    def test_the_website_adapter_names_its_stream(self, caplog) -> None:
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            list(_website_source(iter([_website_row()])).iter_candidates())
+
+        assert "website rows: finished shard 1/1 (1 rows)" in {r.getMessage() for r in caplog.records}
+
+    def test_an_unlabelled_stream_reports_nothing(self, caplog) -> None:
+        """The label is what turns reporting on: the helpers stay silent without one, so a
+        caller that does not want progress does not pay for it.
+
+        Silence is asserted, not assumed -- a default label of anything truthy would log under a
+        meaningless name rather than not logging.
+        """
+        shards = [iter([{"n": 0}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            rows = list(_parallel_shard_rows(shards, limit=5, max_workers=1))
+
+        assert rows == [{"n": 0}]
+        assert [r.getMessage() for r in caplog.records] == []
+
+    def test_an_unlabelled_join_stream_reports_nothing(self, caplog) -> None:
+        """Same for the join side, which has its own default."""
+        shards = [iter([{"n": 0}]), iter([{"n": 1}])]
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            for shard in _join_shard_rows(shards, max_rows_per_shard=5, max_workers=1):
+                list(shard)
+
+        assert [r.getMessage() for r in caplog.records] == []
+
+    def test_an_unlabelled_join_index_reports_nothing(self, caplog) -> None:
+        """`_join_index` carries the default down to the reader, so it needs its own check: a
+        truthy default there would label every join with a meaningless name."""
+        from landuse_sentence_relevance.sources.v3 import _join_index
+
+        with caplog.at_level(logging.INFO, logger="landuse_sentence_relevance.sources.v3"):
+            _join_index(
+                [iter([{"wikidata": "Q1", "lat": 1.0, "lon": 2.0}])],
+                key_for_row=lambda row: str(row.get("wikidata")),
+                place_for_row=lambda _row: None,
+                max_rows_per_shard=5,
+                max_entries=10,
+            )
+
+        assert [r.getMessage() for r in caplog.records if "finished shard" in r.getMessage()] == []
+
+
+def test_the_concurrent_path_records_the_shards_it_finished() -> None:
+    """REGRESSION: `on_shard_done` was wired into the sequential branch only.
+
+    Every resume test used one worker, so a source running with a worker budget -- which is the
+    configuration the long runs actually use -- recorded nothing and re-read every shard on the
+    next attempt. The bug #20 exists to fix, reintroduced inside its own fix.
+    """
+    finished: list[int] = []
+    shards = [iter([{"n": index}]) for index in range(4)]
+
+    list(_parallel_shard_rows(shards, limit=10, max_workers=3, on_shard_done=finished.append))
+
+    assert sorted(finished) == [0, 1, 2, 3]
+
+
+def test_the_concurrent_path_skips_the_shards_it_already_read() -> None:
+    opened: list[int] = []
+
+    def shard(index: int) -> Iterator[Mapping[str, Any]]:
+        opened.append(index)
+        yield {"n": index}
+
+    shards = [shard(index) for index in range(4)]
+    rows = list(_parallel_shard_rows(shards, limit=10, max_workers=3, skip_shards=frozenset({1, 2})))
+
+    assert sorted(opened) == [0, 3]
+    assert sorted(row["n"] for row in rows) == [0, 3]

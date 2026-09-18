@@ -383,6 +383,7 @@ def test_collect_throttles_checkpoints_by_elapsed_time() -> None:
             candidates: Iterable[Candidate],
             meta: Mapping[str, object],
             completed: Iterable[Source] = (),
+            completed_shards: Mapping[Source, frozenset[int]] | None = None,
         ) -> None:
             saves.append(len(tuple(candidates)))
 
@@ -422,6 +423,7 @@ def test_collect_checkpoints_when_the_interval_elapses() -> None:
             candidates: Iterable[Candidate],
             meta: Mapping[str, object],
             completed: Iterable[Source] = (),
+            completed_shards: Mapping[Source, frozenset[int]] | None = None,
         ) -> None:
             saves.append(len(tuple(candidates)))
 
@@ -444,3 +446,30 @@ def test_collect_checkpoints_when_the_interval_elapses() -> None:
     )
 
     assert len(saves) == 6, f"one checkpoint per elapsed interval plus the final one, got {len(saves)}"
+
+
+# --------------------------------------------------------- shard-level resume (#20)
+
+
+def test_a_resumed_source_skips_only_the_shards_it_finished() -> None:
+    """The website source is ~386 shards in alphabetical order. It was re-streamed from
+    `afghanistan` three separate times in one day because each run was interrupted before
+    `zimbabwe`, and each interruption discarded every shard it had processed."""
+    from landuse_sentence_relevance.bootstrap.v3 import _resume_state_for
+
+    completed = {Source.WEBSITE: frozenset({0, 1, 2})}
+
+    assert _resume_state_for(Source.WEBSITE, completed) == frozenset({0, 1, 2})
+    assert _resume_state_for(Source.WIKIPEDIA, completed) == frozenset()
+
+
+def test_a_finished_shard_is_recorded_against_its_own_source() -> None:
+    from landuse_sentence_relevance.bootstrap.v3 import _shard_recorder
+
+    recorded: dict[Source, set[int]] = {}
+    record = _shard_recorder(Source.DESCRIPTION, recorded)
+
+    record(4)
+    record(9)
+
+    assert recorded == {Source.DESCRIPTION: {4, 9}}
