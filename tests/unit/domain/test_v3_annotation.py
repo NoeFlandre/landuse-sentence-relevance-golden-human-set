@@ -19,6 +19,7 @@ from landuse_sentence_relevance.domain.v3_annotation import (
     V3SeedOrigin,
     V3SeedRow,
     V3SelectionMetadata,
+    _unused_candidates,
     select_v3_annotation_seed,
 )
 from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
@@ -186,6 +187,38 @@ def test_pending_slots_take_the_lowest_ranked_fresh_candidates_for_each_quota_sl
     assert _selected_ids(state, Label.YES) == ("fresh-4", "fresh-0")
     assert _selected_ids(state, Label.NO) == ("fresh-1", "fresh-2")
     assert tuple(row.selection.slot_index for row in state.pending_rows) == (0, 1, 0, 1)
+
+
+def test_selection_keeps_pending_rows_and_hash_ranks_the_reserve() -> None:
+    quotas = SourceLabelQuotas({(Source.WIKIPEDIA, Label.YES): 1})
+    candidates = tuple(_test_candidate(f"pool-{index}", cell=f"pool-cell-{index}") for index in range(3))
+
+    state = _select_with_plan(
+        plan_seed((), quotas, seed="test-seed"),
+        quotas,
+        FinalizedCandidatePool(candidates, tuple(candidate.h3_cell for candidate in candidates)),
+    )
+
+    selected_id = state.pending_rows[0].candidate.candidate_id
+    reserve = tuple(candidate for candidate in candidates if candidate.candidate_id != selected_id)
+    expected_reserve = tuple(
+        sorted(
+            reserve,
+            key=lambda candidate: hashlib.sha256(
+                f"test-seed:reserve:{candidate.candidate_id}".encode()
+            ).hexdigest(),
+        )
+    )
+    assert state.rows == state.pending_rows
+    assert state.reserve_candidates == expected_reserve
+
+
+def test_unused_candidates_excludes_reused_ids_and_cells() -> None:
+    same_id = _test_candidate("used-id", cell="free-cell")
+    same_cell = _test_candidate("free-id", cell="used-cell")
+    free = _test_candidate("free", cell="free")
+
+    assert _unused_candidates((same_id, same_cell, free), {"used-id"}, {"used-cell"}) == (free,)
 
 
 def _selected_ids(state: V3AnnotationSeed, label: Label) -> tuple[str, ...]:
@@ -484,6 +517,7 @@ def _state(
     excluded: tuple[Annotation, ...] = (),
     reserved: frozenset[str] = frozenset(),
     reasons: dict[str, str] | None = None,
+    reserve: tuple[Candidate, ...] = (),
 ) -> V3AnnotationSeed:
     return V3AnnotationSeed(
         rows=rows,
@@ -493,6 +527,7 @@ def _state(
         benchmark_sha256="0" * 64,
         seed="test-seed",
         excluded_v2_reasons=reasons or {},
+        reserve_candidates=reserve,
     )
 
 
@@ -579,3 +614,95 @@ def test_annotation_seed_rejects_a_pending_row_in_a_reserved_v2_cell() -> None:
             reasons={"excluded": "deterministic surplus"},
         )
     assert str(error.value) == "pending V3 rows collide with a V2-reserved H3 cell"
+
+
+@pytest.mark.parametrize(
+    ("reserve", "message"),
+    [
+        (
+            (
+                _test_candidate("reserve", cell="reserve-a"),
+                _test_candidate("reserve", cell="reserve-b"),
+            ),
+            "V3 reserve candidates must have unique candidate IDs",
+        ),
+        (
+            (
+                _test_candidate("reserve-a", cell="reserve-cell"),
+                _test_candidate("reserve-b", cell="reserve-cell"),
+            ),
+            "V3 reserve candidates must have unique H3 cells",
+        ),
+    ],
+)
+def test_annotation_seed_rejects_duplicate_reserve_identity(
+    reserve: tuple[Candidate, ...], message: str
+) -> None:
+    with pytest.raises(V3AnnotationSeedError) as error:
+        _state((_pending_row(),), SourceLabelQuotas({(Source.WIKIPEDIA, Label.YES): 1}), reserve=reserve)
+
+    assert str(error.value) == message
+
+
+def test_annotation_seed_rejects_a_reserve_candidate_reusing_a_seed_cell() -> None:
+    reserve = (_test_candidate("reserve", cell="pending-cell"),)
+
+    with pytest.raises(V3AnnotationSeedError) as error:
+        _state(
+            (_pending_row(_test_candidate("pending", cell="pending-cell")),),
+            SourceLabelQuotas({(Source.WIKIPEDIA, Label.YES): 1}),
+            reserve=reserve,
+        )
+
+    assert str(error.value) == "V3 reserve candidates must not reuse a seed H3 cell"
+
+
+def test_annotation_seed_rejects_a_reserve_candidate_reusing_a_seed_id() -> None:
+    reserve = (_test_candidate("pending", cell="reserve-cell"),)
+
+    with pytest.raises(V3AnnotationSeedError) as error:
+        _state(
+            (_pending_row(_test_candidate("pending", cell="pending-cell")),),
+            SourceLabelQuotas({(Source.WIKIPEDIA, Label.YES): 1}),
+            reserve=reserve,
+        )
+
+    assert str(error.value) == "V3 reserve candidates must not reuse a seed candidate ID"
+
+
+def test_annotation_seed_rejects_a_reserve_candidate_in_a_v2_reserved_cell() -> None:
+    excluded = _annotation("excluded", cell="reserved-cell")
+    reserve = (_test_candidate("reserve", cell="reserved-cell"),)
+
+    with pytest.raises(V3AnnotationSeedError) as error:
+        _state(
+            (
+                _pending_row(_test_candidate("pending-yes", cell="pending-yes-cell")),
+                _pending_row(_test_candidate("pending-no", cell="pending-no-cell"), quota_label=Label.NO),
+            ),
+            SourceLabelQuotas(
+                {
+                    (Source.WIKIPEDIA, Label.YES): 1,
+                    (Source.WIKIPEDIA, Label.NO): 1,
+                }
+            ),
+            excluded=(excluded,),
+            reserved=frozenset({"reserved-cell"}),
+            reasons={"excluded": "deterministic surplus"},
+            reserve=reserve,
+        )
+
+    assert str(error.value) == "V3 reserve candidates must not use a V2-reserved H3 cell"
+
+
+def test_annotation_seed_rejects_a_reserve_source_outside_the_quota_matrix() -> None:
+    reserve = (_test_candidate("reserve", source=Source.WEBSITE, cell="reserve-cell"),)
+
+    with pytest.raises(V3AnnotationSeedError) as error:
+        _state(
+            (_pending_row(),),
+            SourceLabelQuotas({(Source.WIKIPEDIA, Label.YES): 1}),
+            reserve=reserve,
+        )
+
+    assert str(error.value) == "V3 reserve candidates contain sources outside the V3 quota matrix"

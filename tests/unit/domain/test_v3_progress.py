@@ -14,7 +14,9 @@ from landuse_sentence_relevance.domain.v3_annotation import (
 )
 from landuse_sentence_relevance.domain.v3_progress import (
     V3AnnotationProgressError,
+    inspect_v3_session,
     next_v3_candidate,
+    ordered_v3_annotations,
     summarize_v3_progress,
 )
 
@@ -138,12 +140,33 @@ def test_progress_counts_seeded_and_fresh_labels_by_source() -> None:
     assert progress.source_progress[1].remaining_no_count == 1
 
 
+def test_ordered_annotations_returns_fresh_labels_in_seed_order() -> None:
+    seed = _seed()
+    second = seed.pending_rows[1].candidate
+    first = seed.pending_rows[0].candidate
+    annotations = {
+        second.candidate_id: Annotation(second, Label.YES),
+        first.candidate_id: Annotation(first, Label.NO),
+    }
+
+    assert ordered_v3_annotations(seed, annotations) == (
+        annotations[first.candidate_id],
+        annotations[second.candidate_id],
+    )
+
+
 def test_next_candidate_skips_saved_fresh_rows_and_never_returns_seeded_v2() -> None:
     seed = _seed()
     first_pending = seed.rows[1].candidate
     saved = {first_pending.candidate_id: Annotation(first_pending, Label.NO)}
 
     assert next_v3_candidate(seed, saved) == seed.rows[2].candidate
+
+
+def test_next_candidate_returns_the_first_pending_row_before_quota_accounting() -> None:
+    seed = _seed()
+
+    assert next_v3_candidate(seed, {}) == seed.pending_rows[0].candidate
 
 
 def test_next_candidate_returns_none_after_all_fresh_rows_are_labeled() -> None:
@@ -222,3 +245,60 @@ def test_the_reserve_stops_once_every_quota_is_filled() -> None:
     annotations = {pending.candidate_id: Annotation(candidate=pending, label=Label.YES)}
 
     assert next_v3_candidate(seed, annotations) is None
+
+
+def test_the_reserve_only_serves_sources_with_an_unfilled_quota() -> None:
+    quotas = balanced_quotas((Source.WIKIPEDIA, Source.WEBSITE), rows_per_source_label=1)
+    rows = tuple(
+        V3SeedRow(
+            candidate=_candidate(f"{source.value}-{label.value}", source, f"{source.value}-{label.value}"),
+            quota_source=source,
+            quota_label=label,
+            origin="v3",
+            annotation=None,
+            selection=V3SelectionMetadata(seed="progress-test", rank=f"{index:064d}", slot_index=0),
+        )
+        for index, (source, label) in enumerate(quotas.counts)
+    )
+    wiki_reserve = _candidate("wiki-reserve", Source.WIKIPEDIA, "wiki-reserve-cell")
+    website_reserve = _candidate("website-reserve", Source.WEBSITE, "website-reserve-cell")
+    seed = V3AnnotationSeed(
+        rows=rows,
+        excluded_v2_rows=(),
+        reserved_v2_cells=frozenset(),
+        quotas=quotas,
+        benchmark_sha256="0" * 64,
+        seed="progress-test",
+        reserve_candidates=(website_reserve, wiki_reserve),
+    )
+    labels = {
+        Source.WIKIPEDIA: {Label.YES: Label.NO, Label.NO: Label.NO},
+        Source.WEBSITE: {Label.YES: Label.YES, Label.NO: Label.NO},
+    }
+    annotations = {
+        row.candidate.candidate_id: Annotation(row.candidate, labels[row.quota_source][row.quota_label])
+        for row in rows
+    }
+
+    assert next_v3_candidate(seed, annotations) == wiki_reserve
+
+
+def test_session_snapshot_reuses_one_ordered_view_for_progress_and_next_candidate() -> None:
+    seed = _seed_with_reserve()
+    pending = seed.pending_rows[0].candidate
+    annotations = {pending.candidate_id: Annotation(candidate=pending, label=Label.NO)}
+
+    snapshot = inspect_v3_session(seed, annotations)
+
+    assert snapshot.annotations == (annotations[pending.candidate_id],)
+    assert snapshot.progress.fresh_labeled_count == 1
+    assert snapshot.progress.remaining_quotas[(Source.WIKIPEDIA, Label.YES)] == 1
+    assert snapshot.current_candidate == seed.reserve_candidates[0]
+
+
+def test_session_snapshot_starts_with_the_first_pending_candidate() -> None:
+    seed = _seed()
+
+    snapshot = inspect_v3_session(seed, {})
+
+    assert snapshot.current_candidate == seed.pending_rows[0].candidate

@@ -4,6 +4,7 @@ import hashlib
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from heapq import nsmallest
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
@@ -123,9 +124,17 @@ class V3AnnotationSeed:
     contract and carry no quota slot until a label decides which one they fill.
     """
 
+    _seeded_rows: tuple[V3SeedRow, ...] = field(init=False, repr=False, compare=False)
+    _pending_rows: tuple[V3SeedRow, ...] = field(init=False, repr=False, compare=False)
+    _offerable_candidates: tuple[Candidate, ...] = field(init=False, repr=False, compare=False)
+    _offerable_by_id: Mapping[str, Candidate] = field(init=False, repr=False, compare=False)
+    _seeded_annotations: tuple[Annotation, ...] = field(init=False, repr=False, compare=False)
+    _seeded_candidate_ids: frozenset[str] = field(init=False, repr=False, compare=False)
+
     def __post_init__(self) -> None:
         _validate_seed_identity(self.seed, self.benchmark_sha256)
         object.__setattr__(self, "excluded_v2_reasons", MappingProxyType(dict(self.excluded_v2_reasons)))
+        _cache_seed_indexes(self)
         _validate_state(self)
 
     @property
@@ -134,11 +143,11 @@ class V3AnnotationSeed:
 
     @property
     def seeded_rows(self) -> tuple[V3SeedRow, ...]:
-        return tuple(row for row in self.rows if row.is_seeded)
+        return self._seeded_rows
 
     @property
     def pending_rows(self) -> tuple[V3SeedRow, ...]:
-        return tuple(row for row in self.rows if row.is_pending)
+        return self._pending_rows
 
     @property
     def pending_candidates(self) -> tuple[Candidate, ...]:
@@ -148,11 +157,23 @@ class V3AnnotationSeed:
     def offerable_candidates(self) -> tuple[Candidate, ...]:
         """Every candidate a human may still be shown, seed rows before reserve."""
 
-        return (*self.pending_candidates, *self.reserve_candidates)
+        return self._offerable_candidates
+
+    @property
+    def offerable_by_id(self) -> Mapping[str, Candidate]:
+        """Immutable lookup of every candidate that may be annotated."""
+
+        return self._offerable_by_id
+
+    @property
+    def seeded_candidate_ids(self) -> frozenset[str]:
+        """Candidate IDs belonging to immutable V2 rows."""
+
+        return self._seeded_candidate_ids
 
     @property
     def seeded_annotations(self) -> tuple[Annotation, ...]:
-        return tuple(row.annotation for row in self.seeded_rows if row.annotation is not None)
+        return self._seeded_annotations
 
     @property
     def seeded_row_count(self) -> int:
@@ -210,6 +231,44 @@ class V3AnnotationSeed:
         )
 
 
+def _cache_seed_indexes(state: V3AnnotationSeed) -> None:
+    seeded_rows = _seeded_rows_for(state.rows)
+    pending_rows = _pending_rows_for(state.rows)
+    offerable_candidates = _offerable_candidates_for(pending_rows, state.reserve_candidates)
+    object.__setattr__(state, "_seeded_rows", seeded_rows)
+    object.__setattr__(state, "_pending_rows", pending_rows)
+    object.__setattr__(state, "_offerable_candidates", offerable_candidates)
+    object.__setattr__(state, "_offerable_by_id", _candidate_index(offerable_candidates))
+    object.__setattr__(state, "_seeded_annotations", _seeded_annotations_for(seeded_rows))
+    object.__setattr__(state, "_seeded_candidate_ids", _seeded_ids_for(seeded_rows))
+
+
+def _seeded_rows_for(rows: tuple[V3SeedRow, ...]) -> tuple[V3SeedRow, ...]:
+    return tuple(row for row in rows if row.is_seeded)
+
+
+def _pending_rows_for(rows: tuple[V3SeedRow, ...]) -> tuple[V3SeedRow, ...]:
+    return tuple(row for row in rows if row.is_pending)
+
+
+def _offerable_candidates_for(
+    pending_rows: tuple[V3SeedRow, ...], reserve_candidates: tuple[Candidate, ...]
+) -> tuple[Candidate, ...]:
+    return tuple(row.candidate for row in pending_rows) + reserve_candidates
+
+
+def _candidate_index(candidates: tuple[Candidate, ...]) -> Mapping[str, Candidate]:
+    return MappingProxyType({candidate.candidate_id: candidate for candidate in candidates})
+
+
+def _seeded_annotations_for(rows: tuple[V3SeedRow, ...]) -> tuple[Annotation, ...]:
+    return tuple(row.annotation for row in rows if row.annotation is not None)
+
+
+def _seeded_ids_for(rows: tuple[V3SeedRow, ...]) -> frozenset[str]:
+    return frozenset(row.candidate.candidate_id for row in rows)
+
+
 def select_v3_annotation_seed(
     seed_plan: SeedPlan,
     pool: FinalizedCandidatePool,
@@ -253,20 +312,27 @@ def _reserve_candidates(
 
     used_ids = {row.candidate.candidate_id for row in rows}
     used_cells = {row.candidate.h3_cell for row in rows}
-    spare = [
-        candidate
-        for candidate in pool.candidates
-        if candidate.candidate_id not in used_ids and candidate.h3_cell not in used_cells
-    ]
+    spare = _unused_candidates(pool.candidates, used_ids, used_cells)
+    return _ranked_candidates(spare, f"{seed}:reserve")
+
+
+def _unused_candidates(
+    candidates: tuple[Candidate, ...],
+    used_ids: set[str],
+    used_cells: set[str],
+) -> tuple[Candidate, ...]:
     return tuple(
-        sorted(
-            spare,
-            key=lambda candidate: (
-                _rank(f"{seed}:reserve", candidate.candidate_id),
-                candidate.candidate_id,
-            ),
-        )
+        candidate
+        for candidate in candidates
+        if candidate.candidate_id not in used_ids and candidate.h3_cell not in used_cells
     )
+
+
+def _ranked_candidates(candidates: tuple[Candidate, ...], seed: str) -> tuple[Candidate, ...]:
+    def key(candidate: Candidate) -> tuple[str, str]:
+        return _rank(seed, candidate.candidate_id), candidate.candidate_id
+
+    return tuple(sorted(candidates, key=key))
 
 
 def _seeded_rows(
@@ -339,7 +405,7 @@ def _pending_quota_rows(
     used_ids: set[str],
 ) -> tuple[V3SeedRow, ...]:
     required = seed_plan.remaining.get((source, label), 0)
-    ranked = _ranked_fresh_candidates(pool, source, label, seed, used_ids)
+    ranked = _ranked_fresh_candidates(pool, source, label, seed, used_ids, limit=required)
     if len(ranked) < required:
         raise V3AnnotationSeedError(
             f"V3 {source.value}/{label.value} quota needs {required} fresh rows; "
@@ -368,10 +434,16 @@ def _ranked_fresh_candidates(
     label: Label,
     seed: str,
     used_ids: set[str],
+    *,
+    limit: int,
 ) -> tuple[Candidate, ...]:
+    candidates = (
+        candidate for candidate in pool.candidates if _is_fresh_for_quota(candidate, source, used_ids)
+    )
     return tuple(
-        sorted(
-            (candidate for candidate in pool.candidates if _is_fresh_for_quota(candidate, source, used_ids)),
+        nsmallest(
+            limit,
+            candidates,
             key=lambda candidate: (
                 _rank(f"{seed}:{source.value}:{label.value}", candidate.candidate_id),
                 candidate.candidate_id,
@@ -489,6 +561,7 @@ def _validate_state(state: V3AnnotationSeed) -> None:
     _require_state_reserved_cells(state)
     _require_excluded_reasons(state)
     _require_pending_cells(state)
+    _require_reserve_candidates(state)
 
 
 def _require_state_row_count(state: V3AnnotationSeed) -> None:
@@ -533,6 +606,58 @@ def _require_pending_cells(state: V3AnnotationSeed) -> None:
     pending_cells = {row.candidate.h3_cell for row in state.pending_rows}
     if pending_cells & state.reserved_v2_cells:
         raise V3AnnotationSeedError("pending V3 rows collide with a V2-reserved H3 cell")
+
+
+def _require_reserve_candidates(state: V3AnnotationSeed) -> None:
+    _require_unique_reserve_ids(state.reserve_candidates)
+    _require_unique_reserve_cells(state.reserve_candidates)
+    _require_reserve_not_in_rows(state)
+    _require_reserve_not_in_v2_cells(state)
+    _require_reserve_sources(state)
+
+
+def _require_unique_reserve_ids(candidates: tuple[Candidate, ...]) -> None:
+    ids = [candidate.candidate_id for candidate in candidates]
+    if len(set(ids)) != len(ids):
+        raise V3AnnotationSeedError("V3 reserve candidates must have unique candidate IDs")
+
+
+def _require_unique_reserve_cells(candidates: tuple[Candidate, ...]) -> None:
+    cells = [candidate.h3_cell for candidate in candidates]
+    if len(set(cells)) != len(cells):
+        raise V3AnnotationSeedError("V3 reserve candidates must have unique H3 cells")
+
+
+def _require_reserve_not_in_rows(state: V3AnnotationSeed) -> None:
+    _require_reserve_ids_not_in_rows(state)
+    _require_reserve_cells_not_in_rows(state)
+
+
+def _require_reserve_ids_not_in_rows(state: V3AnnotationSeed) -> None:
+    row_ids = {row.candidate.candidate_id for row in state.rows}
+    reserve_ids = {candidate.candidate_id for candidate in state.reserve_candidates}
+    if reserve_ids & row_ids:
+        raise V3AnnotationSeedError("V3 reserve candidates must not reuse a seed candidate ID")
+
+
+def _require_reserve_cells_not_in_rows(state: V3AnnotationSeed) -> None:
+    row_cells = {row.candidate.h3_cell for row in state.rows}
+    reserve_cells = {candidate.h3_cell for candidate in state.reserve_candidates}
+    if reserve_cells & row_cells:
+        raise V3AnnotationSeedError("V3 reserve candidates must not reuse a seed H3 cell")
+
+
+def _require_reserve_not_in_v2_cells(state: V3AnnotationSeed) -> None:
+    reserve_cells = {candidate.h3_cell for candidate in state.reserve_candidates}
+    if reserve_cells & state.reserved_v2_cells:
+        raise V3AnnotationSeedError("V3 reserve candidates must not use a V2-reserved H3 cell")
+
+
+def _require_reserve_sources(state: V3AnnotationSeed) -> None:
+    expected_sources = set(state.quotas.sources)
+    unexpected_sources = {candidate.source for candidate in state.reserve_candidates} - expected_sources
+    if unexpected_sources:
+        raise V3AnnotationSeedError("V3 reserve candidates contain sources outside the V3 quota matrix")
 
 
 def _v2_cells(state: V3AnnotationSeed) -> set[str]:

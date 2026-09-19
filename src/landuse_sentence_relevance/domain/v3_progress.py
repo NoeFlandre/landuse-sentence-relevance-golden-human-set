@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -66,15 +66,44 @@ class V3AnnotationProgress:
         return max(0, self.total_count - self.labeled_count)
 
 
+@dataclass(frozen=True, slots=True)
+class V3AnnotationSnapshot:
+    """One validated view of a resumable V3 session."""
+
+    annotations: tuple[Annotation, ...]
+    progress: V3AnnotationProgress
+    current_candidate: Candidate | None
+
+
 def ordered_v3_annotations(
     seed: V3AnnotationSeed,
     annotations: Mapping[str, Annotation],
 ) -> tuple[Annotation, ...]:
     """Validate and return only fresh labels in deterministic seed order."""
 
-    pending, seeded_ids = _session_candidates(seed)
-    _validate_session(annotations, pending, seeded_ids)
-    return _ordered_pending_annotations(seed, annotations)
+    return _validated_annotations(seed, annotations)
+
+
+def inspect_v3_session(
+    seed: V3AnnotationSeed,
+    annotations: Mapping[str, Annotation],
+) -> V3AnnotationSnapshot:
+    """Validate a session once and derive all UI-facing state from that view."""
+
+    fresh = _validated_annotations(seed, annotations)
+    all_annotations = (*seed.seeded_annotations, *fresh)
+    counts_by_source_label = _label_counts_by_source(all_annotations)
+    progress = _build_progress(seed, fresh, all_annotations, counts_by_source_label)
+    labeled_ids = {annotation.candidate.candidate_id for annotation in fresh}
+    pending = _next_pending_candidate(seed, labeled_ids)
+    current_candidate = (
+        pending if pending is not None else _next_candidate(seed, labeled_ids, progress.remaining_quotas)
+    )
+    return V3AnnotationSnapshot(
+        annotations=fresh,
+        progress=progress,
+        current_candidate=current_candidate,
+    )
 
 
 def next_v3_candidate(
@@ -89,42 +118,52 @@ def next_v3_candidate(
     answered "no" leaves that quota open and needs another candidate.
     """
 
-    labeled_ids = {
-        annotation.candidate.candidate_id for annotation in ordered_v3_annotations(seed, annotations)
-    }
-    pending = next(
-        (row.candidate for row in seed.pending_rows if row.candidate.candidate_id not in labeled_ids),
-        None,
-    )
+    fresh = _validated_annotations(seed, annotations)
+    labeled_ids = {annotation.candidate.candidate_id for annotation in fresh}
+    pending = _next_pending_candidate(seed, labeled_ids)
     if pending is not None:
         return pending
-    return _next_reserve_candidate(seed, annotations, labeled_ids)
+
+    all_annotations = (*seed.seeded_annotations, *fresh)
+    counts_by_source_label = _label_counts_by_source(all_annotations)
+    return _next_candidate(seed, labeled_ids, _remaining_quotas(seed, counts_by_source_label))
+
+
+def _next_candidate(
+    seed: V3AnnotationSeed,
+    labeled_ids: set[str],
+    remaining_quotas: Mapping[QuotaKey, int],
+) -> Candidate | None:
+    short = _short_sources(remaining_quotas)
+    return _next_reserve_candidate(seed, labeled_ids, short)
+
+
+def _short_sources(remaining_quotas: Mapping[QuotaKey, int]) -> set[Source]:
+    return {source for (source, _label), missing in remaining_quotas.items() if missing > 0}
 
 
 def _next_reserve_candidate(
     seed: V3AnnotationSeed,
-    annotations: Mapping[str, Annotation],
     labeled_ids: set[str],
+    short_sources: set[Source],
 ) -> Candidate | None:
-    short = _sources_short_of_quota(seed, annotations)
-    if not short:
+    if not short_sources:
         return None
     return next(
         (
             candidate
             for candidate in seed.reserve_candidates
-            if candidate.candidate_id not in labeled_ids and candidate.source in short
+            if candidate.candidate_id not in labeled_ids and candidate.source in short_sources
         ),
         None,
     )
 
 
-def _sources_short_of_quota(
-    seed: V3AnnotationSeed,
-    annotations: Mapping[str, Annotation],
-) -> set[Source]:
-    remaining = summarize_v3_progress(seed, annotations).remaining_quotas
-    return {source for (source, _label), missing in remaining.items() if missing > 0}
+def _next_pending_candidate(seed: V3AnnotationSeed, labeled_ids: set[str]) -> Candidate | None:
+    return next(
+        (row.candidate for row in seed.pending_rows if row.candidate.candidate_id not in labeled_ids),
+        None,
+    )
 
 
 def summarize_v3_progress(
@@ -133,9 +172,15 @@ def summarize_v3_progress(
 ) -> V3AnnotationProgress:
     """Count frozen V2 and fresh labels without reading or writing any files."""
 
-    fresh = ordered_v3_annotations(seed, annotations)
-    all_annotations = (*seed.seeded_annotations, *fresh)
-    counts_by_source_label = _label_counts_by_source(all_annotations)
+    return inspect_v3_session(seed, annotations).progress
+
+
+def _build_progress(
+    seed: V3AnnotationSeed,
+    fresh: tuple[Annotation, ...],
+    all_annotations: tuple[Annotation, ...],
+    counts_by_source_label: Counter[tuple[Source, Label]],
+) -> V3AnnotationProgress:
     source_progress = _source_progress_by_source(seed, counts_by_source_label)
     return V3AnnotationProgress(
         total_count=seed.total_rows,
@@ -153,16 +198,23 @@ def summarize_v3_progress(
 
 def _session_candidates(
     seed: V3AnnotationSeed,
-) -> tuple[dict[str, Candidate], set[str]]:
-    pending = {candidate.candidate_id: candidate for candidate in seed.offerable_candidates}
-    seeded_ids = {row.candidate.candidate_id for row in seed.seeded_rows}
-    return pending, seeded_ids
+) -> tuple[Mapping[str, Candidate], frozenset[str]]:
+    return seed.offerable_by_id, seed.seeded_candidate_ids
+
+
+def _validated_annotations(
+    seed: V3AnnotationSeed,
+    annotations: Mapping[str, Annotation],
+) -> tuple[Annotation, ...]:
+    pending, seeded_ids = _session_candidates(seed)
+    _validate_session(annotations, pending, seeded_ids)
+    return _ordered_pending_annotations(seed, annotations)
 
 
 def _validate_session(
     annotations: Mapping[str, Annotation],
     pending: Mapping[str, Candidate],
-    seeded_ids: set[str],
+    seeded_ids: Collection[str],
 ) -> None:
     for candidate_id, annotation in annotations.items():
         _validate_session_row(candidate_id, annotation, pending, seeded_ids)
@@ -237,7 +289,7 @@ def _validate_session_row(
     candidate_id: str,
     annotation: Annotation,
     pending: Mapping[str, Candidate],
-    seeded_ids: set[str],
+    seeded_ids: Collection[str],
 ) -> None:
     if candidate_id != annotation.candidate.candidate_id:
         raise V3AnnotationProgressError("V3 session key does not match its candidate ID")
