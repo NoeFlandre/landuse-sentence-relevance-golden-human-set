@@ -95,7 +95,11 @@ def inspect_v3_session(
     counts_by_source_label = _label_counts_by_source(all_annotations)
     progress = _build_progress(seed, fresh, all_annotations, counts_by_source_label)
     labeled_ids = {annotation.candidate.candidate_id for annotation in fresh}
-    pending = _next_pending_candidate(seed, labeled_ids)
+    pending = _next_pending_candidate(
+        seed,
+        labeled_ids,
+        _short_sources(progress.remaining_quotas),
+    )
     current_candidate = (
         pending if pending is not None else _next_candidate(seed, labeled_ids, progress.remaining_quotas)
     )
@@ -120,13 +124,13 @@ def next_v3_candidate(
 
     fresh = _validated_annotations(seed, annotations)
     labeled_ids = {annotation.candidate.candidate_id for annotation in fresh}
-    pending = _next_pending_candidate(seed, labeled_ids)
-    if pending is not None:
-        return pending
-
     all_annotations = (*seed.seeded_annotations, *fresh)
     counts_by_source_label = _label_counts_by_source(all_annotations)
-    return _next_candidate(seed, labeled_ids, _remaining_quotas(seed, counts_by_source_label))
+    remaining_quotas = _remaining_quotas(seed, counts_by_source_label)
+    pending = _next_pending_candidate(seed, labeled_ids, _short_sources(remaining_quotas))
+    if pending is not None:
+        return pending
+    return _next_candidate(seed, labeled_ids, remaining_quotas)
 
 
 def _next_candidate(
@@ -159,9 +163,17 @@ def _next_reserve_candidate(
     )
 
 
-def _next_pending_candidate(seed: V3AnnotationSeed, labeled_ids: set[str]) -> Candidate | None:
+def _next_pending_candidate(
+    seed: V3AnnotationSeed,
+    labeled_ids: set[str],
+    short_sources: set[Source],
+) -> Candidate | None:
     return next(
-        (row.candidate for row in seed.pending_rows if row.candidate.candidate_id not in labeled_ids),
+        (
+            row.candidate
+            for row in seed.pending_rows
+            if row.candidate.candidate_id not in labeled_ids and row.candidate.source in short_sources
+        ),
         None,
     )
 

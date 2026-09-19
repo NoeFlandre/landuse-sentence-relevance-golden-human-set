@@ -283,6 +283,42 @@ def test_the_reserve_only_serves_sources_with_an_unfilled_quota() -> None:
     assert next_v3_candidate(seed, annotations) == wiki_reserve
 
 
+def test_pending_rows_are_skipped_after_their_source_reaches_all_quotas() -> None:
+    quotas = balanced_quotas((Source.WIKIPEDIA,), rows_per_source_label=1)
+    rows = tuple(
+        V3SeedRow(
+            candidate=_candidate(f"wiki-{label.value}", Source.WIKIPEDIA, f"wiki-{label.value}-cell"),
+            quota_source=Source.WIKIPEDIA,
+            quota_label=label,
+            origin="v3",
+            annotation=None,
+            selection=V3SelectionMetadata(
+                seed="progress-test",
+                rank=f"{index:064d}",
+                slot_index=index,
+            ),
+        )
+        for index, label in enumerate((Label.YES, Label.NO))
+    )
+    reserve = _candidate("wiki-reserve", Source.WIKIPEDIA, "wiki-reserve-cell")
+    seed = V3AnnotationSeed(
+        rows=rows,
+        excluded_v2_rows=(),
+        reserved_v2_cells=frozenset(),
+        quotas=quotas,
+        benchmark_sha256="0" * 64,
+        seed="progress-test",
+        reserve_candidates=(reserve,),
+    )
+    annotations = {
+        rows[0].candidate.candidate_id: Annotation(rows[0].candidate, Label.YES),
+        reserve.candidate_id: Annotation(reserve, Label.NO),
+    }
+
+    assert next_v3_candidate(seed, annotations) is None
+    assert inspect_v3_session(seed, annotations).current_candidate is None
+
+
 def test_session_snapshot_reuses_one_ordered_view_for_progress_and_next_candidate() -> None:
     seed = _seed_with_reserve()
     pending = seed.pending_rows[0].candidate
