@@ -1,5 +1,6 @@
 import math
 from collections import Counter
+from collections.abc import Mapping
 
 import pytest
 
@@ -150,36 +151,53 @@ def test_distinct_source_cell_selection_updates_minimum_distances_incrementally(
     assert calls == 22
 
 
-def test_distinct_source_cell_selection_does_not_enable_cache_at_zero_distance(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_distinct_source_cell_selection_keeps_the_distance_cache_at_zero_distance() -> None:
+    """The cache is not only for distance filtering: the farthest-point choice needs it.
+
+    This previously asserted the opposite, on the reading that a zero minimum
+    distance has no distances to check. It does: every round still picks the cell
+    farthest from the current selection. Without the cache that distance is
+    recomputed against the whole selection each round, which is quadratic in the
+    target count and made a real 400-cell build take tens of minutes. Maintaining
+    it changes the cost, not the chosen cells.
+    """
+
     centers = {
         "wiki-a": (0.0, 0.0),
         "wiki-b": (0.0, 1.0),
         "web-a": (0.0, 10.0),
         "web-b": (0.0, 11.0),
     }
+    updates: list[str] = []
+    real_update = stratification._update_selected_distance_cache
 
-    def unexpected_cache_update(
-        centers: dict[str, tuple[float, float]],
+    def recording_update(
+        cell_centers: Mapping[str, tuple[float, float]],
         nearest_distances: dict[str, float],
         selected_cells: list[str],
         selected: str,
     ) -> None:
-        raise AssertionError("zero minimum distance must not update the distance cache")
+        updates.append(selected)
+        real_update(cell_centers, nearest_distances, selected_cells, selected)
 
-    monkeypatch.setattr(stratification, "_update_selected_distance_cache", unexpected_cache_update)
+    monkeypatch_attr(stratification, "_update_selected_distance_cache", recording_update)
+    try:
+        selected = select_distinct_source_cells(
+            {
+                Source.WIKIPEDIA: {"wiki-a", "wiki-b"},
+                Source.WEBSITE: {"web-a", "web-b"},
+            },
+            target_count_per_source=2,
+            center_of_cell=centers.__getitem__,
+            seed="test",
+            minimum_distance_km=0.0,
+        )
+    finally:
+        monkeypatch_attr(stratification, "_update_selected_distance_cache", real_update)
 
-    select_distinct_source_cells(
-        {
-            Source.WIKIPEDIA: {"wiki-a", "wiki-b"},
-            Source.WEBSITE: {"web-a", "web-b"},
-        },
-        target_count_per_source=2,
-        center_of_cell=centers.__getitem__,
-        seed="test",
-        minimum_distance_km=0.0,
-    )
+    assert updates, "the cache must be maintained even when no distance filter applies"
+    assert sorted(selected[Source.WIKIPEDIA]) == ["wiki-a", "wiki-b"]
+    assert sorted(selected[Source.WEBSITE]) == ["web-a", "web-b"]
 
 
 def test_conflict_counts_return_zero_for_zero_distance() -> None:
@@ -939,3 +957,125 @@ def test_distinct_source_cell_selection_ignores_sources_it_was_not_given() -> No
 
     assert set(selected) == {Source.DESCRIPTION}
     assert len(selected[Source.DESCRIPTION]) == 1
+
+
+def test_source_cell_selection_does_not_rescan_the_whole_selection_each_round() -> None:
+    """Distance work must grow with the selection, not with its square.
+
+    The farthest-point choice needs each cell's distance to its nearest selected
+    cell. Recomputing that against every already-selected cell each round turns a
+    400-cell pool into hundreds of millions of haversine calls; keeping a nearest
+    distance per cell and folding in only the newest selection gives the same
+    answer for a fraction of the work.
+    """
+
+    from landuse_sentence_relevance.domain import stratification
+
+    calls = {"n": 0}
+    real = stratification._haversine_km
+
+    def counting(first: tuple[float, float], second: tuple[float, float]) -> float:
+        calls["n"] += 1
+        return real(first, second)
+
+    cells = {
+        source: tuple(f"{source.value}-{index:04d}" for index in range(120)) for source in DEFAULT_SOURCES
+    }
+    centers = {
+        cell: (float(index % 90), float(index % 180))
+        for source_cells in cells.values()
+        for index, cell in enumerate(source_cells)
+    }
+    target = 40
+
+    monkeypatch_attr(stratification, "_haversine_km", counting)
+    try:
+        selected = stratification.select_distinct_source_cells(
+            cells,
+            target_count_per_source=target,
+            center_of_cell=centers.__getitem__,
+            seed="seed",
+        )
+    finally:
+        monkeypatch_attr(stratification, "_haversine_km", real)
+
+    assert all(len(chosen) == target for chosen in selected.values())
+    total_cells = len(centers)
+    rounds = target * len(DEFAULT_SOURCES)
+    naive = total_cells * rounds * rounds
+    assert calls["n"] < naive // 10, f"{calls['n']} haversine calls suggests a per-round rescan"
+
+
+def monkeypatch_attr(module: object, name: str, value: object) -> None:
+    """Swap a module attribute without tripping the type checker on a function slot."""
+
+    setattr(module, name, value)
+
+
+def _brute_force_feasible(
+    source: Source,
+    available: Mapping[Source, set[str]],
+    selected_by_source: Mapping[Source, list[str]],
+    selected_cells: list[str],
+    target_count: int,
+    sources: tuple[Source, ...],
+) -> list[str]:
+    """The feasibility rule stated directly, as the reference to optimise against."""
+
+    candidates = sorted(available[source] - set(selected_cells))
+    feasible: list[str] = []
+    for candidate in candidates:
+        used = set(selected_cells) | {candidate}
+        if all(
+            len(available[other] - used)
+            >= target_count - len(selected_by_source[other]) - (1 if other is source else 0)
+            for other in sources
+        ):
+            feasible.append(candidate)
+    return feasible
+
+
+def test_feasible_source_cells_matches_the_rule_it_optimises() -> None:
+    """Reducing the per-candidate set work must not change which cells are feasible."""
+
+    import random
+
+    rng = random.Random(20260918)
+    for _ in range(40):
+        pool = [f"c{index:03d}" for index in range(30)]
+        available = {source: set(rng.sample(pool, rng.randint(8, 25))) for source in DEFAULT_SOURCES}
+        selected_cells = rng.sample(pool, rng.randint(0, 6))
+        selected_by_source = {
+            source: rng.sample(sorted(available[source]), rng.randint(0, 3)) for source in DEFAULT_SOURCES
+        }
+        target = rng.randint(1, 8)
+        for source in DEFAULT_SOURCES:
+            assert stratification._feasible_source_cells(
+                source, available, selected_by_source, selected_cells, target, DEFAULT_SOURCES
+            ) == _brute_force_feasible(
+                source, available, selected_by_source, selected_cells, target, DEFAULT_SOURCES
+            )
+
+
+def test_feasible_source_cells_does_not_rebuild_the_selection_per_candidate() -> None:
+    """Per-candidate set differences make selection quadratic in the pool size."""
+
+    class CountingSet(set):  # type: ignore[type-arg]
+        differences = 0
+
+        def __sub__(self, other):  # type: ignore[no-untyped-def]
+            type(self).differences += 1
+            return CountingSet(set(self) - set(other))
+
+    available = {source: CountingSet(f"c{index:04d}" for index in range(400)) for source in DEFAULT_SOURCES}
+    selected_cells = [f"c{index:04d}" for index in range(50)]
+    selected_by_source = {source: [] for source in DEFAULT_SOURCES}
+
+    CountingSet.differences = 0
+    stratification._feasible_source_cells(
+        Source.WIKIPEDIA, available, selected_by_source, selected_cells, 100, DEFAULT_SOURCES
+    )
+
+    assert CountingSet.differences <= len(DEFAULT_SOURCES) + 1, (
+        f"{CountingSet.differences} set differences for one round scales with the candidate count"
+    )

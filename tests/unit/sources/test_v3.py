@@ -14,6 +14,7 @@ from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.sources.v3 import (
     _SHARD_QUEUE_CAPACITY,
     DescriptionSentenceSource,
+    JoinedPlace,
     WebsiteSentenceSource,
     WikipediaSentenceSource,
     _join_shard_rows,
@@ -272,7 +273,15 @@ def test_description_adapter_bounds_each_side_of_the_geometry_join() -> None:
     assert geometry_rows.seen == 1
 
 
-def test_description_adapter_stops_indexing_geometry_at_the_configured_join_bound() -> None:
+def test_description_adapter_fails_when_the_join_index_cannot_hold_every_shard() -> None:
+    """A truncated join silently drops whole regions, so it must stop the build.
+
+    Shards arrive in a fixed order, so an index that fills part way through
+    leaves every later region without geometry. Those sentences then yield no
+    candidates, the per-source quota still passes, and the gap reaches the pool
+    with nothing recording it. Failing here is the only way that cannot happen.
+    """
+
     sentence_rows = CountingRows(
         [_description_row(identity="a" * 64, osm_id="1"), _description_row(identity="b" * 64, osm_id="2")]
     )
@@ -282,10 +291,34 @@ def test_description_adapter_stops_indexing_geometry_at_the_configured_join_boun
     )
     source = _description_source((sentence_rows,), geometry_shards, max_join_entries=1)
 
-    candidates = list(source.iter_candidates())
+    with pytest.raises(ValueError, match=r"max_join_entries"):
+        list(source.iter_candidates())
+
+    assert geometry_shards[1].seen == 0, "the build must stop before reading further shards"
+
+
+def test_wikipedia_adapter_fails_when_the_join_index_cannot_hold_every_shard() -> None:
+    polygon_shards = (
+        CountingRows([_polygon_row(polygon_id="p1", wikidata="Q1")]),
+        CountingRows([_polygon_row(polygon_id="p2", wikidata="Q2")]),
+    )
+    source = _wikipedia_source(
+        ((_wikipedia_row(sentence_id="s1", wikidata="Q1"),),), polygon_shards, max_join_entries=1
+    )
+
+    with pytest.raises(ValueError, match=r"max_join_entries"):
+        list(source.iter_candidates())
+
+
+def test_a_join_index_that_fits_every_shard_does_not_fail() -> None:
+    sentence_rows = CountingRows([_description_row(identity="a" * 64, osm_id="1")])
+    geometry_shards = (CountingRows([_geometry_row(osm_id="1")]),)
+
+    candidates = list(
+        _description_source((sentence_rows,), geometry_shards, max_join_entries=500).iter_candidates()
+    )
 
     assert [candidate.source_record_id for candidate in candidates] == ["a" * 64]
-    assert geometry_shards[1].seen == 0
 
 
 def test_description_adapter_can_resolve_coordinates_from_an_upstream_bbox() -> None:
@@ -1096,7 +1129,16 @@ def test_the_join_counts_every_shard_it_read(caplog: pytest.LogCaptureFixture) -
     assert "V3 join indexed 2 join keys from 3 shard(s)" in [record.getMessage() for record in caplog.records]
 
 
-def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCaptureFixture) -> None:
+def test_the_join_names_the_shard_that_would_lose_its_geometry_when_the_cap_stops_it() -> None:
+    """This used to warn and continue. A warning in a log cannot protect the pool.
+
+    The truncated source still cleared its quota and still read its own stream to
+    the end, so it was recorded complete and the missing regions reached the
+    artifact with nothing recording them. The message now has to carry which
+    shard was abandoned, because that is what tells an operator how much of the
+    world was dropped.
+    """
+
     source = _wikipedia_source(
         (CountingRows([_wikipedia_row(sentence_id="good")]),),
         (
@@ -1106,15 +1148,14 @@ def test_the_join_warns_when_the_cap_stops_it_indexing(caplog: pytest.LogCapture
         max_join_entries=1,
     )
 
-    with caplog.at_level("INFO", logger="landuse_sentence_relevance.sources.v3"):
+    with pytest.raises(ValueError) as error:
         list(source.iter_candidates())
 
-    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
-    assert warnings == [
-        "V3 join index is full at 1 keys after 1 shard(s); stopping before shard 2. "
-        "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it."
-    ]
-    assert "V3 join indexed 1 join keys from 1 shard(s)" in [record.getMessage() for record in caplog.records]
+    assert str(error.value) == (
+        "wikipedia polygons join index is full at 1 keys after 1 shard(s); "
+        "shard 2 and every later region would lose its geometry. "
+        "Raise max_join_entries so the index spans every shard."
+    )
 
 
 class BlockingRows:
@@ -1892,3 +1933,26 @@ def test_the_concurrent_path_skips_the_shards_it_already_read() -> None:
 
     assert sorted(opened) == [0, 3]
     assert sorted(row["n"] for row in rows) == [0, 3]
+
+
+def test_an_unlabelled_join_still_names_itself_when_its_index_fills() -> None:
+    """The join carries no label when called directly, and must still identify itself."""
+
+    from landuse_sentence_relevance.sources.v3 import _join_index
+
+    with pytest.raises(ValueError) as error:
+        _join_index(
+            (({"description_identity": "a" * 64, "osm_id": "1", "source_pbf": "r.osm.pbf"},), ({"x": 1},)),
+            key_for_row=lambda row: row.get("description_identity"),
+            place_for_row=lambda row: JoinedPlace(
+                latitude=1.0, longitude=2.0, place_name="P", region="r", record_id="1", source_url=None
+            ),
+            max_rows_per_shard=10,
+            max_entries=1,
+        )
+
+    assert str(error.value) == (
+        "V3 join index is full at 1 keys after 1 shard(s); "
+        "shard 2 and every later region would lose its geometry. "
+        "Raise max_join_entries so the index spans every shard."
+    )

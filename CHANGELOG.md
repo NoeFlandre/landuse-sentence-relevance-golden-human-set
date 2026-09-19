@@ -8,6 +8,20 @@ Each released version is an immutable git tag. A release freezes both the code
 and the committed dataset under `data/`; see [Versioning](docs/versioning.md)
 for what a release guarantees and how the next one is built without touching it.
 
+## [Unreleased]
+
+### Added
+
+- Deterministic V3 reserve candidates for source-by-label quota shortfalls, with
+  validation that keeps reserve IDs, cells, and sources globally sound.
+
+### Changed
+
+- V3 progress now derives candidate selection, quota accounting, and review rows
+  from one validated session snapshot, avoiding repeated scans during UI refreshes.
+- Fresh V3 seed selection uses bounded top-K ranking and the V3 documentation
+  describes reserve behavior and the Seagate-backed annotation command.
+
 ## [2.0.0] - 2026-09-14
 
 The V2 milestone: a contextual annotation pipeline, a three-rater agreement

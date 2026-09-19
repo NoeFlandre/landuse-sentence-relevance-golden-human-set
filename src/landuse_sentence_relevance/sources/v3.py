@@ -393,8 +393,7 @@ def _join_index(
     shards_read = 0
     for rows in _join_shard_rows(shards, max_rows_per_shard, max_workers, label):
         if len(index) >= max_entries:
-            _log_full_join_index(len(index), shards_read)
-            break
+            raise ValueError(_full_join_index_message(len(index), shards_read, label))
         shards_read += 1
         _index_shard(
             index,
@@ -431,13 +430,21 @@ def _join_shard_rows(
     )
 
 
-def _log_full_join_index(entries: int, shards_read: int) -> None:
-    logger.warning(
-        "V3 join index is full at %d keys after %d shard(s); stopping before shard %d. "
-        "Raise max_join_entries to keep indexing, or expect unmatched sentences beyond it.",
-        entries,
-        shards_read,
-        shards_read + 1,
+def _full_join_index_message(entries: int, shards_read: int, label: str) -> str:
+    """Explain why a truncated join stops the build rather than yielding a partial pool.
+
+    Shards arrive in a fixed order, so an index that fills part way through holds
+    only the regions it reached. Every later region loses its geometry, its
+    sentences yield no candidates, and the resulting gap is invisible downstream:
+    the per-source quota still passes and the source still reads to the end of
+    its own stream. Raising here is what keeps that from reaching a pool.
+    """
+
+    subject = f"{label} join index" if label else "V3 join index"
+    return (
+        f"{subject} is full at {entries} keys after {shards_read} shard(s); "
+        f"shard {shards_read + 1} and every later region would lose its geometry. "
+        "Raise max_join_entries so the index spans every shard."
     )
 
 

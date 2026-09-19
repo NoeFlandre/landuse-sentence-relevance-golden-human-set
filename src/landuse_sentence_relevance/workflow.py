@@ -14,9 +14,8 @@ from landuse_sentence_relevance.domain.v3_annotation import V3AnnotationSeed
 from landuse_sentence_relevance.domain.v3_progress import (
     V3AnnotationProgress,
     V3SourceProgress,
+    inspect_v3_session,
     next_v3_candidate,
-    ordered_v3_annotations,
-    summarize_v3_progress,
 )
 from landuse_sentence_relevance.storage.publisher import DatasetPublicationError, DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
@@ -260,7 +259,7 @@ class V3AnnotationWorkflow:
         self._closed = False
         self._annotations = store.load()
         self._seeded_ids = {row.candidate.candidate_id for row in seed.seeded_rows}
-        summarize_v3_progress(seed, self._annotations)
+        inspect_v3_session(seed, self._annotations)
         logger.info(
             "Loaded %d fresh V3 annotations; %d frozen V2 rows count toward progress",
             len(self._annotations),
@@ -321,13 +320,12 @@ class V3AnnotationWorkflow:
             self._closed = True
 
     def _state_unlocked(self) -> V3WorkflowState:
-        progress = summarize_v3_progress(self._seed, self._annotations)
-        candidate = next_v3_candidate(self._seed, self._annotations)
+        snapshot = inspect_v3_session(self._seed, self._annotations)
         return V3WorkflowState(
-            current_candidate=candidate,
-            progress=progress,
-            final_ready=candidate is None,
-            annotations=ordered_v3_annotations(self._seed, self._annotations),
+            current_candidate=snapshot.current_candidate,
+            progress=snapshot.progress,
+            final_ready=snapshot.current_candidate is None,
+            annotations=snapshot.annotations,
         )
 
     def _save_and_replace(self, annotations: dict[str, Annotation]) -> None:

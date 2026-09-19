@@ -176,7 +176,10 @@ def select_distinct_source_cells(
     conflict_counts = _conflict_counts(centers, minimum_distance_km) if minimum_distance_km > 0 else None
     selected_by_source = _empty_source_selection(sources)
     selected_cells: list[str] = []
-    nearest_distances = {} if minimum_distance_km > 0 else None
+    # Keep the nearest-selected distance per cell whatever the minimum distance is.
+    # The farthest-point choice needs that distance every round, and folding in only
+    # the newest selection gives the same answer as rescanning the whole selection.
+    nearest_distances: dict[str, float] = {}
     for _ in range(target_count_per_source):
         _append_selection_round(
             available,
@@ -409,17 +412,46 @@ def _feasible_source_cells(
     target_count: int,
     sources: tuple[Source, ...] = DEFAULT_SOURCES,
 ) -> list[str]:
-    candidates = sorted(available[source] - set(selected_cells))
-    feasible: list[str] = []
-    for candidate in candidates:
-        used = set(selected_cells) | {candidate}
-        if all(
-            len(available[other] - used)
-            >= target_count - len(selected_by_source[other]) - (1 if other is source else 0)
-            for other in sources
-        ):
-            feasible.append(candidate)
-    return feasible
+    # Taking one candidate removes at most that single cell from each source's
+    # remaining pool, so the per-source difference against the whole selection is
+    # computed once here rather than rebuilt for every candidate. That turns a
+    # quadratic scan over the pool into a membership test per candidate and
+    # leaves the feasible set identical.
+    selected = set(selected_cells)
+    remaining = {other: available[other] - selected for other in sources}
+    required = {
+        other: _cells_still_required(other, source, selected_by_source, target_count) for other in sources
+    }
+    return [
+        candidate
+        for candidate in sorted(remaining[source])
+        if _leaves_every_source_feasible(candidate, remaining, required, sources)
+    ]
+
+
+def _cells_still_required(
+    other: Source,
+    source: Source,
+    selected_by_source: Mapping[Source, list[str]],
+    target_count: int,
+) -> int:
+    """Return how many cells ``other`` must still find, once ``source`` takes one."""
+
+    return target_count - len(selected_by_source[other]) - (1 if other is source else 0)
+
+
+def _leaves_every_source_feasible(
+    candidate: str,
+    remaining: Mapping[Source, set[str]],
+    required: Mapping[Source, int],
+    sources: tuple[Source, ...],
+) -> bool:
+    """Check that taking ``candidate`` still leaves every source enough cells."""
+
+    return all(
+        len(remaining[other]) - (1 if candidate in remaining[other] else 0) >= required[other]
+        for other in sources
+    )
 
 
 def _distant_cells(
