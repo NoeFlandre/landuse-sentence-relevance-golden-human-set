@@ -15,12 +15,15 @@ Source rows from Hugging Face are streamed and are never stored locally.
 | Path | Rows | Contents |
 | --- | --- | --- |
 | `data/benchmark/v2-adjudicated.csv` | 154 | **The benchmark to use.** The human V2 export with every three-rater disagreement resolved by hand and the flagged rows removed |
+| `data/benchmark/v3-human-completed.csv` | 300 | Completed V3 human benchmark: 100 Wikipedia, 100 Website, and 100 Description rows, with 50 `yes` and 50 `no` labels per source |
 
 It carries the same nine columns as the human export it was built from — `sentence`, `label`, `polygon_name`, `h3_cell`, `latitude`, `longitude`, `source`, `region`, `source_url` — in the same column and row order. Only two things differ from that export: 4 sentences flagged `remove` during adjudication are gone, and 9 `label` values were replaced by the adjudicated verdict. Labels are 80 `yes` and 74 `no`.
 
 It is regenerated, never hand-edited: `scripts/interrater_agreement.py` rebuilds it from the three rater exports plus `data/interrater/adjudication.csv`. See [Interrater agreement](interrater-agreement.md) for the method.
 
-This is the only final-benchmark copy; generated analysis outputs do not duplicate it.
+The V3 export is a separate immutable benchmark and does not replace V2. It was selected from the frozen V2 rows and the completed V3 annotation session after all six source/label quotas were filled.
+
+These are the only committed final-benchmark copies; generated analysis outputs do not duplicate them.
 
 ## Interrater review tables
 
