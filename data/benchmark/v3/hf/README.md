@@ -474,6 +474,15 @@ The map shows the coordinates of all 300 benchmark records, colored by source
 retained across all language files. Country outlines use Natural Earth 110m
 data; the map is a coverage visualization, not a population-density estimate.
 
+This PNG is generated deterministically from the final English benchmark by
+[`scripts/build_v3_world_map.py`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/scripts/build_v3_world_map.py)
+with the pinned Matplotlib 3.11.1 Agg renderer. The generator validates the
+300 benchmark coordinates, uses a committed geometry-only Natural Earth 110m
+source, performs no network access, and writes this card asset at
+`assets/v3-world-distribution.png`. The source-data provenance and checksum
+are documented in the project repository's
+`data/benchmark/v3/assets/README.md`.
+
 ## English benchmark provenance
 
 The English benchmark was built from a completed human reference. An

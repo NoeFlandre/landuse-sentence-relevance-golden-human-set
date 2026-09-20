@@ -99,6 +99,20 @@ map uses Natural Earth 110m country outlines and a WGS84 longitude/latitude
 display; it is a visualization of benchmark coverage, not a population or
 source-density estimate.
 
+The map is generated deterministically with:
+
+```bash
+uv run python scripts/build_v3_world_map.py
+```
+
+The generator validates `data/benchmark/v3/final/v3-final.csv`, reads the
+geometry-only Natural Earth source at
+`data/benchmark/v3/assets/natural-earth-110m-admin-0.geojson`, and writes the
+PNG at `data/benchmark/v3/assets/v3-world-distribution.png`. It uses the
+pinned Matplotlib 3.11.1 Agg renderer and performs no network access. The
+boundary source provenance and upstream checksum are recorded in
+`data/benchmark/v3/assets/README.md`.
+
 ## Release layout and checks
 
 ```text
