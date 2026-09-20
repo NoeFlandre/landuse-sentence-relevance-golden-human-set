@@ -1,0 +1,92 @@
+{
+  "source_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  "zoom": 2,
+  "tile_size": 256,
+  "tiles_root": "osm-tiles/z2",
+  "retrieved_at": "2026-09-20",
+  "attribution": "© OpenStreetMap contributors",
+  "license": "Open Database License (ODbL) 1.0",
+  "tiles": [
+    {
+      "x": 0,
+      "y": 0,
+      "sha256": "61b17d82239438cacef179852341b684d534dd4b1617d739eb6ff89cb183e488"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "sha256": "d161d7e1ffe6a9101cdf3fce992fe3740c10d95dd283b62b6bfe9fc2428111c4"
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "sha256": "eaea4954423ab82d8d4a1ce0b514c64064bc2158d3dbe201feb29d1fd4fd72fc"
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "sha256": "87035aacce0f6d648ccf651df0311233935ef04c23c4c1cb70bc7172517cd0b1"
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "sha256": "c255ecc0595113d9bd3f855707dafa8c7ee68f8f8d9749bad9ecf23e05fa0946"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "sha256": "3c1ecabce48e8b845b33f1bb67303dd90434181275a537ce348644dc064db687"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "sha256": "bc9de25c55bd309fd707bb955ec9d597da927088cac499034a8acb789afeb110"
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "sha256": "782d8d77327b8a51d7c5bbe5a73f74bd03c4779c8e18c5eddd0690e1abe51e5c"
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "sha256": "1c77b348765c66299f86929a49254e3e6d7893d3930322ff7879dda6d9071899"
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "sha256": "656fe124e61436e2a4f566268011cbb849ae9c86b2140e473521581fcd4b829d"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "sha256": "eda6fc5f1b193e79cca1619689431a039404d55d4fb42176d83e8a2ddf3b3cb8"
+    },
+    {
+      "x": 3,
+      "y": 2,
+      "sha256": "366d4d8b1c49a2096d8525d4dda6643fc89ecbe135837a790f1a295de06d7fd9"
+    },
+    {
+      "x": 0,
+      "y": 3,
+      "sha256": "8bf3a52c0475ba92229f54ad5c31b232f030513f1b792fea6e6ed161992a46a5"
+    },
+    {
+      "x": 1,
+      "y": 3,
+      "sha256": "2af66b3466868d226528bf31016f6962ee83e890c2afb737575c8d11c0f04641"
+    },
+    {
+      "x": 2,
+      "y": 3,
+      "sha256": "00c24b8e4f57e405687aa53d4b1adaca05950d5412b5dd1874a74a384942a6a5"
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "sha256": "d861020f25fbc612b0597abcb1868dcf5e2856d10b8c3945a51c3010197ca17d"
+    }
+  ],
+  "mosaic_sha256": "cca8296b91a42f92f7c85a20273c0454e2207e85530f2b5f776d1f5d91847be5"
+}

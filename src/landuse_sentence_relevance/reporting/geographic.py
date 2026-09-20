@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -34,7 +33,9 @@ SOURCE_LABELS = {
     "website": "Website",
     "wikipedia": "Wikipedia",
 }
-type BoundaryRing = tuple[tuple[float, float], ...]
+OSM_BASEMAP_SIZE = (1024, 1024)
+OSM_MAX_LATITUDE = 85.05112878
+WEB_MERCATOR_LIMIT = math.pi
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,67 +67,31 @@ def load_benchmark_points(
     return points
 
 
-def load_boundary_rings(path: Path) -> tuple[BoundaryRing, ...]:
-    """Read exterior Polygon and MultiPolygon rings from a GeoJSON file."""
+def load_osm_basemap(path: Path, *, expected_size: tuple[int, int] = OSM_BASEMAP_SIZE) -> Any:
+    """Load and validate the committed OSM raster basemap."""
 
-    document = _read_json(path)
-    features = _feature_collection_features(document, path)
-    return tuple(
-        ring
-        for feature_number, feature in enumerate(features, start=1)
-        for ring in _feature_boundary_rings(feature, path, feature_number)
-    )
+    import matplotlib.image as mpimg
 
-
-def _read_json(path: Path) -> Any:
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    image = mpimg.imread(path)
+    if image.ndim != 3 or image.shape[2] not in (3, 4):
+        raise ValueError(f"{path} must be an RGB or RGBA PNG")
+    width, height = image.shape[1], image.shape[0]
+    if (width, height) != expected_size:
+        raise ValueError(f"{path} must be {expected_size[0]}x{expected_size[1]}")
+    return image
 
 
-def _feature_collection_features(document: Any, path: Path) -> list[Any]:
-    if not isinstance(document, dict) or document.get("type") != "FeatureCollection":
-        raise ValueError(f"{path} must contain a GeoJSON FeatureCollection")
-    features = document.get("features")
-    if not isinstance(features, list) or not features:
-        raise ValueError(f"{path} must contain at least one GeoJSON feature")
-    return features
+def web_mercator_y(latitude: float) -> float:
+    """Convert latitude to the Web Mercator vertical coordinate used by OSM tiles."""
 
-
-def _feature_boundary_rings(feature: Any, path: Path, feature_number: int) -> tuple[BoundaryRing, ...]:
-    if not isinstance(feature, dict):
-        raise ValueError(f"{path} feature {feature_number} is not an object")
-    geometry = feature.get("geometry")
-    if not isinstance(geometry, dict):
-        raise ValueError(f"{path} feature {feature_number} has no geometry")
-    return tuple(
-        _parse_boundary_ring(_polygon_exterior(polygon, path, feature_number), path, feature_number)
-        for polygon in _geometry_polygons(geometry, path, feature_number)
-    )
-
-
-def _geometry_polygons(geometry: dict[str, Any], path: Path, feature_number: int) -> list[Any]:
-    geometry_type = geometry.get("type")
-    coordinates = geometry.get("coordinates")
-    if geometry_type == "Polygon":
-        polygons = [coordinates]
-    elif geometry_type == "MultiPolygon":
-        polygons = coordinates
-    else:
-        raise ValueError(f"{path} feature {feature_number} uses unsupported geometry {geometry_type!r}")
-    if not isinstance(polygons, list):
-        raise ValueError(f"{path} feature {feature_number} has malformed polygon coordinates")
-    return polygons
-
-
-def _polygon_exterior(polygon: Any, path: Path, feature_number: int) -> Any:
-    if not isinstance(polygon, list) or not polygon:
-        raise ValueError(f"{path} feature {feature_number} has an empty polygon")
-    return polygon[0]
+    clipped = max(-OSM_MAX_LATITUDE, min(OSM_MAX_LATITUDE, latitude))
+    radians = math.radians(clipped)
+    return math.log(math.tan(math.pi / 4.0 + radians / 2.0))
 
 
 def render_world_map(
     points: Sequence[BenchmarkPoint],
-    boundary_rings: Sequence[BoundaryRing],
+    basemap: Any,
     output_path: Path,
 ) -> None:
     """Render the fixed V3 coverage map without network or clock input."""
@@ -134,11 +99,18 @@ def render_world_map(
     import matplotlib
 
     matplotlib.use("Agg", force=True)
-    figure, canvas, polygon_class = _new_canvas()
+    figure, canvas = _new_canvas()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         axes = _configure_axes(figure)
-        _draw_boundaries(axes, boundary_rings, polygon_class)
+        axes.imshow(
+            basemap,
+            extent=(-180.0, 180.0, -WEB_MERCATOR_LIMIT, WEB_MERCATOR_LIMIT),
+            origin="upper",
+            interpolation="bilinear",
+            aspect="auto",
+            zorder=0,
+        )
         _draw_points(axes, points)
         _add_figure_labels(figure)
         canvas.print_png(output_path, metadata={"Software": "Matplotlib 3.11.1"})
@@ -146,60 +118,46 @@ def render_world_map(
         figure.clear()
 
 
-def _new_canvas() -> tuple[Any, Any, Any]:
+def _new_canvas() -> tuple[Any, Any]:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
-    from matplotlib.patches import Polygon
 
     figure = Figure(figsize=(14.28, 7.72), dpi=100, facecolor="#f5f7fa")
-    return figure, FigureCanvasAgg(figure), Polygon
+    return figure, FigureCanvasAgg(figure)
 
 
 def _configure_axes(figure: Any) -> Any:
-    axes = figure.add_axes((0.035, 0.10, 0.93, 0.80), facecolor="#e7f2f8")
+    axes = figure.add_axes((0.035, 0.10, 0.93, 0.80), facecolor="#a8d0df")
     axes.set_xlim(-180, 180)
-    axes.set_ylim(-60, 85)
+    axes.set_ylim(-WEB_MERCATOR_LIMIT, WEB_MERCATOR_LIMIT)
     axes.set_xticks(range(-180, 181, 30))
-    axes.set_yticks(range(-60, 81, 20))
-    axes.grid(color="white", linewidth=0.8, alpha=0.85)
+    latitudes = tuple(range(-80, 81, 20))
+    axes.set_yticks([web_mercator_y(latitude) for latitude in latitudes])
+    axes.set_yticklabels([f"{latitude}°" for latitude in latitudes])
+    axes.grid(color="white", linewidth=0.8, alpha=0.72)
     axes.set_axisbelow(True)
     for spine in axes.spines.values():
-        spine.set_color("#b7cbd4")
+        spine.set_color("#789eaa")
         spine.set_linewidth(0.8)
     return axes
-
-
-def _draw_boundaries(axes: Any, boundary_rings: Sequence[BoundaryRing], polygon_class: Any) -> None:
-    for ring in boundary_rings:
-        axes.add_patch(
-            polygon_class(
-                ring,
-                closed=True,
-                fill=True,
-                facecolor="#dce6d7",
-                edgecolor="#becabd",
-                linewidth=0.45,
-                antialiased=True,
-                zorder=1,
-            )
-        )
 
 
 def _draw_points(axes: Any, points: Sequence[BenchmarkPoint]) -> None:
     counts = Counter(point.source for point in points)
     for source in SOURCE_ORDER:
         _draw_source_points(axes, points, source, counts[source])
-    axes.legend(loc="lower left", framealpha=0.85, fontsize=9)
+    axes.legend(loc="lower left", framealpha=0.88, fontsize=9)
 
 
 def _draw_source_points(axes: Any, points: Sequence[BenchmarkPoint], source: str, count: int) -> None:
     source_points = [point for point in points if point.source == source]
     axes.scatter(
         [point.longitude for point in source_points],
-        [point.latitude for point in source_points],
-        s=18,
+        [web_mercator_y(point.latitude) for point in source_points],
+        s=24,
         color=SOURCE_COLORS[source],
         edgecolors="none",
+        alpha=0.82,
         label=f"{SOURCE_LABELS[source]} ({count})",
         zorder=3,
     )
@@ -209,7 +167,7 @@ def _add_figure_labels(figure: Any) -> None:
     figure.text(
         0.035,
         0.965,
-        "V3 multilingual benchmark - sentence locations",
+        "V3 benchmark coverage - 300 sentences plotted",
         color="#20385d",
         fontsize=20,
         fontweight="bold",
@@ -218,15 +176,15 @@ def _add_figure_labels(figure: Any) -> None:
     figure.text(
         0.035,
         0.928,
-        "300 English benchmark records; coordinates retained across all 85 language files",
+        "Description, Website, and Wikipedia sources | coordinates retained across all 85 language files",
         color="#52657d",
         fontsize=10,
         va="top",
     )
     figure.text(
-        0.755,
+        0.590,
         0.022,
-        "Coordinates: benchmark metadata | WGS84 / Plate Carree",
+        "Basemap: © OpenStreetMap contributors | Web Mercator",
         color="#52657d",
         fontsize=8,
         ha="left",
@@ -271,18 +229,3 @@ def _validate_source_counts(
         raise ValueError(
             f"{path} source counts {actual} do not match expected source counts {normalized_expected}"
         )
-
-
-def _parse_boundary_ring(raw_ring: Any, path: Path, feature_number: int) -> BoundaryRing:
-    if not isinstance(raw_ring, list) or len(raw_ring) < 4:
-        raise ValueError(f"{path} feature {feature_number} has an invalid exterior ring")
-    return tuple(_boundary_point(coordinate, path, feature_number) for coordinate in raw_ring)
-
-
-def _boundary_point(coordinate: Any, path: Path, feature_number: int) -> tuple[float, float]:
-    if not isinstance(coordinate, list) or len(coordinate) < 2:
-        raise ValueError(f"{path} feature {feature_number} has an invalid boundary coordinate")
-    longitude, latitude = float(coordinate[0]), float(coordinate[1])
-    if not math.isfinite(longitude) or not math.isfinite(latitude):
-        raise ValueError(f"{path} feature {feature_number} has a non-finite boundary coordinate")
-    return longitude, latitude

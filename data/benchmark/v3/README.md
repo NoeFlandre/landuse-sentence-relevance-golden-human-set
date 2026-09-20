@@ -5,7 +5,7 @@ This directory contains the complete V3 benchmark trail in lifecycle order:
 - `reference/` — the original completed human benchmark.
 - `independent-review/` — the blinded input, GPT response, generated disagreement queue, and human-reviewed resolutions.
 - `final/` — the final benchmark produced from the reference plus the reviewed resolutions.
-- `assets/` — the Natural Earth geometry source and generated world-distribution map used by the multilingual release.
+- `assets/` — the pinned OSM physical basemap, provenance manifest, and generated world-distribution map used by the multilingual release.
 - `translations/` — one parallel CSV per project-provided `sat-3l-sm` language code.
 
 Use [`final/v3-final.csv`](final/v3-final.csv) as the final V3 benchmark for this annotation round. The full method, counts, and integrity record are in the [V3 final benchmark documentation](../../../docs/v3-final-benchmark.md).
@@ -26,7 +26,8 @@ The map is reproducible from this checkout with:
 uv run python scripts/build_v3_world_map.py
 ```
 
-The command validates `final/v3-final.csv`, reads the committed Natural Earth
-110m geometry at `assets/natural-earth-110m-admin-0.geojson`, and writes
-`assets/v3-world-distribution.png` using the pinned Matplotlib 3.11.1 renderer.
-It performs no network access.
+The command validates `final/v3-final.csv`, reads the committed OSM z2 basemap
+at `assets/osm-world-z2.png`, and writes `assets/v3-world-distribution.png`
+using the pinned Matplotlib 3.11.1 renderer. It performs no network access.
+The exact 16 source tile bytes and their checksums are kept under
+`assets/osm-tiles/z2/` and recorded in `assets/osm-world-z2-manifest.json`.
