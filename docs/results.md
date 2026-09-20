@@ -25,6 +25,14 @@ The V3 export is a separate immutable benchmark and does not replace V2. It was 
 
 These are the only committed final-benchmark copies; generated analysis outputs do not duplicate them.
 
+## Independent review input
+
+| Path | Rows | Contents |
+| --- | --- | --- |
+| `data/benchmark/v3-independent-review-input.csv` | 300 | Label-free copy of the V3 benchmark for an independent model review; it preserves row order and metadata but omits `label` |
+
+This file is an annotation input, not a benchmark release. It intentionally contains no annotation column so an external reviewer can return one judgment per sentence without seeing the gold labels.
+
 ## Interrater review tables
 
 Committed, one row per sentence the three raters did not agree on.
