@@ -30,8 +30,12 @@ These are the only committed final-benchmark copies; generated analysis outputs 
 | Path | Rows | Contents |
 | --- | --- | --- |
 | `data/benchmark/v3-independent-review-input.csv` | 300 | Label-free copy of the V3 benchmark for an independent model review; it preserves row order and metadata but omits `label` |
+| `data/benchmark/v3-gpt-sol-5.6-extra-high.csv` | 300 | GPT response supplied for the independent review; parsed content is preserved in canonical UTF-8 CSV form and adds GPT's `label` |
+| `data/benchmark/v3-human-gpt-disagreements.csv` | 42 | Minimal reconciliation sheet containing only disagreement sentences, both decisions, and an empty `final_human_label` column |
 
 This file is an annotation input, not a benchmark release. It intentionally contains no annotation column so an external reviewer can return one judgment per sentence without seeing the gold labels.
+
+The comparison and reassessment workflow is documented in [V3 independent GPT review](v3-gpt-independent-review.md).
 
 ## Interrater review tables
 
