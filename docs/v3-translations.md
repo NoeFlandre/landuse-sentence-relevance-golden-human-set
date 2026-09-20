@@ -95,9 +95,9 @@ translations.
 The map shows the latitude/longitude metadata of the 300 English benchmark
 records, colored by source. All language files retain these same coordinates,
 so the geographic distribution is shared across the multilingual release. The
-map uses Natural Earth 110m country outlines and a WGS84 longitude/latitude
-display; it is a visualization of benchmark coverage, not a population or
-source-density estimate.
+map uses an OpenStreetMap standard zoom-2 physical basemap in Web Mercator;
+it is a visualization of benchmark coverage, not a population or source-density
+estimate. The legend distinguishes Description, Website, and Wikipedia points.
 
 The map is generated deterministically with:
 
@@ -106,12 +106,11 @@ uv run python scripts/build_v3_world_map.py
 ```
 
 The generator validates `data/benchmark/v3/final/v3-final.csv`, reads the
-geometry-only Natural Earth source at
-`data/benchmark/v3/assets/natural-earth-110m-admin-0.geojson`, and writes the
-PNG at `data/benchmark/v3/assets/v3-world-distribution.png`. It uses the
-pinned Matplotlib 3.11.1 Agg renderer and performs no network access. The
-boundary source provenance and upstream checksum are recorded in
-`data/benchmark/v3/assets/README.md`.
+committed OSM mosaic at `data/benchmark/v3/assets/osm-world-z2.png`, and writes
+the PNG at `data/benchmark/v3/assets/v3-world-distribution.png`. It uses the
+pinned Matplotlib 3.11.1 Agg renderer and performs no network access. The OSM
+tile provenance and checksums are recorded in
+`data/benchmark/v3/assets/osm-world-z2-manifest.json` and its README.
 
 ## Release layout and checks
 

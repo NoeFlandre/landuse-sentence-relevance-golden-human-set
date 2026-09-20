@@ -146,8 +146,8 @@
   },
   "geographic_asset": {
     "path": "data/benchmark/v3/assets/v3-world-distribution.png",
-    "sha256": "c1d703dca42f8b607b214026e315126828638c8a18854cf82775b1cc8a8c1e87",
-    "description": "300 benchmark coordinates by source, with Natural Earth 110m country outlines; shared by all language files."
+    "sha256": "5002d10095ed097525b7d68a4b1dd4c433066732ff0da4c9cf66e09cfcbb7a90",
+    "description": "300 benchmark coordinates by source, with an OpenStreetMap standard z2 physical basemap; shared by all language files."
   },
   "validation": {
     "files_checked": 85,

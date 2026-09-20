@@ -1,18 +1,26 @@
 # V3 geographic map assets
 
-`natural-earth-110m-admin-0.geojson` is a geometry-only reduction of Natural
-Earth's 1:110m Admin 0 Countries dataset. It was retrieved on 2026-09-20 from:
+`osm-world-z2.png` is a 1024x1024, 4x4 mosaic of OpenStreetMap standard
+tiles at zoom level 2. It provides the pale physical world basemap shown
+behind the 300 benchmark coordinates. The source tile URL template is:
 
-<https://naturalearth.s3.amazonaws.com/110m_cultural/ne_110m_admin_0_countries.zip>
+<https://tile.openstreetmap.org/{z}/{x}/{y}.png>
 
-The upstream archive SHA-256 is
-`0f243aeac8ac6cf26f0417285b0bd33ac47f1b5bdb719fd3e0df37d03ea37110`. The
-reduction keeps the original Polygon and MultiPolygon geometries, removes all
-properties, and writes a sorted compact GeoJSON FeatureCollection. This keeps
-map generation offline and avoids depending on a local GIS cache.
+The exact tile checksums, retrieval date, mosaic checksum, attribution, and
+license record are in `osm-world-z2-manifest.json`. The current mosaic SHA-256
+is `36d8cdc3d8442e6a71660eac7d81c3d1d89af347808c7a2c923cac9c382fdf7a`.
 
-Natural Earth data is public domain. See <https://www.naturalearthdata.com/about/terms-of-use/>
-for the upstream terms and attribution guidance.
+The maintenance command
+`scripts/prepare_v3_osm_basemap.py` can re-fetch and verify the pinned tiles.
+The normal map command only reads the committed PNG and performs no network
+access:
 
-The asset is consumed by `scripts/build_v3_world_map.py` and is not downloaded
-or modified during normal generation.
+```bash
+uv run python scripts/build_v3_world_map.py
+```
+
+Map data attribution: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
+OpenStreetMap data is available under the
+[Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/);
+the tile service is also subject to the
+[OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
