@@ -24,6 +24,16 @@ REQUIRED_COLUMNS = (
 )
 SOURCE_ORDER = ("description", "website", "wikipedia")
 V3_SOURCE_COUNTS = {source: 100 for source in SOURCE_ORDER}
+SOURCE_COLORS = {
+    "description": "#e58a13",
+    "website": "#477ff0",
+    "wikipedia": "#28a67d",
+}
+SOURCE_LABELS = {
+    "description": "Description",
+    "website": "Website",
+    "wikipedia": "Wikipedia",
+}
 type BoundaryRing = tuple[tuple[float, float], ...]
 
 
@@ -59,38 +69,59 @@ def load_benchmark_points(
 def load_boundary_rings(path: Path) -> tuple[BoundaryRing, ...]:
     """Read exterior Polygon and MultiPolygon rings from a GeoJSON file."""
 
-    with path.open(encoding="utf-8") as handle:
-        document = json.load(handle)
+    document = _read_json(path)
+    features = _feature_collection_features(document, path)
+    return tuple(
+        ring
+        for feature_number, feature in enumerate(features, start=1)
+        for ring in _feature_boundary_rings(feature, path, feature_number)
+    )
 
+
+def _read_json(path: Path) -> Any:
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _feature_collection_features(document: Any, path: Path) -> list[Any]:
     if not isinstance(document, dict) or document.get("type") != "FeatureCollection":
         raise ValueError(f"{path} must contain a GeoJSON FeatureCollection")
-
     features = document.get("features")
     if not isinstance(features, list) or not features:
         raise ValueError(f"{path} must contain at least one GeoJSON feature")
+    return features
 
-    rings: list[BoundaryRing] = []
-    for feature_number, feature in enumerate(features, start=1):
-        if not isinstance(feature, dict):
-            raise ValueError(f"{path} feature {feature_number} is not an object")
-        geometry = feature.get("geometry")
-        if not isinstance(geometry, dict):
-            raise ValueError(f"{path} feature {feature_number} has no geometry")
-        geometry_type = geometry.get("type")
-        coordinates = geometry.get("coordinates")
-        if geometry_type == "Polygon":
-            polygon_coordinates = [coordinates]
-        elif geometry_type == "MultiPolygon":
-            polygon_coordinates = coordinates
-        else:
-            raise ValueError(f"{path} feature {feature_number} uses unsupported geometry {geometry_type!r}")
-        if not isinstance(polygon_coordinates, list):
-            raise ValueError(f"{path} feature {feature_number} has malformed polygon coordinates")
-        for polygon in polygon_coordinates:
-            if not isinstance(polygon, list) or not polygon:
-                raise ValueError(f"{path} feature {feature_number} has an empty polygon")
-            rings.append(_parse_boundary_ring(polygon[0], path, feature_number))
-    return tuple(rings)
+
+def _feature_boundary_rings(feature: Any, path: Path, feature_number: int) -> tuple[BoundaryRing, ...]:
+    if not isinstance(feature, dict):
+        raise ValueError(f"{path} feature {feature_number} is not an object")
+    geometry = feature.get("geometry")
+    if not isinstance(geometry, dict):
+        raise ValueError(f"{path} feature {feature_number} has no geometry")
+    return tuple(
+        _parse_boundary_ring(_polygon_exterior(polygon, path, feature_number), path, feature_number)
+        for polygon in _geometry_polygons(geometry, path, feature_number)
+    )
+
+
+def _geometry_polygons(geometry: dict[str, Any], path: Path, feature_number: int) -> list[Any]:
+    geometry_type = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+    if geometry_type == "Polygon":
+        polygons = [coordinates]
+    elif geometry_type == "MultiPolygon":
+        polygons = coordinates
+    else:
+        raise ValueError(f"{path} feature {feature_number} uses unsupported geometry {geometry_type!r}")
+    if not isinstance(polygons, list):
+        raise ValueError(f"{path} feature {feature_number} has malformed polygon coordinates")
+    return polygons
+
+
+def _polygon_exterior(polygon: Any, path: Path, feature_number: int) -> Any:
+    if not isinstance(polygon, list) or not polygon:
+        raise ValueError(f"{path} feature {feature_number} has an empty polygon")
+    return polygon[0]
 
 
 def render_world_map(
@@ -103,92 +134,99 @@ def render_world_map(
     import matplotlib
 
     matplotlib.use("Agg", force=True)
+    figure, canvas, polygon_class = _new_canvas()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        axes = _configure_axes(figure)
+        _draw_boundaries(axes, boundary_rings, polygon_class)
+        _draw_points(axes, points)
+        _add_figure_labels(figure)
+        canvas.print_png(output_path, metadata={"Software": "Matplotlib 3.11.1"})
+    finally:
+        figure.clear()
+
+
+def _new_canvas() -> tuple[Any, Any, Any]:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
     from matplotlib.patches import Polygon
 
-    source_colors = {
-        "description": "#e58a13",
-        "website": "#477ff0",
-        "wikipedia": "#28a67d",
-    }
-    source_labels = {
-        "description": "Description",
-        "website": "Website",
-        "wikipedia": "Wikipedia",
-    }
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     figure = Figure(figsize=(14.28, 7.72), dpi=100, facecolor="#f5f7fa")
-    canvas = FigureCanvasAgg(figure)
-    try:
-        axes = figure.add_axes((0.035, 0.10, 0.93, 0.80), facecolor="#e7f2f8")
-        axes.set_xlim(-180, 180)
-        axes.set_ylim(-60, 85)
-        axes.set_xticks(range(-180, 181, 30))
-        axes.set_yticks(range(-60, 81, 20))
-        axes.grid(color="white", linewidth=0.8, alpha=0.85)
-        axes.set_axisbelow(True)
-        for spine in axes.spines.values():
-            spine.set_color("#b7cbd4")
-            spine.set_linewidth(0.8)
+    return figure, FigureCanvasAgg(figure), Polygon
 
-        for ring in boundary_rings:
-            axes.add_patch(
-                Polygon(
-                    ring,
-                    closed=True,
-                    fill=True,
-                    facecolor="#dce6d7",
-                    edgecolor="#becabd",
-                    linewidth=0.45,
-                    antialiased=True,
-                    zorder=1,
-                )
+
+def _configure_axes(figure: Any) -> Any:
+    axes = figure.add_axes((0.035, 0.10, 0.93, 0.80), facecolor="#e7f2f8")
+    axes.set_xlim(-180, 180)
+    axes.set_ylim(-60, 85)
+    axes.set_xticks(range(-180, 181, 30))
+    axes.set_yticks(range(-60, 81, 20))
+    axes.grid(color="white", linewidth=0.8, alpha=0.85)
+    axes.set_axisbelow(True)
+    for spine in axes.spines.values():
+        spine.set_color("#b7cbd4")
+        spine.set_linewidth(0.8)
+    return axes
+
+
+def _draw_boundaries(axes: Any, boundary_rings: Sequence[BoundaryRing], polygon_class: Any) -> None:
+    for ring in boundary_rings:
+        axes.add_patch(
+            polygon_class(
+                ring,
+                closed=True,
+                fill=True,
+                facecolor="#dce6d7",
+                edgecolor="#becabd",
+                linewidth=0.45,
+                antialiased=True,
+                zorder=1,
             )
+        )
 
-        counts = Counter(point.source for point in points)
-        for source in SOURCE_ORDER:
-            source_points = [point for point in points if point.source == source]
-            axes.scatter(
-                [point.longitude for point in source_points],
-                [point.latitude for point in source_points],
-                s=18,
-                color=source_colors[source],
-                edgecolors="none",
-                label=f"{source_labels[source]} ({counts[source]})",
-                zorder=3,
-            )
 
-        axes.legend(loc="lower left", framealpha=0.85, fontsize=9)
-        figure.text(
-            0.035,
-            0.965,
-            "V3 multilingual benchmark - sentence locations",
-            color="#20385d",
-            fontsize=20,
-            fontweight="bold",
-            va="top",
+def _draw_points(axes: Any, points: Sequence[BenchmarkPoint]) -> None:
+    counts = Counter(point.source for point in points)
+    for source in SOURCE_ORDER:
+        source_points = [point for point in points if point.source == source]
+        axes.scatter(
+            [point.longitude for point in source_points],
+            [point.latitude for point in source_points],
+            s=18,
+            color=SOURCE_COLORS[source],
+            edgecolors="none",
+            label=f"{SOURCE_LABELS[source]} ({counts[source]})",
+            zorder=3,
         )
-        figure.text(
-            0.035,
-            0.928,
-            "300 English benchmark records; coordinates retained across all 85 language files",
-            color="#52657d",
-            fontsize=10,
-            va="top",
-        )
-        figure.text(
-            0.755,
-            0.022,
-            "Coordinates: benchmark metadata | WGS84 / Plate Carree",
-            color="#52657d",
-            fontsize=8,
-            ha="left",
-        )
-        canvas.print_png(output_path, metadata={"Software": "Matplotlib 3.11.1"})
-    finally:
-        figure.clear()
+    axes.legend(loc="lower left", framealpha=0.85, fontsize=9)
+
+
+def _add_figure_labels(figure: Any) -> None:
+    figure.text(
+        0.035,
+        0.965,
+        "V3 multilingual benchmark - sentence locations",
+        color="#20385d",
+        fontsize=20,
+        fontweight="bold",
+        va="top",
+    )
+    figure.text(
+        0.035,
+        0.928,
+        "300 English benchmark records; coordinates retained across all 85 language files",
+        color="#52657d",
+        fontsize=10,
+        va="top",
+    )
+    figure.text(
+        0.755,
+        0.022,
+        "Coordinates: benchmark metadata | WGS84 / Plate Carree",
+        color="#52657d",
+        fontsize=8,
+        ha="left",
+    )
 
 
 def _point_from_row(row: dict[str, str | None], path: Path, row_number: int) -> BenchmarkPoint:
@@ -208,6 +246,10 @@ def _coordinate(value: str | None, name: str, path: Path, row_number: int) -> fl
         coordinate = float(value or "")
     except ValueError as error:
         raise ValueError(f"{path} row {row_number} has invalid {name}") from error
+    return _validated_coordinate(coordinate, name, path, row_number)
+
+
+def _validated_coordinate(coordinate: float, name: str, path: Path, row_number: int) -> float:
     if not math.isfinite(coordinate):
         raise ValueError(f"{path} row {row_number} has non-finite {name}")
     limit = 90.0 if name == "latitude" else 180.0
@@ -230,12 +272,13 @@ def _validate_source_counts(
 def _parse_boundary_ring(raw_ring: Any, path: Path, feature_number: int) -> BoundaryRing:
     if not isinstance(raw_ring, list) or len(raw_ring) < 4:
         raise ValueError(f"{path} feature {feature_number} has an invalid exterior ring")
-    ring: list[tuple[float, float]] = []
-    for coordinate in raw_ring:
-        if not isinstance(coordinate, list) or len(coordinate) < 2:
-            raise ValueError(f"{path} feature {feature_number} has an invalid boundary coordinate")
-        longitude, latitude = float(coordinate[0]), float(coordinate[1])
-        if not math.isfinite(longitude) or not math.isfinite(latitude):
-            raise ValueError(f"{path} feature {feature_number} has a non-finite boundary coordinate")
-        ring.append((longitude, latitude))
-    return tuple(ring)
+    return tuple(_boundary_point(coordinate, path, feature_number) for coordinate in raw_ring)
+
+
+def _boundary_point(coordinate: Any, path: Path, feature_number: int) -> tuple[float, float]:
+    if not isinstance(coordinate, list) or len(coordinate) < 2:
+        raise ValueError(f"{path} feature {feature_number} has an invalid boundary coordinate")
+    longitude, latitude = float(coordinate[0]), float(coordinate[1])
+    if not math.isfinite(longitude) or not math.isfinite(latitude):
+        raise ValueError(f"{path} feature {feature_number} has a non-finite boundary coordinate")
+    return longitude, latitude
