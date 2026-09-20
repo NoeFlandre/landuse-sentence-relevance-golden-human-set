@@ -14,6 +14,9 @@ for what a release guarantees and how the next one is built without touching it.
 
 - Deterministic V3 reserve candidates for source-by-label quota shortfalls, with
   validation that keeps reserve IDs, cells, and sources globally sound.
+- Finalized V3 benchmark at `data/benchmark/v3/final/v3-final.csv`, with its
+  human reference, independent GPT review, disagreement queue, and resolved
+  decisions organized under `data/benchmark/v3/`.
 
 ### Changed
 

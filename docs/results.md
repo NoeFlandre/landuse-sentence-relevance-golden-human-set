@@ -14,28 +14,29 @@ Source rows from Hugging Face are streamed and are never stored locally.
 
 | Path | Rows | Contents |
 | --- | --- | --- |
-| `data/benchmark/v2-adjudicated.csv` | 154 | **The benchmark to use.** The human V2 export with every three-rater disagreement resolved by hand and the flagged rows removed |
-| `data/benchmark/v3-human-completed.csv` | 300 | Completed V3 human benchmark: 100 Wikipedia, 100 Website, and 100 Description rows, with 50 `yes` and 50 `no` labels per source |
+| `data/benchmark/v2-adjudicated.csv` | 154 | V2 runtime/release benchmark: the human V2 export with every three-rater disagreement resolved by hand and the flagged rows removed |
+| `data/benchmark/v3/final/v3-final.csv` | 300 | **Final V3 benchmark for the completed review.** It preserves the V3 reference rows and applies the reviewed decisions from the independent-review stage |
 
-It carries the same nine columns as the human export it was built from — `sentence`, `label`, `polygon_name`, `h3_cell`, `latitude`, `longitude`, `source`, `region`, `source_url` — in the same column and row order. Only two things differ from that export: 4 sentences flagged `remove` during adjudication are gone, and 9 `label` values were replaced by the adjudicated verdict. Labels are 80 `yes` and 74 `no`.
+The V2 file carries the same nine columns as the human export it was built from — `sentence`, `label`, `polygon_name`, `h3_cell`, `latitude`, `longitude`, `source`, `region`, `source_url` — in the same column and row order. Four sentences flagged `remove` during adjudication are gone, and 9 `label` values were replaced by the adjudicated verdict. Labels are 80 `yes` and 74 `no`.
 
 It is regenerated, never hand-edited: `scripts/interrater_agreement.py` rebuilds it from the three rater exports plus `data/interrater/adjudication.csv`. See [Interrater agreement](interrater-agreement.md) for the method.
 
-The V3 export is a separate immutable benchmark and does not replace V2. It was selected from the frozen V2 rows and the completed V3 annotation session after all six source/label quotas were filled.
+The V3 final file uses the same nine-column schema and reference order. It is a separate immutable benchmark and does not replace the V2 release benchmark. It contains 100 rows per source. Its final labels are 160 `yes` and 140 `no`: Wikipedia 54/46, Website 49/51, and Description 57/43 (`yes`/`no`).
 
 These are the only committed final-benchmark copies; generated analysis outputs do not duplicate them.
 
-## Independent review input
+## V3 review and finalization
 
 | Path | Rows | Contents |
 | --- | --- | --- |
-| `data/benchmark/v3-independent-review-input.csv` | 300 | Label-free copy of the V3 benchmark for an independent model review; it preserves row order and metadata but omits `label` |
-| `data/benchmark/v3-gpt-sol-5.6-extra-high.csv` | 300 | GPT response supplied for the independent review; parsed content is preserved in canonical UTF-8 CSV form and adds GPT's `label` |
-| `data/benchmark/v3-human-gpt-disagreements.csv` | 42 | Minimal reconciliation sheet containing only disagreement sentences, both decisions, and an empty `final_human_label` column |
+| `data/benchmark/v3/reference/v3-human-completed.csv` | 300 | Original completed human V3 reference, before the independent review decisions were reassessed |
+| `data/benchmark/v3/independent-review/v3-independent-review-input.csv` | 300 | Blinded input sent for the independent model review; metadata is preserved and `label` is omitted |
+| `data/benchmark/v3/independent-review/v3-gpt-sol-5.6-extra-high.csv` | 300 | Canonical UTF-8 copy of the supplied GPT response, with GPT's `label` |
+| `data/benchmark/v3/independent-review/v3-human-gpt-disagreements.csv` | 42 | Generated disagreement queue with the human and GPT decisions; its `final_human_label` column was initially blank |
+| `data/benchmark/v3/independent-review/v3-resolved.csv` | 42 | Human-reviewed resolution of every disagreement; contains the completed `final_human_label` values |
+| `data/benchmark/v3/final/v3-final.csv` | 300 | Final benchmark produced by applying `v3-resolved.csv` to the reference in reference order |
 
-This file is an annotation input, not a benchmark release. It intentionally contains no annotation column so an external reviewer can return one judgment per sentence without seeing the gold labels.
-
-The comparison and reassessment workflow is documented in [V3 independent GPT review](v3-gpt-independent-review.md).
+The complete comparison, reassessment, and finalization workflow is documented in [V3 final benchmark](v3-final-benchmark.md). The independent model output is evidence for review, not an automatic replacement for the human label.
 
 ## Interrater review tables
 
