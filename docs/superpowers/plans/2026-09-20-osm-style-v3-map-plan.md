@@ -345,7 +345,7 @@ Document `uv run python scripts/build_v3_world_map.py` as the offline command; l
 - [ ] **Step 3: Validate documentation and commit**
 
 ~~~
-rg -n "Natural Earth|country outlines|country-boundary" data/benchmark/v3 docs
+rg -n "Natural Earth|country outlines|country-boundary" data/benchmark/v3 docs --glob '!superpowers/**'
 uv run mkdocs build --strict --clean --site-dir state/osm-style-docs
 git diff --check
 git add data/benchmark/v3/README.md docs/v3-translations.md data/benchmark/v3/hf/README.md
@@ -398,4 +398,3 @@ Upload only the regenerated `README.md` and `assets/v3-world-distribution.png` t
 - [ ] **Step 6: Clean task-owned temporary storage**
 
 Remove only the task-scoped OSM tile staging directory, UV/Matplotlib caches, Hugging Face verification directory, and managed worktree after the PR is merged and the primary checkout is fast-forwarded. Confirm the primary checkout is clean and no task-specific temporary path remains.
-
