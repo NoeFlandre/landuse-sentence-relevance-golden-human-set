@@ -36,6 +36,12 @@ These are the only committed final-benchmark copies; generated analysis outputs 
 | `data/benchmark/v3/independent-review/v3-resolved.csv` | 42 | Human-reviewed resolution of every disagreement; contains the completed `final_human_label` values |
 | `data/benchmark/v3/final/v3-final.csv` | 300 | Final benchmark produced by applying `v3-resolved.csv` to the reference in reference order |
 
+The multilingual release is documented in [V3 multilingual benchmark](v3-translations.md).
+It contains 85 parallel CSV files under `data/benchmark/v3/translations/` (one
+English file plus 84 translations), all with the same 300 rows and the same
+final labels and geographic/source metadata. The source-only map is stored at
+`data/benchmark/v3/assets/v3-world-distribution.png`.
+
 The complete comparison, reassessment, and finalization workflow is documented in [V3 final benchmark](v3-final-benchmark.md). The independent model output is evidence for review, not an automatic replacement for the human label.
 
 ## Interrater review tables

@@ -1,0 +1,843 @@
+{
+  "release": "v3-multilingual",
+  "status": "complete",
+  "created_at_utc": "2026-09-20T12:33:24.592823+00:00",
+  "source_benchmark": {
+    "path": "data/benchmark/v3/final/v3-final.csv",
+    "rows": 300,
+    "sha256": "cabbae3823d012aa61139d5a0c37c7f00f9d8873d32d8874dba89cba05a37575",
+    "schema": [
+      "sentence",
+      "label",
+      "polygon_name",
+      "h3_cell",
+      "latitude",
+      "longitude",
+      "source",
+      "region",
+      "source_url"
+    ],
+    "label_counts": {
+      "yes": 160,
+      "no": 140
+    },
+    "source_counts": {
+      "description": {
+        "yes": 57,
+        "no": 43
+      },
+      "website": {
+        "yes": 49,
+        "no": 51
+      },
+      "wikipedia": {
+        "yes": 54,
+        "no": 46
+      }
+    }
+  },
+  "translation": {
+    "model": "gpt-5.6-luna",
+    "release_designation": "gpt-5.6-luna-max",
+    "reasoning_effort": "max",
+    "harness": "Codex",
+    "translated_columns": [
+      "sentence"
+    ],
+    "preserved_columns": [
+      "label",
+      "polygon_name",
+      "h3_cell",
+      "latitude",
+      "longitude",
+      "source",
+      "region",
+      "source_url"
+    ],
+    "language_count": 85,
+    "non_english_count": 84,
+    "language_names": {
+      "af": "Afrikaans",
+      "am": "Amharic",
+      "ar": "Arabic",
+      "az": "Azerbaijani",
+      "be": "Belarusian",
+      "bg": "Bulgarian",
+      "bn": "Bengali",
+      "ca": "Catalan",
+      "ceb": "Cebuano",
+      "cs": "Czech",
+      "cy": "Welsh",
+      "da": "Danish",
+      "de": "German",
+      "el": "Greek",
+      "en": "English",
+      "eo": "Esperanto",
+      "es": "Spanish",
+      "et": "Estonian",
+      "eu": "Basque",
+      "fa": "Persian",
+      "fi": "Finnish",
+      "fr": "French",
+      "fy": "Western Frisian",
+      "ga": "Irish",
+      "gd": "Scottish Gaelic",
+      "gl": "Galician",
+      "gu": "Gujarati",
+      "ha": "Hausa",
+      "he": "Hebrew",
+      "hi": "Hindi",
+      "hu": "Hungarian",
+      "hy": "Armenian",
+      "id": "Indonesian",
+      "ig": "Igbo",
+      "is": "Icelandic",
+      "it": "Italian",
+      "ja": "Japanese",
+      "jv": "Javanese",
+      "ka": "Georgian",
+      "kk": "Kazakh",
+      "km": "Central Khmer",
+      "kn": "Kannada",
+      "ko": "Korean",
+      "ku": "Kurdish",
+      "ky": "Kirghiz",
+      "la": "Latin",
+      "lt": "Lithuanian",
+      "lv": "Latvian",
+      "mg": "Malagasy",
+      "mk": "Macedonian",
+      "ml": "Malayalam",
+      "mn": "Mongolian",
+      "mr": "Marathi",
+      "ms": "Malay",
+      "mt": "Maltese",
+      "my": "Burmese",
+      "ne": "Nepali",
+      "nl": "Dutch",
+      "no": "Norwegian",
+      "pa": "Panjabi",
+      "pl": "Polish",
+      "ps": "Pushto",
+      "pt": "Portuguese",
+      "ro": "Romanian",
+      "ru": "Russian",
+      "si": "Sinhala",
+      "sk": "Slovak",
+      "sl": "Slovenian",
+      "sq": "Albanian",
+      "sr": "Serbian",
+      "sv": "Swedish",
+      "ta": "Tamil",
+      "te": "Telugu",
+      "tg": "Tajik",
+      "th": "Thai",
+      "tr": "Turkish",
+      "uk": "Ukrainian",
+      "ur": "Urdu",
+      "uz": "Uzbek",
+      "vi": "Vietnamese",
+      "xh": "Xhosa",
+      "yi": "Yiddish",
+      "yo": "Yoruba",
+      "zh": "Chinese",
+      "zu": "Zulu"
+    }
+  },
+  "geographic_asset": {
+    "path": "data/benchmark/v3/assets/v3-world-distribution.png",
+    "sha256": "c1d703dca42f8b607b214026e315126828638c8a18854cf82775b1cc8a8c1e87",
+    "description": "300 benchmark coordinates by source, with Natural Earth 110m country outlines; shared by all language files."
+  },
+  "validation": {
+    "files_checked": 85,
+    "rows_per_file": 300,
+    "header_exact": true,
+    "utf8_no_bom": true,
+    "nonblank_sentences": true,
+    "preserved_fields_equal_to_english": true,
+    "english_file_byte_identical": true
+  },
+  "files": [
+    {
+      "iso": "af",
+      "language": "Afrikaans",
+      "path": "data/benchmark/v3/translations/af/v3-final-af.csv",
+      "rows": 300,
+      "bytes": 68589,
+      "sha256": "f08528c1a9e36c3bc38823914120aa466bacc5bfd35e653d4a6e4b8b77d50291"
+    },
+    {
+      "iso": "am",
+      "language": "Amharic",
+      "path": "data/benchmark/v3/translations/am/v3-final-am.csv",
+      "rows": 300,
+      "bytes": 83598,
+      "sha256": "9517620c39ca97356bcc25c4f9601017ad759c71f493348807d8d48ed03f7d6f"
+    },
+    {
+      "iso": "ar",
+      "language": "Arabic",
+      "path": "data/benchmark/v3/translations/ar/v3-final-ar.csv",
+      "rows": 300,
+      "bytes": 81301,
+      "sha256": "5a85b98f5b3a19dcf2a2ce34ebec93673b8d92175c8a73b7b6ef57ca7eb571fa"
+    },
+    {
+      "iso": "az",
+      "language": "Azerbaijani",
+      "path": "data/benchmark/v3/translations/az/v3-final-az.csv",
+      "rows": 300,
+      "bytes": 72473,
+      "sha256": "c86f5979763436c33e639994619c67b0d8639003e46220e60d0b9d40b425e927"
+    },
+    {
+      "iso": "be",
+      "language": "Belarusian",
+      "path": "data/benchmark/v3/translations/be/v3-final-be.csv",
+      "rows": 300,
+      "bytes": 90041,
+      "sha256": "5e9bae448c8af760a7c2077eefc6af955610afd60a727174e55212b868defb8b"
+    },
+    {
+      "iso": "bg",
+      "language": "Bulgarian",
+      "path": "data/benchmark/v3/translations/bg/v3-final-bg.csv",
+      "rows": 300,
+      "bytes": 89989,
+      "sha256": "8e668d8095f7e0cb25b63e3cad0250dedb37ea1d597fd851b3a0e7a68b95a475"
+    },
+    {
+      "iso": "bn",
+      "language": "Bengali",
+      "path": "data/benchmark/v3/translations/bn/v3-final-bn.csv",
+      "rows": 300,
+      "bytes": 98854,
+      "sha256": "cec26ce046e647b19c8f28a4d4f9eaa95f3ae0175b1af2ef3658266800056ce3"
+    },
+    {
+      "iso": "ca",
+      "language": "Catalan",
+      "path": "data/benchmark/v3/translations/ca/v3-final-ca.csv",
+      "rows": 300,
+      "bytes": 70629,
+      "sha256": "b589aeaa337d9263277d07973187c8a92e67fd6db23962e80cc27774c5ecd0d1"
+    },
+    {
+      "iso": "ceb",
+      "language": "Cebuano",
+      "path": "data/benchmark/v3/translations/ceb/v3-final-ceb.csv",
+      "rows": 300,
+      "bytes": 71782,
+      "sha256": "aea27bcfc009b5dadc0f883cd7903c3cde65c953d476c6cbec7ebcd9626588bc"
+    },
+    {
+      "iso": "cs",
+      "language": "Czech",
+      "path": "data/benchmark/v3/translations/cs/v3-final-cs.csv",
+      "rows": 300,
+      "bytes": 69253,
+      "sha256": "7d085d5de1ea7d37685fb4d59e02fd74fa6851657ee09fccbe251c02f41fe31a"
+    },
+    {
+      "iso": "cy",
+      "language": "Welsh",
+      "path": "data/benchmark/v3/translations/cy/v3-final-cy.csv",
+      "rows": 300,
+      "bytes": 68926,
+      "sha256": "5bd9f79bd34b3874936d986b99c5a85b48ce13a5285723df23bd06ae3225784d"
+    },
+    {
+      "iso": "da",
+      "language": "Danish",
+      "path": "data/benchmark/v3/translations/da/v3-final-da.csv",
+      "rows": 300,
+      "bytes": 67089,
+      "sha256": "da0f5ed63f5d1b0d27e362981cd633d2b117a96eb43d4abde099f95da8ac4b64"
+    },
+    {
+      "iso": "de",
+      "language": "German",
+      "path": "data/benchmark/v3/translations/de/v3-final-de.csv",
+      "rows": 300,
+      "bytes": 70544,
+      "sha256": "df0d5fa02bcab06cb89b133eaafc2bd1b53d4fefd96dd9ae7d4299a7a7593fcb"
+    },
+    {
+      "iso": "el",
+      "language": "Greek",
+      "path": "data/benchmark/v3/translations/el/v3-final-el.csv",
+      "rows": 300,
+      "bytes": 93688,
+      "sha256": "4651053fe565989d1baa947ba856292376384c6a579929c7af454f4610f5a328"
+    },
+    {
+      "iso": "en",
+      "language": "English",
+      "path": "data/benchmark/v3/translations/en/v3-final-en.csv",
+      "rows": 300,
+      "bytes": 67402,
+      "sha256": "cabbae3823d012aa61139d5a0c37c7f00f9d8873d32d8874dba89cba05a37575"
+    },
+    {
+      "iso": "eo",
+      "language": "Esperanto",
+      "path": "data/benchmark/v3/translations/eo/v3-final-eo.csv",
+      "rows": 300,
+      "bytes": 68239,
+      "sha256": "99898fa8c683e0b35ea319a42cec7dbe36d8e943a33344a830c275c6ca03e9f1"
+    },
+    {
+      "iso": "es",
+      "language": "Spanish",
+      "path": "data/benchmark/v3/translations/es/v3-final-es.csv",
+      "rows": 300,
+      "bytes": 71273,
+      "sha256": "29c442cfeca69ef672531e2287536d0fe10f1e5673b637661821f5a5ba47165c"
+    },
+    {
+      "iso": "et",
+      "language": "Estonian",
+      "path": "data/benchmark/v3/translations/et/v3-final-et.csv",
+      "rows": 300,
+      "bytes": 67152,
+      "sha256": "a3fc123a5988851ce8927b5f2c285c7cd7361b433f5a8ca2bbe5184b50d2706b"
+    },
+    {
+      "iso": "eu",
+      "language": "Basque",
+      "path": "data/benchmark/v3/translations/eu/v3-final-eu.csv",
+      "rows": 300,
+      "bytes": 68325,
+      "sha256": "789ec9f18907d2aeb9834da28ca98edf17832e1fae4717eeb3add1afea2df114"
+    },
+    {
+      "iso": "fa",
+      "language": "Persian",
+      "path": "data/benchmark/v3/translations/fa/v3-final-fa.csv",
+      "rows": 300,
+      "bytes": 84825,
+      "sha256": "4927f10e9d34cab732c4533a6a6ec8e89ff6f7b5b3d33692bbde7a540d8dca3a"
+    },
+    {
+      "iso": "fi",
+      "language": "Finnish",
+      "path": "data/benchmark/v3/translations/fi/v3-final-fi.csv",
+      "rows": 300,
+      "bytes": 69403,
+      "sha256": "2bff50552a86c1ec89327c16c5ccb189b5bd2003ad541dc33b398d61996a57db"
+    },
+    {
+      "iso": "fr",
+      "language": "French",
+      "path": "data/benchmark/v3/translations/fr/v3-final-fr.csv",
+      "rows": 300,
+      "bytes": 72737,
+      "sha256": "bb04d29f2bc7f0eb950bbfdb7f3af00088a3b0ceb88c47b5cab8866cb3c19876"
+    },
+    {
+      "iso": "fy",
+      "language": "Western Frisian",
+      "path": "data/benchmark/v3/translations/fy/v3-final-fy.csv",
+      "rows": 300,
+      "bytes": 69062,
+      "sha256": "a9dcbbfba359e975eb676b2251f23b3345dbf6ede5a1bc273b676596f48a62ac"
+    },
+    {
+      "iso": "ga",
+      "language": "Irish",
+      "path": "data/benchmark/v3/translations/ga/v3-final-ga.csv",
+      "rows": 300,
+      "bytes": 72140,
+      "sha256": "0fcfae3808c041ff5f28d84a1d23f45ac24096456bf70a2d883889f53205bfd7"
+    },
+    {
+      "iso": "gd",
+      "language": "Scottish Gaelic",
+      "path": "data/benchmark/v3/translations/gd/v3-final-gd.csv",
+      "rows": 300,
+      "bytes": 73339,
+      "sha256": "e737cb6ec6e6e0a3565ad6882aa27db10979990999bb469c19b3cf84e8f82907"
+    },
+    {
+      "iso": "gl",
+      "language": "Galician",
+      "path": "data/benchmark/v3/translations/gl/v3-final-gl.csv",
+      "rows": 300,
+      "bytes": 70005,
+      "sha256": "503e6850d755a53c17c948d044fb6c611441986833ba32bec5f3c01e6af03539"
+    },
+    {
+      "iso": "gu",
+      "language": "Gujarati",
+      "path": "data/benchmark/v3/translations/gu/v3-final-gu.csv",
+      "rows": 300,
+      "bytes": 100173,
+      "sha256": "952154d241d5cc1f298fb1b0aa6798171d8b54f9dbe60121a93156b3761396e8"
+    },
+    {
+      "iso": "ha",
+      "language": "Hausa",
+      "path": "data/benchmark/v3/translations/ha/v3-final-ha.csv",
+      "rows": 300,
+      "bytes": 69971,
+      "sha256": "afa64b5f0dc9804ecb19820416988451430570efaa95e0aacf5133b8bb8a0c31"
+    },
+    {
+      "iso": "he",
+      "language": "Hebrew",
+      "path": "data/benchmark/v3/translations/he/v3-final-he.csv",
+      "rows": 300,
+      "bytes": 77729,
+      "sha256": "c601de0f327693bb84bd136d75bb2f2fa79def0bfb1d39465584d85987d4c9ee"
+    },
+    {
+      "iso": "hi",
+      "language": "Hindi",
+      "path": "data/benchmark/v3/translations/hi/v3-final-hi.csv",
+      "rows": 300,
+      "bytes": 96997,
+      "sha256": "dfaddf2ac08a549dbab871dbd2df9a7ffd1879e685ccb0b9de106356021ee893"
+    },
+    {
+      "iso": "hu",
+      "language": "Hungarian",
+      "path": "data/benchmark/v3/translations/hu/v3-final-hu.csv",
+      "rows": 300,
+      "bytes": 71373,
+      "sha256": "f03079a3d5e2ad7dd84c3d1c44beda619cc248a3505a9e21ef20f64ab965e8c7"
+    },
+    {
+      "iso": "hy",
+      "language": "Armenian",
+      "path": "data/benchmark/v3/translations/hy/v3-final-hy.csv",
+      "rows": 300,
+      "bytes": 91717,
+      "sha256": "a562a1c11c75b3bca6d3e56481986ab0cc1b141ecd86d13474e9bc92ba74e039"
+    },
+    {
+      "iso": "id",
+      "language": "Indonesian",
+      "path": "data/benchmark/v3/translations/id/v3-final-id.csv",
+      "rows": 300,
+      "bytes": 69101,
+      "sha256": "51a8a3152b0abc4e0e619387f5a841d30cefcdd46b812236f0cf1fabda5da8fa"
+    },
+    {
+      "iso": "ig",
+      "language": "Igbo",
+      "path": "data/benchmark/v3/translations/ig/v3-final-ig.csv",
+      "rows": 300,
+      "bytes": 72936,
+      "sha256": "885be727073a949ff3d68bf3d0b0bb79c91bc7259726af4f66d833b61073213d"
+    },
+    {
+      "iso": "is",
+      "language": "Icelandic",
+      "path": "data/benchmark/v3/translations/is/v3-final-is.csv",
+      "rows": 300,
+      "bytes": 68424,
+      "sha256": "b474eae7c36cc5adca1dd0660fd86547c6f09e4f149f63aa71897a5d720c718a"
+    },
+    {
+      "iso": "it",
+      "language": "Italian",
+      "path": "data/benchmark/v3/translations/it/v3-final-it.csv",
+      "rows": 300,
+      "bytes": 70388,
+      "sha256": "e5f5c27d3738327c11f3dc1e7458d413b708c49ca6d563cf948ab9e0b464abcc"
+    },
+    {
+      "iso": "ja",
+      "language": "Japanese",
+      "path": "data/benchmark/v3/translations/ja/v3-final-ja.csv",
+      "rows": 300,
+      "bytes": 72612,
+      "sha256": "b04cc958c3bd3175382268ebd9a6f4b7edd688629789bd6b5fefbb4ba2d6e25c"
+    },
+    {
+      "iso": "jv",
+      "language": "Javanese",
+      "path": "data/benchmark/v3/translations/jv/v3-final-jv.csv",
+      "rows": 300,
+      "bytes": 68728,
+      "sha256": "ea45b21ea479a468690a8c5b37560980b67c68cf52221ac533a664a93f71d810"
+    },
+    {
+      "iso": "ka",
+      "language": "Georgian",
+      "path": "data/benchmark/v3/translations/ka/v3-final-ka.csv",
+      "rows": 300,
+      "bytes": 114049,
+      "sha256": "737b2bc14cfe2803135d2b4885a8129fb8d677e656cfc38a8ffd3f36f715d1b8"
+    },
+    {
+      "iso": "kk",
+      "language": "Kazakh",
+      "path": "data/benchmark/v3/translations/kk/v3-final-kk.csv",
+      "rows": 300,
+      "bytes": 90195,
+      "sha256": "6db5e227ea75d58d5156996be44f0c4f8d895799d91dab54ed382b32221bb5ac"
+    },
+    {
+      "iso": "km",
+      "language": "Central Khmer",
+      "path": "data/benchmark/v3/translations/km/v3-final-km.csv",
+      "rows": 300,
+      "bytes": 105832,
+      "sha256": "d579e8fc5a854e3a5c01ee17be7914f3fc8549b0fd2494ff06ff730ac5ec15b1"
+    },
+    {
+      "iso": "kn",
+      "language": "Kannada",
+      "path": "data/benchmark/v3/translations/kn/v3-final-kn.csv",
+      "rows": 300,
+      "bytes": 99473,
+      "sha256": "caabce4a63f96a6fb8b4e66da7f9f5b7eb144cd9decc16027d16fe3e9c14072d"
+    },
+    {
+      "iso": "ko",
+      "language": "Korean",
+      "path": "data/benchmark/v3/translations/ko/v3-final-ko.csv",
+      "rows": 300,
+      "bytes": 70519,
+      "sha256": "d0e751f4b46d39974445b8cacb5b6647d3393fef356fed13b3b5d99e1863616f"
+    },
+    {
+      "iso": "ku",
+      "language": "Kurdish",
+      "path": "data/benchmark/v3/translations/ku/v3-final-ku.csv",
+      "rows": 300,
+      "bytes": 71200,
+      "sha256": "b653c47c6fa9a61497221540d325b5c849465dfe98a6c5d7e8b2d80aabae6f9b"
+    },
+    {
+      "iso": "ky",
+      "language": "Kirghiz",
+      "path": "data/benchmark/v3/translations/ky/v3-final-ky.csv",
+      "rows": 300,
+      "bytes": 91080,
+      "sha256": "6b4433b3407f717252b9cb6449ab016eaef46fb90961e27b110f248b39bc8992"
+    },
+    {
+      "iso": "la",
+      "language": "Latin",
+      "path": "data/benchmark/v3/translations/la/v3-final-la.csv",
+      "rows": 300,
+      "bytes": 68832,
+      "sha256": "3fd52eec8b9602a92db9b9514c5d17fd6756ab25fdcaa203e45c111a937ba353"
+    },
+    {
+      "iso": "lt",
+      "language": "Lithuanian",
+      "path": "data/benchmark/v3/translations/lt/v3-final-lt.csv",
+      "rows": 300,
+      "bytes": 69453,
+      "sha256": "5ccddadadc653fee8af51b353ec12648a9718926ee62313b05d0639d00121b1b"
+    },
+    {
+      "iso": "lv",
+      "language": "Latvian",
+      "path": "data/benchmark/v3/translations/lv/v3-final-lv.csv",
+      "rows": 300,
+      "bytes": 69770,
+      "sha256": "8dd6a73b8ef31c3c1022056d3c5e32e9db1d09f3fb333b063db9b960b07393d4"
+    },
+    {
+      "iso": "mg",
+      "language": "Malagasy",
+      "path": "data/benchmark/v3/translations/mg/v3-final-mg.csv",
+      "rows": 300,
+      "bytes": 74539,
+      "sha256": "0266bea29ac7168647b70f058cb287393ae8a259416a73a06b609269dfd79eac"
+    },
+    {
+      "iso": "mk",
+      "language": "Macedonian",
+      "path": "data/benchmark/v3/translations/mk/v3-final-mk.csv",
+      "rows": 300,
+      "bytes": 88146,
+      "sha256": "ce0abe52cd569d005e7013df4074bb6287cdc90e5cec160b37ef51518c6f59a3"
+    },
+    {
+      "iso": "ml",
+      "language": "Malayalam",
+      "path": "data/benchmark/v3/translations/ml/v3-final-ml.csv",
+      "rows": 300,
+      "bytes": 119052,
+      "sha256": "ae7f27a824addfc578c7912b1dac891dace049691021fa833a97356ac96845dc"
+    },
+    {
+      "iso": "mn",
+      "language": "Mongolian",
+      "path": "data/benchmark/v3/translations/mn/v3-final-mn.csv",
+      "rows": 300,
+      "bytes": 87741,
+      "sha256": "42cc60a09cdfec12be2c0ac2c8d34ddca221bc14b7256dee0a884a284227a017"
+    },
+    {
+      "iso": "mr",
+      "language": "Marathi",
+      "path": "data/benchmark/v3/translations/mr/v3-final-mr.csv",
+      "rows": 300,
+      "bytes": 101792,
+      "sha256": "c6e9d9da275e2fd67654c3a8ebe14766557bf79003cabc6ccd1ab78683686433"
+    },
+    {
+      "iso": "ms",
+      "language": "Malay",
+      "path": "data/benchmark/v3/translations/ms/v3-final-ms.csv",
+      "rows": 300,
+      "bytes": 69504,
+      "sha256": "289e289c4eb81056d33e409ca532bbb140ba66bdc9b8dd284b59ff03873ed6be"
+    },
+    {
+      "iso": "mt",
+      "language": "Maltese",
+      "path": "data/benchmark/v3/translations/mt/v3-final-mt.csv",
+      "rows": 300,
+      "bytes": 70755,
+      "sha256": "a6277f09aa8ad5924ff2a488eeb13c9bab89dc4cd07e05e8e57ac6e2370e0b0c"
+    },
+    {
+      "iso": "my",
+      "language": "Burmese",
+      "path": "data/benchmark/v3/translations/my/v3-final-my.csv",
+      "rows": 300,
+      "bytes": 117881,
+      "sha256": "24bcc9914b0a0ea51a9a3bb57f6c05c94db2b570e7ee4ee97a0b6bea7842976d"
+    },
+    {
+      "iso": "ne",
+      "language": "Nepali",
+      "path": "data/benchmark/v3/translations/ne/v3-final-ne.csv",
+      "rows": 300,
+      "bytes": 99908,
+      "sha256": "61d882f15d596bc81bb3264233d129e9359c62ef653aa45b526354dceb09b825"
+    },
+    {
+      "iso": "nl",
+      "language": "Dutch",
+      "path": "data/benchmark/v3/translations/nl/v3-final-nl.csv",
+      "rows": 300,
+      "bytes": 69840,
+      "sha256": "cd22d29e4465c88cc261a32e6851688154856cfbb09e68fe84a84c42ebb4d8ac"
+    },
+    {
+      "iso": "no",
+      "language": "Norwegian",
+      "path": "data/benchmark/v3/translations/no/v3-final-no.csv",
+      "rows": 300,
+      "bytes": 67044,
+      "sha256": "a746b4aceb1d56d97864b30646bf75e96acd87aa89566ab379525c61ae32373b"
+    },
+    {
+      "iso": "pa",
+      "language": "Panjabi",
+      "path": "data/benchmark/v3/translations/pa/v3-final-pa.csv",
+      "rows": 300,
+      "bytes": 97466,
+      "sha256": "305f810a14e3f716a81aa55b9094d0909eb92549184ea12476a558b746e67386"
+    },
+    {
+      "iso": "pl",
+      "language": "Polish",
+      "path": "data/benchmark/v3/translations/pl/v3-final-pl.csv",
+      "rows": 300,
+      "bytes": 70326,
+      "sha256": "b4a78b463cf314396bf02261fca94d19900247c41247fc7eb2f448439b415794"
+    },
+    {
+      "iso": "ps",
+      "language": "Pushto",
+      "path": "data/benchmark/v3/translations/ps/v3-final-ps.csv",
+      "rows": 300,
+      "bytes": 89789,
+      "sha256": "7aed0112745b00ceb5ff26e7f0b37ad4c6b50e62f3f2e4935446ed40ae2bdd1d"
+    },
+    {
+      "iso": "pt",
+      "language": "Portuguese",
+      "path": "data/benchmark/v3/translations/pt/v3-final-pt.csv",
+      "rows": 300,
+      "bytes": 70240,
+      "sha256": "e0722611d1f7d17cbdf2d872422621152c738db6b86781953afd6cd7b054f43d"
+    },
+    {
+      "iso": "ro",
+      "language": "Romanian",
+      "path": "data/benchmark/v3/translations/ro/v3-final-ro.csv",
+      "rows": 300,
+      "bytes": 71326,
+      "sha256": "ca554845456bcd76defc93744038b6a6bd5109c2ee49943b814ef320061dcf0a"
+    },
+    {
+      "iso": "ru",
+      "language": "Russian",
+      "path": "data/benchmark/v3/translations/ru/v3-final-ru.csv",
+      "rows": 300,
+      "bytes": 90462,
+      "sha256": "d9a4693d58175eaf709d12e862f1d14e10c3db7c3251bcc658261bdcd9fd762f"
+    },
+    {
+      "iso": "si",
+      "language": "Sinhala",
+      "path": "data/benchmark/v3/translations/si/v3-final-si.csv",
+      "rows": 300,
+      "bytes": 100906,
+      "sha256": "33da2b685ecfcc3ee16e15f01ad25802f190036e7c907fab9676c7feb88e4733"
+    },
+    {
+      "iso": "sk",
+      "language": "Slovak",
+      "path": "data/benchmark/v3/translations/sk/v3-final-sk.csv",
+      "rows": 300,
+      "bytes": 69505,
+      "sha256": "3f8d7f12e51a682079b1c2607c7f566cb3456d507b06124bdb0af6d576d2d4b4"
+    },
+    {
+      "iso": "sl",
+      "language": "Slovenian",
+      "path": "data/benchmark/v3/translations/sl/v3-final-sl.csv",
+      "rows": 300,
+      "bytes": 67549,
+      "sha256": "7f2efe756ac16fb2bdec965e535a034d3edb7f3c04445962343bc4a7f681d673"
+    },
+    {
+      "iso": "sq",
+      "language": "Albanian",
+      "path": "data/benchmark/v3/translations/sq/v3-final-sq.csv",
+      "rows": 300,
+      "bytes": 71460,
+      "sha256": "cfba3c86f542e98b57a14bacefc3626c2d2e593494b9f3a49a1cc964d6ebf559"
+    },
+    {
+      "iso": "sr",
+      "language": "Serbian",
+      "path": "data/benchmark/v3/translations/sr/v3-final-sr.csv",
+      "rows": 300,
+      "bytes": 67826,
+      "sha256": "d999406554c5d2412dd8f3569c36050a3eda929a224d2e90068408c0f55c2c4e"
+    },
+    {
+      "iso": "sv",
+      "language": "Swedish",
+      "path": "data/benchmark/v3/translations/sv/v3-final-sv.csv",
+      "rows": 300,
+      "bytes": 67779,
+      "sha256": "2305aed95653649abc1c07f4ef6a5cdd98138eb6eeb946df321314af8f108c31"
+    },
+    {
+      "iso": "ta",
+      "language": "Tamil",
+      "path": "data/benchmark/v3/translations/ta/v3-final-ta.csv",
+      "rows": 300,
+      "bytes": 115063,
+      "sha256": "9e11e17709778aa9e1f7a6e26bb6254b2010d53369a862b589abd5ee263e30a7"
+    },
+    {
+      "iso": "te",
+      "language": "Telugu",
+      "path": "data/benchmark/v3/translations/te/v3-final-te.csv",
+      "rows": 300,
+      "bytes": 102568,
+      "sha256": "316cbce7f4f66f97858ce88a80d89974bc7cf1059b433e8712534f3bdf839248"
+    },
+    {
+      "iso": "tg",
+      "language": "Tajik",
+      "path": "data/benchmark/v3/translations/tg/v3-final-tg.csv",
+      "rows": 300,
+      "bytes": 86207,
+      "sha256": "5a083a835db8ec639f5bc2cc72d2a2afbd77f5d43743c0bca1c8bbcd885d68c9"
+    },
+    {
+      "iso": "th",
+      "language": "Thai",
+      "path": "data/benchmark/v3/translations/th/v3-final-th.csv",
+      "rows": 300,
+      "bytes": 106462,
+      "sha256": "67c80616f3063305eb04245f7c2eb9d5392f221c6736f226903fd8194330afd0"
+    },
+    {
+      "iso": "tr",
+      "language": "Turkish",
+      "path": "data/benchmark/v3/translations/tr/v3-final-tr.csv",
+      "rows": 300,
+      "bytes": 69925,
+      "sha256": "25da7e3240cebc52c5f90d45bda5ac9bf4283fcc979b3a0c92d8fac504e37eaf"
+    },
+    {
+      "iso": "uk",
+      "language": "Ukrainian",
+      "path": "data/benchmark/v3/translations/uk/v3-final-uk.csv",
+      "rows": 300,
+      "bytes": 90595,
+      "sha256": "6b72ad9f520912e760604952176f452813c94c0e377f6bc81d4c8aa19cf3753e"
+    },
+    {
+      "iso": "ur",
+      "language": "Urdu",
+      "path": "data/benchmark/v3/translations/ur/v3-final-ur.csv",
+      "rows": 300,
+      "bytes": 82594,
+      "sha256": "7f20ff2de71f0464b9b484c85e31239c3d586160a710ffdbe07292fc64ddfb10"
+    },
+    {
+      "iso": "uz",
+      "language": "Uzbek",
+      "path": "data/benchmark/v3/translations/uz/v3-final-uz.csv",
+      "rows": 300,
+      "bytes": 70905,
+      "sha256": "0ea7325ad8fd75c301664a9419900e9536c63f4eb98fbf5d7d561566921c9ec3"
+    },
+    {
+      "iso": "vi",
+      "language": "Vietnamese",
+      "path": "data/benchmark/v3/translations/vi/v3-final-vi.csv",
+      "rows": 300,
+      "bytes": 75682,
+      "sha256": "562347a8398596b0fdf5470fceaad01b822415bb161cbdffa62b448c8cf3023a"
+    },
+    {
+      "iso": "xh",
+      "language": "Xhosa",
+      "path": "data/benchmark/v3/translations/xh/v3-final-xh.csv",
+      "rows": 300,
+      "bytes": 70673,
+      "sha256": "e5a8878e938c0833efcf98f274da26de1fd1c37e6f783d42b6df293df8f4381d"
+    },
+    {
+      "iso": "yi",
+      "language": "Yiddish",
+      "path": "data/benchmark/v3/translations/yi/v3-final-yi.csv",
+      "rows": 300,
+      "bytes": 91375,
+      "sha256": "8c9048ffaa4a8facca960338777660e61e83fbe98c9799de55682ed73eb80e22"
+    },
+    {
+      "iso": "yo",
+      "language": "Yoruba",
+      "path": "data/benchmark/v3/translations/yo/v3-final-yo.csv",
+      "rows": 300,
+      "bytes": 77099,
+      "sha256": "2808de0bbd029644d282b76bf76ab23318cae9c32858b82808c2ebd2491c856d"
+    },
+    {
+      "iso": "zh",
+      "language": "Chinese",
+      "path": "data/benchmark/v3/translations/zh/v3-final-zh.csv",
+      "rows": 300,
+      "bytes": 64305,
+      "sha256": "c5d4cb567b775f4f7ce5a3d6353ee6daef369e2a6d5fba01208b8b8e4bffa23d"
+    },
+    {
+      "iso": "zu",
+      "language": "Zulu",
+      "path": "data/benchmark/v3/translations/zu/v3-final-zu.csv",
+      "rows": 300,
+      "bytes": 71650,
+      "sha256": "881c0b76e7f43f4aa8c6e4bf937b3f086ffb23a9b67596c00e7da111e0b79ed1"
+    }
+  ]
+}

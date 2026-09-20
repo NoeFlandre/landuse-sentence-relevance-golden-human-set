@@ -26,6 +26,7 @@ nav:
   - LLM evaluation rounds: llm-evaluation-rounds.md
   - V3 independent GPT review: v3-gpt-independent-review.md
   - V3 final benchmark: v3-final-benchmark.md
+  - V3 multilingual benchmark: v3-translations.md
   - Interrater agreement: interrater-agreement.md
   - V3 workflow: v3.md
   - Engineering:
