@@ -24,6 +24,7 @@ nav:
   - Data catalogue: results.md
   - LLM labeling: llm-labeling.md
   - LLM evaluation rounds: llm-evaluation-rounds.md
+  - V3 independent GPT review: v3-gpt-independent-review.md
   - Interrater agreement: interrater-agreement.md
   - V3 workflow: v3.md
   - Engineering:
