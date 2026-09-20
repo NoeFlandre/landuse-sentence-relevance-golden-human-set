@@ -24,15 +24,21 @@ the tracked `data/provenance/` tree.
 [Changelog](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/CHANGELOG.md)
 for the full contents and the [Data catalogue](results.md) for every file.
 
+The completed V3 annotation round is a separate final artifact at
+`data/benchmark/v3/final/v3-final.csv`. It has its own reference, independent
+review, and resolution trail under `data/benchmark/v3/` and does not mutate
+the tagged V2 release.
+
 ## Rules
 
 1. **A tagged benchmark file is never edited.** Not to fix a label, not to add
    a row. `data/benchmark/v2-adjudicated.csv` keeps exactly the bytes it had at
    `v2.0.0`, forever.
 2. **A new version adds files; it does not replace them.** The next benchmark
-   arrives as a new file beside the current one — `data/benchmark/v3-*.csv` —
-   with its own adjudication trail under `data/interrater/`. Both remain
-   readable at `main`, and the docs say which one is current.
+   arrives in its own versioned directory, such as `data/benchmark/v3/`, with
+   the final artifact under `final/` and its review trail under
+   `independent-review/`. Both versions remain readable at `main`, and the
+   docs say which one is current.
 3. **Version numbers follow the dataset, not just the code.** A new or changed
    set of benchmark rows is a major bump, because anything scored against the
    old rows is no longer comparable. Added tooling or documentation with an

@@ -1,15 +1,15 @@
 # V3 independent GPT review
 
-This records the independent model check performed against the completed V3 reference benchmark. It does not replace the reference benchmark and it does not automatically change any human decision.
+This records the independent model check performed against the completed V3 reference benchmark. It does not replace the reference benchmark and it does not automatically change any human decision. The resulting human reassessment and final benchmark are documented in [V3 final benchmark](v3-final-benchmark.md).
 
 ## Artifact roles
 
 | File | Role |
 | --- | --- |
-| `data/benchmark/v3-human-completed.csv` | The 300-row reference benchmark. It contains the completed labels: 100 Wikipedia, 100 Website, and 100 Description rows, with 50 `yes` and 50 `no` labels per source. |
-| `data/benchmark/v3-independent-review-input.csv` | The blinded input sent for independent review. It contains the same 300 sentences, in the same order, with the metadata preserved and the `label` column removed. |
-| `data/benchmark/v3-gpt-sol-5.6-extra-high.csv` | The GPT response supplied for this review. It contains the same 300 rows and a GPT `label`; its parsed content is preserved in canonical UTF-8 CSV form. |
-| `data/benchmark/v3-human-gpt-disagreements.csv` | The human-review queue. It contains only disagreements and the columns `sentence`, `human_label`, `gpt_label`, and empty `final_human_label`. |
+| `data/benchmark/v3/reference/v3-human-completed.csv` | The 300-row reference benchmark. It contains the completed labels: 100 Wikipedia, 100 Website, and 100 Description rows, with 50 `yes` and 50 `no` labels per source. |
+| `data/benchmark/v3/independent-review/v3-independent-review-input.csv` | The blinded input sent for independent review. It contains the same 300 sentences, in the same order, with the metadata preserved and the `label` column removed. |
+| `data/benchmark/v3/independent-review/v3-gpt-sol-5.6-extra-high.csv` | The GPT response supplied for this review. It contains the same 300 rows and a GPT `label`; its parsed content is preserved in canonical UTF-8 CSV form. |
+| `data/benchmark/v3/independent-review/v3-human-gpt-disagreements.csv` | The human-review queue. It contains only disagreements and the columns `sentence`, `human_label`, `gpt_label`, and empty `final_human_label`. |
 
 The GPT filename identifies the run as `GPT Sol 5.6 Extra High`. No additional API run identifier or generation metadata was supplied, so the response file and its Git history are the authoritative record of that assessment.
 
@@ -48,10 +48,10 @@ For the CSV exchange, the surrounding instruction was to classify every row's `s
 
 ## Human reassessment
 
-Open `data/benchmark/v3-human-gpt-disagreements.csv` and fill only `final_human_label` with lowercase `yes` or `no`. Keep `sentence`, `human_label`, and `gpt_label` unchanged. The blank column is intentional: it is the adjudicator's decision, not a third model vote.
+The review queue at `data/benchmark/v3/independent-review/v3-human-gpt-disagreements.csv` was filled by a human reviewer using lowercase `yes` or `no` in `final_human_label`. The completed decisions are stored in `data/benchmark/v3/independent-review/v3-resolved.csv`; the original queue remains unchanged as the pre-resolution record. `sentence`, `human_label`, and `gpt_label` were kept unchanged. The final column is the adjudicator's decision, not a third model vote.
 
-After reassessment, save a new versioned adjudication artifact rather than overwriting the reference benchmark or either source assessment. Any decision to change the benchmark should be made from that reviewed file and committed as a separate, reviewable change.
+The final benchmark was then generated as `data/benchmark/v3/final/v3-final.csv` by copying the reference rows in order and replacing only the 42 disagreement labels with their resolved values. Neither the reference, GPT response, nor review queue was overwritten.
 
 ## Storage and provenance
 
-The three review artifacts are small committed CSVs under `data/benchmark/`; no candidate pool, session log, model cache, or duplicate dataset is copied into the repository. The raw GPT response remains separate from the derived disagreement queue.
+The V3 artifacts are small committed CSVs under `data/benchmark/v3/`; no candidate pool, session log, model cache, or duplicate dataset is copied into the repository. The GPT response, disagreement queue, resolved decisions, and final benchmark remain separate so the provenance is auditable.
