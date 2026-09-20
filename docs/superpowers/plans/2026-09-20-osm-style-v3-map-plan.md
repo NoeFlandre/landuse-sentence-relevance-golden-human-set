@@ -345,7 +345,7 @@ Document `uv run python scripts/build_v3_world_map.py` as the offline command; l
 - [ ] **Step 3: Validate documentation and commit**
 
 ~~~
-rg -n "Natural Earth|country outlines|country-boundary" data/benchmark/v3 docs --glob '!superpowers/**'
+rg -n "Natural Earth|country outlines|country-boundary" data/benchmark/v3 docs --glob '!docs/superpowers/**'
 uv run mkdocs build --strict --clean --site-dir state/osm-style-docs
 git diff --check
 git add data/benchmark/v3/README.md docs/v3-translations.md data/benchmark/v3/hf/README.md
