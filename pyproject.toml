@@ -37,6 +37,7 @@ dev = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.6,<10",
     "matplotlib==3.11.1",
+    "pillow==12.3.0",
     "mutmut>=3.4,<4",
     "playwright>=1.55,<2",
     "pytest>=8.4,<9",
