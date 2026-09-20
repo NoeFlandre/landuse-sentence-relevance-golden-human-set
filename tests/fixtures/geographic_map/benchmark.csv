@@ -1,0 +1,4 @@
+sentence,label,polygon_name,h3_cell,latitude,longitude,source,region,source_url
+description sentence,no,Description Place,cell-description,10,20,description,test-region,https://example.com/description
+website sentence,yes,Website Place,cell-website,-10,-20,website,test-region,https://example.com/website
+wikipedia sentence,no,Wikipedia Place,cell-wikipedia,30,40,wikipedia,test-region,https://example.com/wikipedia
