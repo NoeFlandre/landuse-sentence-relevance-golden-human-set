@@ -2,6 +2,7 @@
   "source_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
   "zoom": 2,
   "tile_size": 256,
+  "tiles_root": "osm-tiles/z2",
   "retrieved_at": "2026-09-20",
   "attribution": "© OpenStreetMap contributors",
   "license": "Open Database License (ODbL) 1.0",
@@ -39,12 +40,12 @@
     {
       "x": 2,
       "y": 1,
-      "sha256": "e89fe5eace1370969abdc2771736be54a6fb45d9f5057d2ae19f7621f0842b24"
+      "sha256": "bc9de25c55bd309fd707bb955ec9d597da927088cac499034a8acb789afeb110"
     },
     {
       "x": 3,
       "y": 1,
-      "sha256": "e467f2a76fc4c73923a150f728bfb37fbcb18fea40b7189fcdedc3b935239a6a"
+      "sha256": "782d8d77327b8a51d7c5bbe5a73f74bd03c4779c8e18c5eddd0690e1abe51e5c"
     },
     {
       "x": 0,
@@ -87,5 +88,5 @@
       "sha256": "d861020f25fbc612b0597abcb1868dcf5e2856d10b8c3945a51c3010197ca17d"
     }
   ],
-  "mosaic_sha256": "36d8cdc3d8442e6a71660eac7d81c3d1d89af347808c7a2c923cac9c382fdf7a"
+  "mosaic_sha256": "cca8296b91a42f92f7c85a20273c0454e2207e85530f2b5f776d1f5d91847be5"
 }

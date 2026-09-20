@@ -483,7 +483,8 @@ network access, and writes this card asset at
 `assets/v3-world-distribution.png`. Map data attribution is © OpenStreetMap
 contributors under the
 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/); the exact source tile
-checksums are documented in the project repository's
+bytes are vendored in the project repository under
+`data/benchmark/v3/assets/osm-tiles/z2/`, with checksums documented in
 `data/benchmark/v3/assets/osm-world-z2-manifest.json`.
 
 ## English benchmark provenance

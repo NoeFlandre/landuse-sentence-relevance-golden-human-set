@@ -61,6 +61,23 @@ def _download_tile(url: str) -> bytes:
         return response.read()
 
 
+def _tile_path(tiles_dir: Path, x: int, y: int) -> Path:
+    return tiles_dir / str(x) / f"{y}.png"
+
+
+def _tile_bytes(tiles_dir: Path, x: int, y: int, *, download: bool) -> bytes:
+    path = _tile_path(tiles_dir, x, y)
+    if download:
+        data = _download_tile(TILE_URL.format(z=ZOOM, x=x, y=y))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return data
+    try:
+        return path.read_bytes()
+    except FileNotFoundError as error:
+        raise ValueError(f"missing vendored OSM tile {path}; use --download to create a snapshot") from error
+
+
 def _manifest_for_recording(retrieved_at: str | None) -> dict[str, Any]:
     if retrieved_at is None:
         raise ValueError("--retrieved-at is required with --record-checksums")
@@ -72,6 +89,7 @@ def _manifest_for_recording(retrieved_at: str | None) -> dict[str, Any]:
         "source_url": TILE_URL,
         "zoom": ZOOM,
         "tile_size": TILE_SIZE,
+        "tiles_root": "osm-tiles/z2",
         "retrieved_at": retrieved_at,
         "attribution": "© OpenStreetMap contributors",
         "license": "Open Database License (ODbL) 1.0",
@@ -117,10 +135,15 @@ def prepare_basemap(
     manifest_path: Path,
     output_path: Path,
     *,
+    tiles_dir: Path,
+    download: bool = False,
     record_checksums: bool = False,
     retrieved_at: str | None = None,
 ) -> None:
-    """Download, verify, stitch, and persist the pinned OSM tile mosaic."""
+    """Verify or refresh the pinned OSM tile snapshot and stitch its mosaic."""
+
+    if download and not record_checksums:
+        raise ValueError("--download requires --record-checksums to create a new snapshot")
 
     manifest = _manifest_for_recording(retrieved_at) if record_checksums else _read_manifest(manifest_path)
     zoom = manifest.get("zoom")
@@ -134,7 +157,7 @@ def prepare_basemap(
     actual_hashes: dict[tuple[int, int], str] = {}
     for x, y in coordinates:
         tile_name = f"{ZOOM}/{x}/{y}"
-        data = _download_tile(TILE_URL.format(z=ZOOM, x=x, y=y))
+        data = _tile_bytes(tiles_dir, x, y, download=download)
         actual_hashes[(x, y)] = sha256(data).hexdigest()
         if not record_checksums:
             verify_tile_hash(data, expected_hashes[(x, y)], tile_name)
@@ -158,12 +181,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--tiles-dir", type=Path, required=True)
+    parser.add_argument("--download", action="store_true", help="Fetch and save a new tile snapshot")
     parser.add_argument("--record-checksums", action="store_true")
     parser.add_argument("--retrieved-at")
     args = parser.parse_args(argv)
     prepare_basemap(
         args.manifest,
         args.output,
+        tiles_dir=args.tiles_dir,
+        download=args.download,
         record_checksums=args.record_checksums,
         retrieved_at=args.retrieved_at,
     )

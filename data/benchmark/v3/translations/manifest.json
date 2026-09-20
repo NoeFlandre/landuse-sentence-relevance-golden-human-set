@@ -146,7 +146,7 @@
   },
   "geographic_asset": {
     "path": "data/benchmark/v3/assets/v3-world-distribution.png",
-    "sha256": "5002d10095ed097525b7d68a4b1dd4c433066732ff0da4c9cf66e09cfcbb7a90",
+    "sha256": "4a06702de45e503e02329ee0d381d8281f58e7770f877d02e506d16771e71523",
     "description": "300 benchmark coordinates by source, with an OpenStreetMap standard z2 physical basemap; shared by all language files."
   },
   "validation": {

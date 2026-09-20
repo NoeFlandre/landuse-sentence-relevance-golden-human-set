@@ -40,10 +40,11 @@ would make global labels and roads difficult to read at this scale.
 
 OpenStreetMap's standard physical tiles at zoom 2 provide the requested
 appearance without country-border emphasis. A deterministic preparation step
-will fetch the fixed 4x4 tile set, verify pinned tile checksums, and stitch it
-into one committed PNG. The normal map generator will consume that PNG
-offline. This is substantially smaller than the full coastline archive and
-matches the reference image more closely.
+fetches the fixed 4x4 tile set once, stores the exact 16 PNG bytes in the
+repository, verifies their pinned checksums, and stitches them into one
+committed PNG. The normal map generator and normal snapshot verification
+consume only those local bytes. This is substantially smaller than the full
+coastline archive and matches the reference image more closely.
 
 ### Restyled Natural Earth country geometry
 
@@ -58,10 +59,11 @@ and channels. The renderer will draw that image in Web Mercator, then three
 source-specific scatter layers and a legend. The CLI remains a thin adapter
 with explicit benchmark, basemap, and output paths.
 
-A separate preparation script will download the pinned z2 OSM tiles, verify
-their checksums, stitch them deterministically, and write the committed PNG
-plus manifest. This script is for asset maintenance only; normal card-map
-generation will never access the network.
+A separate preparation script will verify the vendored z2 OSM tiles, stitch
+them deterministically, and write the committed PNG plus manifest. An explicit
+`--download --record-checksums` mode refreshes the local snapshot; network
+access is never implicit. This script is for asset maintenance only; normal
+card-map generation will never access the network.
 
 ## Output and documentation
 

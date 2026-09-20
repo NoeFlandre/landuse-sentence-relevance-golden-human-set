@@ -108,9 +108,11 @@ uv run python scripts/build_v3_world_map.py
 The generator validates `data/benchmark/v3/final/v3-final.csv`, reads the
 committed OSM mosaic at `data/benchmark/v3/assets/osm-world-z2.png`, and writes
 the PNG at `data/benchmark/v3/assets/v3-world-distribution.png`. It uses the
-pinned Matplotlib 3.11.1 Agg renderer and performs no network access. The OSM
-tile provenance and checksums are recorded in
-`data/benchmark/v3/assets/osm-world-z2-manifest.json` and its README.
+pinned Matplotlib 3.11.1 Agg renderer and performs no network access. The exact
+16 OSM tile bytes are vendored under
+`data/benchmark/v3/assets/osm-tiles/z2/`; their provenance and checksums are
+recorded in `data/benchmark/v3/assets/osm-world-z2-manifest.json` and its
+README.
 
 ## Release layout and checks
 

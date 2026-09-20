@@ -4,7 +4,7 @@
 
 **Goal:** Replace the V3 map's country-outline graphic with a deterministic OpenStreetMap zoom-2 physical basemap and source-colored benchmark points.
 
-**Architecture:** A maintenance-only CLI downloads and verifies the fixed 4x4 OpenStreetMap z2 tile set, stitches it into a committed 1024x1024 PNG, and records per-tile and mosaic checksums in a manifest. The normal map CLI remains offline: it validates the English benchmark, loads the committed PNG, projects points to the Web Mercator coordinates used by the tiles, and renders the final card asset with the existing Matplotlib version.
+**Architecture:** A maintenance-only CLI refreshes or verifies the fixed 4x4 OpenStreetMap z2 tile snapshot, stitches it into a committed 1024x1024 PNG, and records per-tile and mosaic checksums in a manifest. The exact 16 tile PNGs are vendored in the repository. The normal map CLI remains offline: it validates the English benchmark, loads the committed PNG, projects points to the Web Mercator coordinates used by the tiles, and renders the final card asset with the existing Matplotlib version.
 
 **Tech Stack:** Python 3.12+, Matplotlib 3.11.1 Agg, Pillow 12.3.0, NumPy, standard-library urllib/hashlib/json, pytest, Hypothesis, Ruff, ty, mutmut, MkDocs.
 
@@ -14,10 +14,11 @@
 
 - Modify `src/landuse_sentence_relevance/reporting/geographic.py` to replace GeoJSON country-boundary loading with validated OSM PNG loading, Web Mercator conversion, and the physical-map renderer.
 - Modify `scripts/build_v3_world_map.py` to accept `--basemap` and call the offline renderer.
-- Create `scripts/prepare_v3_osm_basemap.py` as the only network-aware asset maintenance command. It downloads exactly 16 z2 tiles, checks their hashes, stitches them, and writes the manifest.
+- Create `scripts/prepare_v3_osm_basemap.py` as the only network-aware asset maintenance command. It verifies exactly 16 vendored z2 tiles by default; explicit `--download --record-checksums` refreshes those bytes, checks their hashes, stitches them, and writes the manifest.
 - Modify `pyproject.toml` and `uv.lock` to pin Pillow for deterministic tile assembly.
 - Delete `data/benchmark/v3/assets/natural-earth-110m-admin-0.geojson`.
 - Create `data/benchmark/v3/assets/osm-world-z2.png` and `data/benchmark/v3/assets/osm-world-z2-manifest.json`.
+- Create the 16 source snapshots under `data/benchmark/v3/assets/osm-tiles/z2/<x>/<y>.png`.
 - Modify `data/benchmark/v3/assets/README.md`, `data/benchmark/v3/README.md`, `docs/v3-translations.md`, and `data/benchmark/v3/hf/README.md`.
 - Modify `tests/unit/reporting/test_geographic.py` and `tests/unit/test_v3_world_map_script.py`; delete the obsolete GeoJSON fixture; create `tests/unit/test_prepare_v3_osm_basemap.py`.
 
@@ -293,11 +294,15 @@ UV_CACHE_DIR=/private/tmp/landuse-osm-style-uv \
 uv run python scripts/prepare_v3_osm_basemap.py \
   --manifest data/benchmark/v3/assets/osm-world-z2-manifest.json \
   --output data/benchmark/v3/assets/osm-world-z2.png \
+  --tiles-dir data/benchmark/v3/assets/osm-tiles/z2 \
+  --download \
   --record-checksums \
   --retrieved-at 2026-09-20
 ~~~
 
-Expected: one 1024x1024 RGBA PNG and one JSON manifest; no tile cache remains in the repository.
+Expected: one 1024x1024 RGBA PNG, one JSON manifest, and 16 vendored tile
+PNGs. A subsequent invocation without `--download` must rebuild and verify
+the same mosaic without network access.
 
 - [ ] **Step 2: Update the map CLI defaults**
 
