@@ -188,17 +188,21 @@ def _draw_boundaries(axes: Any, boundary_rings: Sequence[BoundaryRing], polygon_
 def _draw_points(axes: Any, points: Sequence[BenchmarkPoint]) -> None:
     counts = Counter(point.source for point in points)
     for source in SOURCE_ORDER:
-        source_points = [point for point in points if point.source == source]
-        axes.scatter(
-            [point.longitude for point in source_points],
-            [point.latitude for point in source_points],
-            s=18,
-            color=SOURCE_COLORS[source],
-            edgecolors="none",
-            label=f"{SOURCE_LABELS[source]} ({counts[source]})",
-            zorder=3,
-        )
+        _draw_source_points(axes, points, source, counts[source])
     axes.legend(loc="lower left", framealpha=0.85, fontsize=9)
+
+
+def _draw_source_points(axes: Any, points: Sequence[BenchmarkPoint], source: str, count: int) -> None:
+    source_points = [point for point in points if point.source == source]
+    axes.scatter(
+        [point.longitude for point in source_points],
+        [point.latitude for point in source_points],
+        s=18,
+        color=SOURCE_COLORS[source],
+        edgecolors="none",
+        label=f"{SOURCE_LABELS[source]} ({count})",
+        zorder=3,
+    )
 
 
 def _add_figure_labels(figure: Any) -> None:
