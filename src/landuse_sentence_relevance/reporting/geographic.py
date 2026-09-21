@@ -79,20 +79,34 @@ def load_land_basemap(path: Path, *, expected_sha256: str | None = None) -> tupl
     """Load the committed Natural Earth landmass GeoJSON as exterior rings."""
 
     raw = path.read_bytes()
-    if expected_sha256 is not None:
-        actual = sha256(raw).hexdigest()
-        if actual != expected_sha256:
-            raise ValueError(f"{path} checksum {actual} does not match {expected_sha256}")
+    _verify_checksum(raw, expected_sha256, path)
+    features = _land_features(raw, path)
+    rings = tuple(ring for feature in features for ring in _feature_rings(feature, path))
+    if not rings:
+        raise ValueError(f"{path} contains no drawable land rings")
+    return rings
+
+
+def _verify_checksum(raw: bytes, expected_sha256: str | None, path: Path) -> None:
+    """Reject snapshot bytes that differ from the pinned manifest checksum."""
+
+    if expected_sha256 is None:
+        return
+    actual = sha256(raw).hexdigest()
+    if actual != expected_sha256:
+        raise ValueError(f"{path} checksum {actual} does not match {expected_sha256}")
+
+
+def _land_features(raw: bytes, path: Path) -> list[Any]:
+    """Return the non-empty feature list of a GeoJSON FeatureCollection."""
+
     document = json.loads(raw.decode("utf-8"))
     if not isinstance(document, dict) or document.get("type") != "FeatureCollection":
         raise ValueError(f"{path} must contain a GeoJSON FeatureCollection")
     features = document.get("features")
     if not isinstance(features, list) or not features:
         raise ValueError(f"{path} must contain at least one land feature")
-    rings = tuple(ring for feature in features for ring in _feature_rings(feature, path))
-    if not rings:
-        raise ValueError(f"{path} contains no drawable land rings")
-    return rings
+    return features
 
 
 def render_world_map(
@@ -209,28 +223,37 @@ def _add_figure_labels(figure: Any, points: Sequence[BenchmarkPoint]) -> None:
 
 
 def _feature_rings(feature: Any, path: Path) -> tuple[LandRing, ...]:
+    """Return the drawable exterior rings of one GeoJSON land feature."""
+
     if not isinstance(feature, dict):
         raise ValueError(f"{path} contains a non-object feature")
-    geometry = feature.get("geometry")
-    if not isinstance(geometry, dict):
+    polygons = _feature_polygons(feature.get("geometry"), path)
+    return tuple(ring for polygon in polygons for ring in _polygon_rings(polygon, path))
+
+
+def _polygon_rings(polygon: Any, path: Path) -> tuple[LandRing, ...]:
+    """Return the exterior ring of one polygon when it has enough vertices."""
+
+    if not polygon:
         return ()
+    ring = _exterior_ring(polygon[0], path)
+    return (ring,) if len(ring) >= MIN_RING_POINTS else ()
+
+
+def _feature_polygons(geometry: Any, path: Path) -> list[Any]:
+    """Return one feature's polygons, normalizing Polygon to a single-member list."""
+
+    if not isinstance(geometry, dict):
+        return []
     kind = geometry.get("type")
     coordinates = geometry.get("coordinates")
     if kind == "Polygon":
-        polygons: Any = [coordinates]
-    elif kind == "MultiPolygon":
-        polygons = coordinates
-    else:
-        return ()
-    if not isinstance(polygons, list):
-        raise ValueError(f"{path} contains malformed {kind} coordinates")
-    return tuple(
-        ring
-        for polygon in polygons
-        if polygon
-        for ring in (_exterior_ring(polygon[0], path),)
-        if len(ring) >= MIN_RING_POINTS
-    )
+        return [coordinates]
+    if kind != "MultiPolygon":
+        return []
+    if not isinstance(coordinates, list):
+        raise ValueError(f"{path} contains malformed MultiPolygon coordinates")
+    return coordinates
 
 
 def _exterior_ring(ring: Any, path: Path) -> LandRing:

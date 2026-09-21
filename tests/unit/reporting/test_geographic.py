@@ -94,6 +94,63 @@ def test_committed_land_basemap_matches_its_manifest_checksum() -> None:
     assert len(rings) >= 100
 
 
+def test_load_land_basemap_rejects_a_collection_without_features(tmp_path: Path) -> None:
+    document = {"type": "FeatureCollection", "features": []}
+
+    with pytest.raises(ValueError, match="at least one land feature"):
+        load_land_basemap(write_land(tmp_path / "land.geojson", document))
+
+
+def test_load_land_basemap_rejects_a_non_object_feature(tmp_path: Path) -> None:
+    document = {"type": "FeatureCollection", "features": ["not-a-feature"]}
+
+    with pytest.raises(ValueError, match="non-object feature"):
+        load_land_basemap(write_land(tmp_path / "land.geojson", document))
+
+
+def test_load_land_basemap_rejects_malformed_multipolygon_coordinates(tmp_path: Path) -> None:
+    document = {
+        "type": "FeatureCollection",
+        "features": [{"geometry": {"type": "MultiPolygon", "coordinates": "nope"}}],
+    }
+
+    with pytest.raises(ValueError, match="malformed MultiPolygon"):
+        load_land_basemap(write_land(tmp_path / "land.geojson", document))
+
+
+def test_load_land_basemap_rejects_a_malformed_exterior_ring(tmp_path: Path) -> None:
+    document = {
+        "type": "FeatureCollection",
+        "features": [{"geometry": {"type": "Polygon", "coordinates": ["nope"]}}],
+    }
+
+    with pytest.raises(ValueError, match="malformed exterior ring"):
+        load_land_basemap(write_land(tmp_path / "land.geojson", document))
+
+
+def test_load_land_basemap_skips_unusable_geometries(tmp_path: Path) -> None:
+    document = {
+        "type": "FeatureCollection",
+        "features": [
+            {"geometry": None},
+            {"geometry": {"type": "Point", "coordinates": [0, 0]}},
+            {"geometry": {"type": "MultiPolygon", "coordinates": [[], [[[0, 0], [1, 1]]]]}},
+            LAND_DOCUMENT["features"][0],
+        ],
+    }
+
+    rings = load_land_basemap(write_land(tmp_path / "land.geojson", document))
+
+    assert rings == (((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 0.0)),)
+
+
+def test_load_land_basemap_rejects_a_collection_with_no_drawable_rings(tmp_path: Path) -> None:
+    document = {"type": "FeatureCollection", "features": [{"geometry": {"type": "Point"}}]}
+
+    with pytest.raises(ValueError, match="no drawable land rings"):
+        load_land_basemap(write_land(tmp_path / "land.geojson", document))
+
+
 def test_render_map_is_byte_identical_for_identical_inputs(tmp_path: Path) -> None:
     points = load_benchmark_points(FIXTURE_BENCHMARK, expected_counts=SMALL_SOURCE_COUNTS)
     land = load_land_basemap(write_land(tmp_path / "land.geojson"))
