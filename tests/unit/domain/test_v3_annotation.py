@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label, Source
 from landuse_sentence_relevance.domain.profile import V3_QUOTAS, SourceLabelQuotas
@@ -23,6 +22,7 @@ from landuse_sentence_relevance.domain.v3_annotation import (
     select_v3_annotation_seed,
 )
 from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
+from tests.builders import make_candidate
 
 ROOT = Path(__file__).parents[3]
 

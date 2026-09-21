@@ -1,24 +1,22 @@
 # V3 geographic map assets
 
-`osm-world-z2.png` is a 1024x1024, 4x4 mosaic of OpenStreetMap standard
-tiles at zoom level 2. It provides the pale physical world basemap shown
-behind the 300 benchmark coordinates. The source tile URL template is:
+`ne-110m-land.geojson` is the Natural Earth 1:110m physical land vector
+layer. It provides the pale landmass outlines drawn behind the 300
+benchmark coordinates. The source is:
 
-<https://tile.openstreetmap.org/{z}/{x}/{y}.png>
+<https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_110m_land.geojson>
 
-The exact tile checksums, retrieval date, mosaic checksum, attribution, and
-license record are in `osm-world-z2-manifest.json`. The 16 exact source tile
-PNGs are vendored under `osm-tiles/z2/<x>/<y>.png`. The current mosaic SHA-256
-is `cca8296b91a42f92f7c85a20273c0454e2207e85530f2b5f776d1f5d91847be5`.
+The pinned upstream ref, retrieval date, checksum, attribution, and license
+record are in `ne-110m-land-manifest.json`. The current snapshot SHA-256 is
+`9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9`.
 
-The maintenance command verifies the vendored snapshot and rebuilds the
-mosaic without network access:
+The maintenance command verifies the vendored snapshot without network
+access:
 
 ```bash
-uv run python scripts/prepare_v3_osm_basemap.py \
-  --manifest data/benchmark/v3/assets/osm-world-z2-manifest.json \
-  --output data/benchmark/v3/assets/osm-world-z2.png \
-  --tiles-dir data/benchmark/v3/assets/osm-tiles/z2
+uv run python scripts/prepare_v3_land_basemap.py \
+  --manifest data/benchmark/v3/assets/ne-110m-land-manifest.json \
+  --output data/benchmark/v3/assets/ne-110m-land.geojson
 ```
 
 An intentional snapshot refresh uses `--download --record-checksums
@@ -29,8 +27,5 @@ command only reads committed inputs and performs no network access:
 uv run python scripts/build_v3_world_map.py
 ```
 
-Map data attribution: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
-OpenStreetMap data is available under the
-[Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/);
-the tile service is also subject to the
-[OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Natural Earth is in the public domain; the requested credit is
+"Made with Natural Earth" (<https://www.naturalearthdata.com/about/terms-of-use/>).

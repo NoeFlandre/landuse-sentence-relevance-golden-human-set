@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
-from tests.builders import make_candidate
 
 import landuse_sentence_relevance.bootstrap.v3 as bootstrap
 from landuse_sentence_relevance.bootstrap import V3CandidatePoolResult
@@ -18,6 +17,7 @@ from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
 from landuse_sentence_relevance.domain.v3_annotation import V3AnnotationSeed
 from landuse_sentence_relevance.domain.v3_preflight import preflight_v3_candidate_pool
 from landuse_sentence_relevance.storage.v3_candidate_pool import load_v2_seed_plan
+from tests.builders import make_candidate
 
 scenarios("features/v3_annotation_seed.feature")
 pytestmark = pytest.mark.acceptance

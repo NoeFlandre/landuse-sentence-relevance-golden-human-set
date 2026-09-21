@@ -11,7 +11,6 @@ import pytest
 import uvicorn
 from playwright.sync_api import Page, sync_playwright
 from pytest_bdd import given, parsers, scenarios, then, when
-from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.domain.sampling import FinalizedCandidatePool
@@ -19,6 +18,7 @@ from landuse_sentence_relevance.storage.publisher import DatasetPublisher
 from landuse_sentence_relevance.storage.session import AnnotationStore
 from landuse_sentence_relevance.web.app import create_app
 from landuse_sentence_relevance.workflow import AnnotationWorkflow
+from tests.builders import make_candidate
 
 scenarios("features/annotation.feature")
 pytestmark = pytest.mark.acceptance

@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label, Source
 from landuse_sentence_relevance.domain.profile import V3_SOURCES, balanced_quotas
@@ -19,6 +18,7 @@ from landuse_sentence_relevance.domain.v3_progress import (
     ordered_v3_annotations,
     summarize_v3_progress,
 )
+from tests.builders import make_candidate
 
 
 def _candidate(candidate_id: str, source: Source, cell: str) -> Candidate:
