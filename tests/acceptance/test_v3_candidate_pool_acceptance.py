@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
-from tests.builders import make_candidate
 
 from landuse_sentence_relevance.bootstrap import V3CandidatePoolResult, build_v3_candidate_pool
 from landuse_sentence_relevance.config import V3Settings
 from landuse_sentence_relevance.domain.models import Candidate, Source
 from landuse_sentence_relevance.domain.profile import V3_SOURCES, SourceLabelQuotas, balanced_quotas
 from landuse_sentence_relevance.sources.v3 import V3SourceAdapters
+from tests.builders import make_candidate
 
 scenarios("features/v3_candidate_pool.feature")
 pytestmark = pytest.mark.acceptance

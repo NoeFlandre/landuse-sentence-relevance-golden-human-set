@@ -26,8 +26,9 @@ The map is reproducible from this checkout with:
 uv run python scripts/build_v3_world_map.py
 ```
 
-The command validates `final/v3-final.csv`, reads the committed OSM z2 basemap
-at `assets/osm-world-z2.png`, and writes `assets/v3-world-distribution.png`
-using the pinned Matplotlib 3.11.1 renderer. It performs no network access.
-The exact 16 source tile bytes and their checksums are kept under
-`assets/osm-tiles/z2/` and recorded in `assets/osm-world-z2-manifest.json`.
+The command validates `final/v3-final.csv`, reads the committed Natural Earth
+110m land vectors at `assets/ne-110m-land.geojson`, and writes
+`assets/v3-world-distribution.png` using the pinned Matplotlib 3.11.1
+renderer. It performs no network access. The exact snapshot bytes and their
+checksum are kept under `assets/` and recorded in
+`assets/ne-110m-land-manifest.json`.

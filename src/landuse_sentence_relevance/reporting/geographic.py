@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -24,18 +26,24 @@ REQUIRED_COLUMNS = (
 SOURCE_ORDER = ("description", "website", "wikipedia")
 V3_SOURCE_COUNTS = {source: 100 for source in SOURCE_ORDER}
 SOURCE_COLORS = {
-    "description": "#e58a13",
-    "website": "#477ff0",
-    "wikipedia": "#28a67d",
+    "description": "#d94801",
+    "website": "#2c6fbb",
+    "wikipedia": "#1b7837",
 }
 SOURCE_LABELS = {
     "description": "Description",
     "website": "Website",
     "wikipedia": "Wikipedia",
 }
-OSM_BASEMAP_SIZE = (1024, 1024)
-OSM_MAX_LATITUDE = 85.05112878
-WEB_MERCATOR_LIMIT = math.pi
+
+OCEAN_COLOR = "#cfe2f3"
+LAND_COLOR = "#e8e0d0"
+LAND_EDGE_COLOR = "#b8aa90"
+FIGSIZE = (16.0, 8.0)
+DPI = 100
+MIN_RING_POINTS = 3
+
+LandRing = tuple[tuple[float, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,31 +75,29 @@ def load_benchmark_points(
     return points
 
 
-def load_osm_basemap(path: Path, *, expected_size: tuple[int, int] = OSM_BASEMAP_SIZE) -> Any:
-    """Load and validate the committed OSM raster basemap."""
+def load_land_basemap(path: Path, *, expected_sha256: str | None = None) -> tuple[LandRing, ...]:
+    """Load the committed Natural Earth landmass GeoJSON as exterior rings."""
 
-    import matplotlib.image as mpimg
-
-    image = mpimg.imread(path)
-    if image.ndim != 3 or image.shape[2] not in (3, 4):
-        raise ValueError(f"{path} must be an RGB or RGBA PNG")
-    width, height = image.shape[1], image.shape[0]
-    if (width, height) != expected_size:
-        raise ValueError(f"{path} must be {expected_size[0]}x{expected_size[1]}")
-    return image
-
-
-def web_mercator_y(latitude: float) -> float:
-    """Convert latitude to the Web Mercator vertical coordinate used by OSM tiles."""
-
-    clipped = max(-OSM_MAX_LATITUDE, min(OSM_MAX_LATITUDE, latitude))
-    radians = math.radians(clipped)
-    return math.log(math.tan(math.pi / 4.0 + radians / 2.0))
+    raw = path.read_bytes()
+    if expected_sha256 is not None:
+        actual = sha256(raw).hexdigest()
+        if actual != expected_sha256:
+            raise ValueError(f"{path} checksum {actual} does not match {expected_sha256}")
+    document = json.loads(raw.decode("utf-8"))
+    if not isinstance(document, dict) or document.get("type") != "FeatureCollection":
+        raise ValueError(f"{path} must contain a GeoJSON FeatureCollection")
+    features = document.get("features")
+    if not isinstance(features, list) or not features:
+        raise ValueError(f"{path} must contain at least one land feature")
+    rings = tuple(ring for feature in features for ring in _feature_rings(feature, path))
+    if not rings:
+        raise ValueError(f"{path} contains no drawable land rings")
+    return rings
 
 
 def render_world_map(
     points: Sequence[BenchmarkPoint],
-    basemap: Any,
+    land: Sequence[LandRing],
     output_path: Path,
 ) -> None:
     """Render the fixed V3 coverage map without network or clock input."""
@@ -103,16 +109,9 @@ def render_world_map(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         axes = _configure_axes(figure)
-        axes.imshow(
-            basemap,
-            extent=(-180.0, 180.0, -WEB_MERCATOR_LIMIT, WEB_MERCATOR_LIMIT),
-            origin="upper",
-            interpolation="bilinear",
-            aspect="auto",
-            zorder=0,
-        )
+        _draw_land(axes, land)
         _draw_points(axes, points)
-        _add_figure_labels(figure)
+        _add_figure_labels(figure, points)
         canvas.print_png(output_path, metadata={"Software": "Matplotlib 3.11.1"})
     finally:
         figure.clear()
@@ -122,73 +121,122 @@ def _new_canvas() -> tuple[Any, Any]:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
 
-    figure = Figure(figsize=(14.28, 7.72), dpi=100, facecolor="#f5f7fa")
+    figure = Figure(figsize=FIGSIZE, dpi=DPI, facecolor="#ffffff")
     return figure, FigureCanvasAgg(figure)
 
 
 def _configure_axes(figure: Any) -> Any:
-    axes = figure.add_axes((0.035, 0.10, 0.93, 0.80), facecolor="#a8d0df")
-    axes.set_xlim(-180, 180)
-    axes.set_ylim(-WEB_MERCATOR_LIMIT, WEB_MERCATOR_LIMIT)
+    axes = figure.add_axes((0.045, 0.06, 0.91, 0.86), facecolor=OCEAN_COLOR)
+    axes.set_xlim(-180.0, 180.0)
+    axes.set_ylim(-90.0, 90.0)
     axes.set_xticks(range(-180, 181, 30))
-    latitudes = tuple(range(-80, 81, 20))
-    axes.set_yticks([web_mercator_y(latitude) for latitude in latitudes])
-    axes.set_yticklabels([f"{latitude}°" for latitude in latitudes])
-    axes.grid(color="white", linewidth=0.8, alpha=0.72)
+    axes.set_yticks(range(-90, 91, 30))
+    axes.grid(True, color="#ffffff", linewidth=0.3, alpha=0.4)
+    axes.tick_params(colors="#666666", labelsize=7)
+    axes.set_aspect("equal", adjustable="box")
     axes.set_axisbelow(True)
     for spine in axes.spines.values():
-        spine.set_color("#789eaa")
-        spine.set_linewidth(0.8)
+        spine.set_color("#b0b0b0")
+        spine.set_linewidth(0.4)
     return axes
+
+
+def _draw_land(axes: Any, land: Sequence[LandRing]) -> None:
+    import matplotlib.patches as mpatches
+
+    for ring in land:
+        axes.add_patch(
+            mpatches.Polygon(
+                ring,
+                closed=True,
+                facecolor=LAND_COLOR,
+                edgecolor=LAND_EDGE_COLOR,
+                linewidth=0.2,
+                zorder=1,
+            )
+        )
 
 
 def _draw_points(axes: Any, points: Sequence[BenchmarkPoint]) -> None:
     counts = Counter(point.source for point in points)
     for source in SOURCE_ORDER:
         _draw_source_points(axes, points, source, counts[source])
-    axes.legend(loc="lower left", framealpha=0.88, fontsize=9)
+    legend = axes.legend(
+        loc="lower left",
+        frameon=True,
+        framealpha=0.9,
+        fontsize=7,
+        markerscale=1.2,
+        borderpad=0.6,
+        labelspacing=0.5,
+    )
+    legend.get_frame().set_edgecolor("#b0b0b0")
+    legend.get_frame().set_linewidth(0.4)
 
 
 def _draw_source_points(axes: Any, points: Sequence[BenchmarkPoint], source: str, count: int) -> None:
     source_points = [point for point in points if point.source == source]
     axes.scatter(
         [point.longitude for point in source_points],
-        [web_mercator_y(point.latitude) for point in source_points],
-        s=24,
+        [point.latitude for point in source_points],
+        s=7,
         color=SOURCE_COLORS[source],
         edgecolors="none",
-        alpha=0.82,
+        alpha=0.85,
         label=f"{SOURCE_LABELS[source]} ({count})",
         zorder=3,
     )
 
 
-def _add_figure_labels(figure: Any) -> None:
+def _add_figure_labels(figure: Any, points: Sequence[BenchmarkPoint]) -> None:
     figure.text(
-        0.035,
+        0.5,
         0.965,
-        "V3 benchmark coverage - 300 sentences plotted",
-        color="#20385d",
-        fontsize=20,
-        fontweight="bold",
+        f"V3 benchmark coverage - {len(points):,} sentences plotted",
+        color="#333333",
+        fontsize=11,
+        ha="center",
         va="top",
     )
     figure.text(
-        0.035,
-        0.928,
-        "Description, Website, and Wikipedia sources | coordinates retained across all 85 language files",
-        color="#52657d",
-        fontsize=10,
-        va="top",
+        0.955,
+        0.012,
+        "Land: Natural Earth 110m (public domain) | Equirectangular",
+        color="#666666",
+        fontsize=7,
+        ha="right",
     )
-    figure.text(
-        0.590,
-        0.022,
-        "Basemap: © OpenStreetMap contributors | Web Mercator",
-        color="#52657d",
-        fontsize=8,
-        ha="left",
+
+
+def _feature_rings(feature: Any, path: Path) -> tuple[LandRing, ...]:
+    if not isinstance(feature, dict):
+        raise ValueError(f"{path} contains a non-object feature")
+    geometry = feature.get("geometry")
+    if not isinstance(geometry, dict):
+        return ()
+    kind = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+    if kind == "Polygon":
+        polygons: Any = [coordinates]
+    elif kind == "MultiPolygon":
+        polygons = coordinates
+    else:
+        return ()
+    if not isinstance(polygons, list):
+        raise ValueError(f"{path} contains malformed {kind} coordinates")
+    return tuple(
+        ring
+        for polygon in polygons
+        if polygon
+        for ring in (_exterior_ring(polygon[0], path),)
+        if len(ring) >= MIN_RING_POINTS
     )
+
+
+def _exterior_ring(ring: Any, path: Path) -> LandRing:
+    if not isinstance(ring, list):
+        raise ValueError(f"{path} contains a malformed exterior ring")
+    return tuple((float(vertex[0]), float(vertex[1])) for vertex in ring)
 
 
 def _point_from_row(row: dict[str, str | None], path: Path, row_number: int) -> BenchmarkPoint:

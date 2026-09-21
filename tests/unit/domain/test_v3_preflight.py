@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from tests.builders import make_candidate
 
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
 from landuse_sentence_relevance.domain.profile import V3_SOURCES, balanced_quotas
@@ -13,6 +12,7 @@ from landuse_sentence_relevance.domain.v3_preflight import (
     V3PreflightError,
     preflight_v3_candidate_pool,
 )
+from tests.builders import make_candidate
 
 
 def _candidate(source: Source, index: int):

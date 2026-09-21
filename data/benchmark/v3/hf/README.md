@@ -471,21 +471,21 @@ of the final English benchmark.
 
 The map shows the coordinates of all 300 benchmark records, colored by source
 (100 Description, 100 Website, 100 Wikipedia). The same coordinates are
-retained across all language files. The background is a pinned OpenStreetMap
-standard zoom-2 physical basemap in Web Mercator; this is a coverage
+retained across all language files. The background is the pinned Natural Earth
+110m land layer in an equirectangular projection; this is a coverage
 visualization, not a population or source-density estimate.
 
 This PNG is generated deterministically from the final English benchmark by
 [`scripts/build_v3_world_map.py`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/scripts/build_v3_world_map.py)
 with the pinned Matplotlib 3.11.1 Agg renderer. The generator validates the
-300 benchmark coordinates, uses a committed OSM z2 tile mosaic, performs no
-network access, and writes this card asset at
-`assets/v3-world-distribution.png`. Map data attribution is © OpenStreetMap
-contributors under the
-[ODbL 1.0](https://opendatacommons.org/licenses/odbl/); the exact source tile
-bytes are vendored in the project repository under
-`data/benchmark/v3/assets/osm-tiles/z2/`, with checksums documented in
-`data/benchmark/v3/assets/osm-world-z2-manifest.json`.
+300 benchmark coordinates, uses the committed Natural Earth 110m land vectors,
+performs no network access, and writes this card asset at
+`assets/v3-world-distribution.png`. The basemap is
+[Natural Earth](https://www.naturalearthdata.com/about/terms-of-use/) 1:110m
+physical land, which is in the public domain ("Made with Natural Earth"); the
+exact snapshot bytes are vendored in the project repository at
+`data/benchmark/v3/assets/ne-110m-land.geojson`, with the checksum documented
+in `data/benchmark/v3/assets/ne-110m-land-manifest.json`.
 
 ## English benchmark provenance
 

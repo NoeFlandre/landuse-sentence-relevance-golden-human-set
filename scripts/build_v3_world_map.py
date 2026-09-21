@@ -8,13 +8,13 @@ from pathlib import Path
 
 from landuse_sentence_relevance.reporting.geographic import (
     load_benchmark_points,
-    load_osm_basemap,
+    load_land_basemap,
     render_world_map,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BENCHMARK = PROJECT_ROOT / "data/benchmark/v3/final/v3-final.csv"
-DEFAULT_BASEMAP = PROJECT_ROOT / "data/benchmark/v3/assets/osm-world-z2.png"
+DEFAULT_BASEMAP = PROJECT_ROOT / "data/benchmark/v3/assets/ne-110m-land.geojson"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data/benchmark/v3/assets/v3-world-distribution.png"
 
 
@@ -26,7 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     points = load_benchmark_points(args.benchmark)
-    basemap = load_osm_basemap(args.basemap)
+    basemap = load_land_basemap(args.basemap)
     render_world_map(points, basemap, args.output)
     return 0
 

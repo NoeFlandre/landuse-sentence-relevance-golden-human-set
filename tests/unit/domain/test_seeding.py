@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from tests.builders import make_candidate
-
 from landuse_sentence_relevance.domain.models import Annotation, Label, Source
 from landuse_sentence_relevance.domain.profile import SourceLabelQuotas, balanced_quotas
 from landuse_sentence_relevance.domain.seeding import plan_seed
+from tests.builders import make_candidate
 
 SEED = "test-seed"
 

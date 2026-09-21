@@ -10,6 +10,14 @@ for what a release guarantees and how the next one is built without touching it.
 
 ## [Unreleased]
 
+### Changed
+
+- The V3 geographic map now renders Natural Earth 110m land vectors in an
+  equirectangular projection, matching the cartography used by the companion
+  OSM polygon datasets, and replaces the pinned OpenStreetMap zoom-2 raster
+  mosaic. The pinned, offline, checksum-verified snapshot lives at
+  `data/benchmark/v3/assets/ne-110m-land.geojson`.
+
 ### Added
 
 - Deterministic V3 reserve candidates for source-by-label quota shortfalls, with
