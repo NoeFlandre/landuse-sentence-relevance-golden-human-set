@@ -4,8 +4,17 @@ Status: accepted
 
 ## Decision
 
-The package uses explicit layers: pure `domain` logic; `analysis` over domain; `sources` over domain and observability; `storage` over domain, configuration, and observability; `workflow` over domain and storage; and `web` as the application boundary. `bootstrap` is the composition root. The architecture checker rejects forbidden layer imports and circular imports.
+The package uses explicit layers:
+
+- `domain` has pure logic.
+- `analysis` is over `domain`.
+- `sources` is over `domain` and observability.
+- `storage` is over `domain`, configuration, and observability.
+- `workflow` is over `domain` and `storage`.
+- `web` is the application boundary.
+
+`bootstrap` is the composition root. The architecture checker rejects the forbidden layer imports and the circular imports.
 
 ## Consequences
 
-Sampling, validation, and agreement logic stay testable without network, filesystem, UI, or model state. New cross-layer dependencies must be introduced deliberately by changing the checked boundary rather than through hidden coupling.
+The sampling, validation, and agreement logic stay testable without the network, the filesystem, the UI, or the model state. To add a new dependency between layers, change the checked boundary on purpose. Do not use hidden coupling.
