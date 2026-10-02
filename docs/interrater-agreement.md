@@ -1,6 +1,6 @@
 # Interrater agreement and adjudication
 
-The human annotator, GPT, and Claude originally labelled the same 158-sentence V2 combined export. The final adjudicated human benchmark contains 154 rows. The metrics below are the canonical Round 1 metrics against those 154 benchmark rows; the original 158-row report is preserved under `data/provenance/round-01/analysis/historical-158/`.
+The human annotator, GPT, and Claude first labeled the same V2 combined export of 158 sentences. The final adjudicated human benchmark has 154 rows. The metrics below are the canonical Round 1 metrics against those 154 benchmark rows. The original report of 158 rows is in `data/provenance/round-01/analysis/historical-158/`.
 
 ## At a glance
 
@@ -10,7 +10,7 @@ The human annotator, GPT, and Claude originally labelled the same 158-sentence V
 | GPT vs human | 89.6% (138/154) | 0.79 |
 | Claude vs human | 90.9% (140/154) | 0.82 |
 
-All three agree on 133/154 (86.4%), Fleiss' kappa 0.81. The 31 disagreements in the original 158-row run were adjudicated by hand; 4 were removed, leaving the **154-row final benchmark** used here.
+All three raters agree on 133/154 rows (86.4%). Fleiss' kappa is 0.81. A human adjudicated by hand the 31 disagreements in the original run of 158 rows. The human removed 4 of them. The result is the **final benchmark of 154 rows** that this page uses.
 
 ## Raters
 
@@ -20,38 +20,47 @@ All three agree on 133/154 (86.4%), Fleiss' kappa 0.81. The 31 disagreements in 
 | `gpt` | `data/provenance/round-01/outputs/gpt.csv` | `llm_label` |
 | `claude` | `data/provenance/round-01/outputs/claude.csv` | `llm_label` |
 
-The canonical report uses the final 154-row benchmark as its reference. The GPT and Claude files are the historical 158-row outputs; their four rows removed during human adjudication are excluded from the canonical comparison. The original 158-row human labels remain at `data/provenance/round-01/human.csv`.
+The canonical report uses the final benchmark of 154 rows as its reference. The GPT file and the Claude file are the historical outputs of 158 rows. The human adjudication removed four of their rows. The canonical comparison excludes these rows. The original human labels of 158 rows are in `data/provenance/round-01/human.csv`.
 
 ## Method
 
 ### Matching
 
-Rows are matched by **exact sentence identity**, not by row position. Each file is indexed as a mapping from its `sentence` value to its label, so row order is irrelevant and two files that happen to share an order are still matched by content. For the canonical Round 1 report, the 154 sentences in `benchmark.csv` define the reference set; the four historical model rows absent from that set are excluded before the one-to-one validation.
+The analysis matches rows by **exact sentence identity**. It does not use the row position. It indexes each file as a mapping from its `sentence` value to its label. The row order is therefore not important. Two files can have the same order, but the analysis still matches them by content. In the canonical Round 1 report, the 154 sentences in `benchmark.csv` define the reference set. Before the one-to-one validation, the analysis excludes the four historical model rows that are not in that set.
 
-The analysis fails loudly, with no partial result, when a file lacks the `sentence` column or the rater's label column, a row is truncated, a label is not `yes` or `no` after trimming and lowercasing, a rater has no rows, a sentence repeats within one file, or a rater's sentence set differs from the reference rater's in either direction. Only when every rater covers exactly the same sentence set, once each, is any metric computed. Matched sentences are then processed in sorted order, so every output is deterministic.
+The analysis fails with an error and gives no partial result in these cases:
+
+- A file does not have the `sentence` column or the label column of the rater.
+- A row is truncated.
+- A label is not `yes` or `no` after the analysis trims it and changes it to lowercase.
+- A rater has no rows.
+- A sentence occurs more than one time in one file.
+- The sentence set of a rater is different from the sentence set of the reference rater, in either direction.
+
+The analysis computes a metric only when every rater covers exactly the same sentence set, one time for each sentence. It then processes the matched sentences in sorted order. Every output is therefore deterministic.
 
 ### Metrics
 
-- **Observed agreement** — the share of matched sentences two raters labelled the same.
-- **Expected agreement** — chance agreement from the two raters' own label marginals: the sum over labels of the product of each rater's share of that label.
-- **Cohen's kappa** — `(observed - expected) / (1 - expected)`. When expected agreement is exactly 1, both raters used one label everywhere, observed agreement is also 1, and kappa is reported as 1.
-- **Confusion matrix** — counts with the first rater's labels as rows and the second rater's as columns.
-- **Three-rater agreement** — sentences where all three chose the same label, as a count and a share.
-- **Fleiss' kappa** — chance correction across all three raters at once: per sentence it measures the share of agreeing ordered rater pairs, averages that over sentences, and corrects it by the agreement expected from the pooled marginals. A corpus of one single label is reported as 1.
+- **Observed agreement** is the share of matched sentences that two raters labeled the same.
+- **Expected agreement** is the chance agreement from the label marginals of the two raters. It is the sum, over the labels, of the product of the share of that label for each rater.
+- **Cohen's kappa** is `(observed - expected) / (1 - expected)`. When the expected agreement is exactly 1, both raters used one label everywhere. The observed agreement is also 1. The analysis then reports a kappa of 1.
+- **Confusion matrix** gives the counts. The labels of the first rater are the rows. The labels of the second rater are the columns.
+- **Three-rater agreement** is the number and the share of the sentences where all three raters chose the same label.
+- **Fleiss' kappa** is a chance correction across all three raters at the same time. For each sentence, it measures the share of agreeing ordered rater pairs. It averages that share over the sentences. Then it corrects the average with the agreement that the pooled marginals predict. If the corpus has one single label, the analysis reports a kappa of 1.
 
-Pairs are enumerated over rater names in sorted order: `claude`–`gpt`, `claude`–`human`, `gpt`–`human`.
+The analysis lists the pairs over the rater names in sorted order: `claude`-`gpt`, `claude`-`human`, `gpt`-`human`.
 
 ### Adjudication
 
-Each of the 31 non-unanimous sentences carries one hand-assigned verdict in `final_label`: `yes`, `no`, or `remove`. The final benchmark takes the unanimous label where the raters agreed, the verdict where they did not, and drops every `remove`.
+Each of the 31 non-unanimous sentences has one hand-assigned verdict in `final_label`: `yes`, `no`, or `remove`. The final benchmark takes the unanimous label where the raters agreed. It takes the verdict where they did not agree. It drops every `remove`.
 
-Adjudication is validated as strictly as the agreement itself: every disagreement must carry a verdict, no unanimous sentence may carry one, and no verdict may be anything but the three tokens above. Any breach aborts the run.
+The analysis validates the adjudication as strictly as the agreement. Every disagreement must have a verdict. No unanimous sentence can have a verdict. No verdict can be different from the three tokens above. Any violation stops the run.
 
 ## Results
 
-The canonical report was regenerated over the final benchmark: **154 matched rows**, with no missing, duplicate, or invalid labels in the reference scope. The model source files each contain 158 rows; 4 rows are excluded because they were removed from the final human benchmark. The original 158-row report is retained under `analysis/historical-158/`.
+The project regenerated the canonical report over the final benchmark. It has **154 matched rows**. The reference scope has no missing label, no duplicate label, and no invalid label. Each model source file has 158 rows. The analysis excludes 4 rows because the final human benchmark does not have them. The project keeps the original report of 158 rows in `analysis/historical-158/`.
 
-Input SHA-256, as recorded in `agreement.json`:
+The input SHA-256 values, as `agreement.json` records them:
 
 | Rater | Source rows | Rows used | SHA-256 |
 | --- | --- | --- | --- |
@@ -59,7 +68,7 @@ Input SHA-256, as recorded in `agreement.json`:
 | gpt | 158 | 154 | `0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec` |
 | claude | 158 | 154 | `8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2` |
 
-The two model hashes match the ones recorded in [LLM labeling](llm-labeling.md), confirming the analysis read the published outputs unchanged.
+The two model hashes are the same as the hashes in [LLM labeling](llm-labeling.md). This confirms that the analysis read the published outputs without changes.
 
 ### Label counts
 
@@ -79,7 +88,7 @@ The two model hashes match the ones recorded in [LLM labeling](llm-labeling.md),
 
 ### Confusion matrices
 
-Rows are the first rater's label, columns the second rater's.
+The rows are the label of the first rater. The columns are the label of the second rater.
 
 | claude \ gpt | no | yes |
 | --- | --- | --- |
@@ -96,7 +105,7 @@ Rows are the first rater's label, columns the second rater's.
 | **no** | 60 | 2 |
 | **yes** | 14 | 78 |
 
-The two models still skew toward `yes` relative to the final human benchmark. Claude assigns `yes` to 13 sentences labelled `no` by the benchmark and `no` to 1 benchmark `yes`; GPT assigns `yes` to 14 benchmark `no` sentences and `no` to 2 benchmark `yes` sentences. The models disagree with each other on 12 of the original 158 rows, 6 of which remain in the 154-row reference scope.
+Compared with the final human benchmark, the two models still prefer `yes`. Claude assigns `yes` to 13 sentences that the benchmark labels `no`. It assigns `no` to 1 benchmark `yes`. GPT assigns `yes` to 14 benchmark `no` sentences. It assigns `no` to 2 benchmark `yes` sentences. The models disagree with each other on 12 of the original 158 rows. Six of these rows stay in the reference scope of 154 rows.
 
 ### Three raters
 
@@ -107,7 +116,7 @@ The two models still skew toward `yes` relative to the final human benchmark. Cl
 | Unanimous agreement | 0.8636 |
 | Fleiss' kappa | 0.8144 |
 
-Both models label `yes` more often than the final human benchmark: Claude is 13-to-1 and GPT is 14-to-2 on the two error directions. The remaining disagreement is a systematic recall-versus-precision offset, not scattered noise.
+Both models label `yes` more often than the final human benchmark. For the two error directions, Claude is 13-to-1 and GPT is 14-to-2. The remaining disagreement is a systematic offset between recall and precision. It is not scattered noise.
 
 ### Adjudication outcome
 
@@ -117,9 +126,9 @@ Both models label `yes` more often than the final human benchmark: Claude is 13-
 | `yes` | 7 |
 | `remove` | 4 |
 
-Of the 27 verdicts that kept a sentence, the human's original label was upheld 18 times, Claude's 13, and GPT's 11 — consistent with the models' `yes` bias, since two thirds of the verdicts went to `no`.
+The adjudication kept 27 sentences. For these verdicts, it upheld the original label of the human 18 times, of Claude 13 times, and of GPT 11 times. This is consistent with the `yes` bias of the models, because two thirds of the verdicts went to `no`.
 
-The result is `data/benchmark/v2-adjudicated.csv`: the human export with 4 rows removed and 9 labels replaced, keeping its own columns and row order.
+The result is `data/benchmark/v2-adjudicated.csv`. It is the human export with 4 rows removed and 9 labels replaced. It keeps its own columns and row order.
 
 | Final benchmark | Value |
 | --- | --- |
@@ -133,29 +142,29 @@ The result is `data/benchmark/v2-adjudicated.csv`: the human export with 4 rows 
 
 | Path | Committed | Contents |
 | --- | --- | --- |
-| [`data/interrater/disagreements.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/disagreements.csv) | yes | One row per non-unanimous sentence, generated |
-| [`data/interrater/adjudication.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/adjudication.csv) | yes | The same rows plus the hand-assigned `final_label`; the only hand-edited file here |
-| `data/provenance/round-01/analysis/agreement.json` | yes | Canonical machine-readable Round 1 report against the 154-row benchmark, including label counts, pairwise metrics, confusion matrices, three-rater agreement, disagreements, scope, and hashes |
-| `data/provenance/round-01/analysis/historical-158/` | yes | Preserved original 158-row agreement report and disagreement table |
-| `data/provenance/round-01/` | yes | Complete immutable Round 1 snapshot: prompt, input, benchmark, model outputs, manifest, and analysis |
-| [`data/benchmark/v2-adjudicated.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/benchmark/v2-adjudicated.csv) | yes | The 154-row final benchmark: the human export's own nine columns, with removed rows dropped and adjudicated labels applied |
+| [`data/interrater/disagreements.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/disagreements.csv) | yes | One row for each non-unanimous sentence. Generated. |
+| [`data/interrater/adjudication.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/interrater/adjudication.csv) | yes | The same rows and the hand-assigned `final_label`. It is the only hand-edited file here. |
+| `data/provenance/round-01/analysis/agreement.json` | yes | The canonical machine-readable Round 1 report against the benchmark of 154 rows. It has the label counts, the pairwise metrics, the confusion matrices, the three-rater agreement, the disagreements, the scope, and the hashes. |
+| `data/provenance/round-01/analysis/historical-158/` | yes | The preserved original agreement report and disagreement table of 158 rows. |
+| `data/provenance/round-01/` | yes | The complete immutable Round 1 snapshot: prompt, input, benchmark, model outputs, manifest, and analysis. |
+| [`data/benchmark/v2-adjudicated.csv`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/data/benchmark/v2-adjudicated.csv) | yes | The final benchmark of 154 rows. It has the nine columns of the human export. The project dropped the removed rows and applied the adjudicated labels. |
 
-Committed tables and immutable release provenance live under `data/`; raw and intermediate artifacts stay under `results/` on the Seagate drive. See the [Data catalogue](results.md) for every file in the project.
+The committed tables and the immutable release provenance are in `data/`. The raw and intermediate artifacts stay in `results/` on the Seagate drive. Refer to the [Data catalogue](results.md) for every file in the project.
 
 ### Review table columns
 
-Both CSVs under `data/interrater/` share the same shape:
+Both CSV files in `data/interrater/` have the same shape:
 
 | Column | Meaning |
 | --- | --- |
-| `minority_rater` | The rater the other two outvoted. Empty if no label holds a strict majority |
-| `minority_label` | The label that outvoted rater chose |
-| `human`, `gpt`, `claude` | The three labels for that sentence, in that order |
-| `final_label` | The adjudicated verdict — `yes`, `no`, or `remove`. Only in `adjudication.csv` |
-| `sentence` | The sentence itself, immediately after the labels |
-| `source`, `region`, `polygon_name`, `source_url` | Where the sentence came from |
+| `minority_rater` | The rater that the other two raters outvoted. It is empty if no label has a strict majority. |
+| `minority_label` | The label that the outvoted rater chose. |
+| `human`, `gpt`, `claude` | The three labels for that sentence, in that order. |
+| `final_label` | The adjudicated verdict: `yes`, `no`, or `remove`. It is only in `adjudication.csv`. |
+| `sentence` | The sentence. It is immediately after the labels. |
+| `source`, `region`, `polygon_name`, `source_url` | The origin of the sentence. |
 
-Rows are sorted by `minority_rater`, then `minority_label`, then the sentence, so each systematic pattern reads as one block:
+The rows are sorted by `minority_rater`, then `minority_label`, then the sentence. Each systematic pattern is then one block:
 
 | Outvoted rater | Their label | Rows |
 | --- | --- | --- |
@@ -166,12 +175,14 @@ Rows are sorted by `minority_rater`, then `minority_label`, then the sentence, s
 | claude | `yes` | 4 |
 | claude | `no` | 2 |
 
-## Rebuilding the original adjudication
+## Rebuild the original adjudication
+
+**Warning:** Do not use the legacy command below to overwrite `data/provenance/round-01/analysis/agreement.json`. That file is the canonical report of 154 rows.
 
 ```bash
 ./scripts/uv-seagate run python scripts/interrater_agreement.py
 ```
 
-This legacy command rebuilds the original 158-row adjudication inputs and committed review tables. The canonical 154-row Round 1 agreement report is the preserved generated artifact at `data/provenance/round-01/analysis/agreement.json`; do not overwrite it with the legacy command. Future prompt rounds use `scripts/evaluate_llm_round.py` and their own numbered directory. Outputs are byte-identical across repeated runs on unchanged inputs. A validation failure prints to standard error, returns exit status 1, and writes nothing.
+This legacy command rebuilds the original adjudication inputs of 158 rows and the committed review tables. The canonical Round 1 agreement report of 154 rows is the preserved generated artifact at `data/provenance/round-01/analysis/agreement.json`. Future prompt rounds use `scripts/evaluate_llm_round.py` and their own numbered directory. The outputs are byte-identical across repeated runs on unchanged inputs. A validation failure prints to standard error and returns exit status 1. It writes nothing.
 
-The code lives in `src/landuse_sentence_relevance/analysis/`, is covered by unit tests under `tests/unit/analysis/` and `tests/unit/test_interrater_script.py`, and is part of the mutation gate described in [QA](qa.md).
+The code is in `src/landuse_sentence_relevance/analysis/`. Unit tests in `tests/unit/analysis/` and `tests/unit/test_interrater_script.py` cover it. It is part of the mutation gate in [QA](qa.md).
