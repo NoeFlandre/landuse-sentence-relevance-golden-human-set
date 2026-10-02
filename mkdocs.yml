@@ -19,6 +19,7 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
+  - Glossary: glossary.md
   - Data sources: data-sources.md
   - Annotation: annotation.md
   - Data catalogue: results.md
