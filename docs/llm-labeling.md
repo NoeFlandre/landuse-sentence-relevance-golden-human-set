@@ -1,23 +1,23 @@
 # LLM labeling
 
-This page records two machine-labeled copies of the V2 combined results. They are separate from the human benchmark and do not replace human annotations.
+This page records two machine-labeled copies of the V2 combined results. They are separate from the human benchmark. They do not replace the human annotations.
 
-This is the historical Round 1 record. Its complete release snapshot is
-under `data/provenance/round-01/`; use
-[LLM evaluation rounds](llm-evaluation-rounds.md) for every new prompt iteration.
+This page is the historical record of Round 1. Its complete release snapshot is in `data/provenance/round-01/`. For each new prompt iteration, use [LLM evaluation rounds](llm-evaluation-rounds.md).
 
 ## Runs
 
-Both runs used the shared prompt below, the same 158-row input, and web search disabled.
+Both runs used the shared prompt below, the same input of 158 rows, and no web search.
 
 | Run | Model | Time | Output | Labels | Output SHA-256 |
 | --- | --- | --- | --- | --- | --- |
 | GPT | GPT 5.6 Extra High | 2026-09-10 10:09 Europe/Paris | `data/provenance/round-01/outputs/gpt.csv` | 96 `yes`, 62 `no` | `0e328e3507c497f8e03b907928719908b3a60342fd3e380f8b24d57def0a7cec` |
 | Claude | Claude Opus 5 Extra | 2026-09-10 10:14 Europe/Paris | `data/provenance/round-01/outputs/claude.csv` | 96 `yes`, 62 `no` | `8ec64988527077932aa4ec70a34203415795c604d96d693b0a01f6db0fce84a2` |
 
-The input is `data/provenance/round-01/input.csv` with 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs preserve the input rows, columns, values, and order, and add only `llm_label` with lowercase `yes` or `no`.
+The input is `data/provenance/round-01/input.csv`. It has 158 rows: 100 Wikipedia and 58 website. Its SHA-256 is `a35e8a9aaf95a097d7b0de25778b6aa9a5b5b9ebf665d9b940a0701bab53950d`. Both outputs keep the rows, columns, values, and order of the input. They add only `llm_label` with the lowercase value `yes` or `no`.
 
-On the original 158-row input, the two outputs agree on 146 rows and disagree on 12. Against the final 154-row human benchmark, Claude agrees on 140/154 (Cohen's kappa 0.8168) and GPT agrees on 138/154 (Cohen's kappa 0.7906); the canonical report is documented in [Interrater agreement](interrater-agreement.md). This is recorded for review; neither output is silently selected as ground truth. Neither machine file is a benchmark. The benchmark is `data/benchmark/v2-adjudicated.csv`, built by adjudicating the original disagreements between these two runs and the human annotator.
+On the original input of 158 rows, the two outputs agree on 146 rows. They disagree on 12 rows. Against the final human benchmark of 154 rows, Claude agrees on 140/154 (Cohen's kappa 0.8168). GPT agrees on 138/154 (Cohen's kappa 0.7906). The canonical report is in [Interrater agreement](interrater-agreement.md).
+
+The project records these results for review. It does not select either output as ground truth. Neither machine file is a benchmark. The benchmark is `data/benchmark/v2-adjudicated.csv`. The project built it when it adjudicated the original disagreements between these two runs and the human annotator.
 
 ## Shared prompt
 
@@ -33,4 +33,4 @@ Output only the lowercase token yes or no.
 TARGET SENTENCE: {}
 ```
 
-Round 1 is immutable. Any later run must use a new numbered round and record its model, prompt, input hash, output hash, and row-level validation separately; follow [LLM evaluation rounds](llm-evaluation-rounds.md).
+Round 1 is immutable. Each later run must use a new numbered round. Record the model, the prompt, the input hash, the output hash, and the row-level validation separately. Follow [LLM evaluation rounds](llm-evaluation-rounds.md).
