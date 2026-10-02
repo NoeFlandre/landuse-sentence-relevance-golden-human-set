@@ -1,10 +1,10 @@
 # OSM-Style V3 Map Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. The steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the V3 map's country-outline graphic with a deterministic OpenStreetMap zoom-2 physical basemap and source-colored benchmark points.
+**Goal:** Replace the country-outline graphic of the V3 map. Use a deterministic OpenStreetMap zoom-2 physical basemap and benchmark points in the colors of the sources.
 
-**Architecture:** A maintenance-only CLI refreshes or verifies the fixed 4x4 OpenStreetMap z2 tile snapshot, stitches it into a committed 1024x1024 PNG, and records per-tile and mosaic checksums in a manifest. The exact 16 tile PNGs are vendored in the repository. The normal map CLI remains offline: it validates the English benchmark, loads the committed PNG, projects points to the Web Mercator coordinates used by the tiles, and renders the final card asset with the existing Matplotlib version.
+**Architecture:** A CLI for maintenance only refreshes or verifies the fixed 4x4 OpenStreetMap z2 tile snapshot. It stitches the snapshot into a committed PNG of 1024x1024. It records the checksums of each tile and of the mosaic in a manifest. The repository contains the exact 16 tile PNGs. The normal map CLI stays offline. It validates the English benchmark and loads the committed PNG. It projects the points to the Web Mercator coordinates that the tiles use. It renders the final card asset with the existing Matplotlib version.
 
 **Tech Stack:** Python 3.12+, Matplotlib 3.11.1 Agg, Pillow 12.3.0, NumPy, standard-library urllib/hashlib/json, pytest, Hypothesis, Ruff, ty, mutmut, MkDocs.
 
@@ -12,15 +12,15 @@
 
 ## File map
 
-- Modify `src/landuse_sentence_relevance/reporting/geographic.py` to replace GeoJSON country-boundary loading with validated OSM PNG loading, Web Mercator conversion, and the physical-map renderer.
-- Modify `scripts/build_v3_world_map.py` to accept `--basemap` and call the offline renderer.
-- Create `scripts/prepare_v3_osm_basemap.py` as the only network-aware asset maintenance command. It verifies exactly 16 vendored z2 tiles by default; explicit `--download --record-checksums` refreshes those bytes, checks their hashes, stitches them, and writes the manifest.
-- Modify `pyproject.toml` and `uv.lock` to pin Pillow for deterministic tile assembly.
+- Modify `src/landuse_sentence_relevance/reporting/geographic.py`. Replace the loading of GeoJSON country boundaries with the loading of a validated OSM PNG, a Web Mercator conversion, and the physical-map renderer.
+- Modify `scripts/build_v3_world_map.py`. Make it accept `--basemap` and call the offline renderer.
+- Create `scripts/prepare_v3_osm_basemap.py`. It is the only command for asset maintenance that uses the network. By default, it verifies exactly 16 vendored z2 tiles. The explicit `--download --record-checksums` option refreshes those bytes, checks their hashes, stitches them, and writes the manifest.
+- Modify `pyproject.toml` and `uv.lock`. Pin Pillow for the deterministic tile assembly.
 - Delete `data/benchmark/v3/assets/natural-earth-110m-admin-0.geojson`.
 - Create `data/benchmark/v3/assets/osm-world-z2.png` and `data/benchmark/v3/assets/osm-world-z2-manifest.json`.
-- Create the 16 source snapshots under `data/benchmark/v3/assets/osm-tiles/z2/<x>/<y>.png`.
+- Create the 16 source snapshots in `data/benchmark/v3/assets/osm-tiles/z2/<x>/<y>.png`.
 - Modify `data/benchmark/v3/assets/README.md`, `data/benchmark/v3/README.md`, `docs/v3-translations.md`, and `data/benchmark/v3/hf/README.md`.
-- Modify `tests/unit/reporting/test_geographic.py` and `tests/unit/test_v3_world_map_script.py`; delete the obsolete GeoJSON fixture; create `tests/unit/test_prepare_v3_osm_basemap.py`.
+- Modify `tests/unit/reporting/test_geographic.py` and `tests/unit/test_v3_world_map_script.py`. Delete the obsolete GeoJSON fixture. Create `tests/unit/test_prepare_v3_osm_basemap.py`.
 
 ### Task 1: Add failing basemap and projection tests
 
@@ -30,7 +30,7 @@
 
 - [ ] **Step 1: Replace the GeoJSON fixture tests with PNG-contract tests**
 
-Use an in-test PNG created with Pillow so tests do not need a large binary fixture. The first test must call the public loader with an explicit expected size; the production default remains `(1024, 1024)`.
+Use a PNG that the test creates with Pillow. The tests then do not need a large binary fixture. The first test must call the public loader with an explicit expected size. The production default stays `(1024, 1024)`.
 
 ~~~
 from PIL import Image
@@ -70,7 +70,7 @@ def test_web_mercator_y_is_monotonic_and_symmetric() -> None:
 
 - [ ] **Step 2: Add failing tile-preparation unit tests**
 
-Test pure functions only; no test may call the network. The tests must cover the exact 4x4 coordinate set, hash verification, and deterministic stitching.
+Test only pure functions. No test can call the network. The tests must cover the exact 4x4 coordinate set, the hash verification, and the deterministic stitching.
 
 ~~~
 def test_tile_coordinates_for_zoom_two_are_four_by_four() -> None:
@@ -106,7 +106,7 @@ Run:
 uv run pytest tests/unit/reporting/test_geographic.py tests/unit/test_prepare_v3_osm_basemap.py -q
 ~~~
 
-Expected: collection or import failures because `load_osm_basemap`, `web_mercator_y`, `tile_coordinates`, `stitch_tiles`, and `verify_tile_hash` do not yet exist.
+Expected: collection or import failures. `load_osm_basemap`, `web_mercator_y`, `tile_coordinates`, `stitch_tiles`, and `verify_tile_hash` do not exist yet.
 
 - [ ] **Step 4: Commit the RED tests**
 
@@ -123,7 +123,7 @@ git commit -m "test: define OSM basemap contracts"
 
 - [ ] **Step 1: Implement the PNG loader and Web Mercator conversion**
 
-Keep the existing CSV validation and source constants unchanged. Replace the GeoJSON types and loader with:
+Do not change the existing CSV validation and the source constants. Replace the GeoJSON types and the loader with this code:
 
 ~~~
 OSM_BASEMAP_SIZE = (1024, 1024)
@@ -151,7 +151,7 @@ def web_mercator_y(latitude: float) -> float:
 
 - [ ] **Step 2: Implement the physical basemap renderer**
 
-Change the public renderer signature to `render_world_map(points, basemap, output_path)`. Configure the axes with `xlim=(-180, 180)` and `ylim=(-math.pi, math.pi)`, draw the loaded image with `origin="upper"` and extent `(-180, 180, -math.pi, math.pi)`, and put latitude ticks at `web_mercator_y(latitude)` while retaining degree labels. Use the existing source palette and legend counts; each source layer must plot `web_mercator_y(point.latitude)` rather than raw latitude.
+Change the public renderer signature to `render_world_map(points, basemap, output_path)`. Configure the axes with `xlim=(-180, 180)` and `ylim=(-math.pi, math.pi)`. Draw the loaded image with `origin="upper"` and the extent `(-180, 180, -math.pi, math.pi)`. Put the latitude ticks at `web_mercator_y(latitude)` and keep the degree labels. Use the existing source palette and the legend counts. Each source layer must plot `web_mercator_y(point.latitude)`. It must not plot the raw latitude.
 
 Use these exact source colors and labels:
 
@@ -168,11 +168,11 @@ SOURCE_LABELS = {
 }
 ~~~
 
-Add the attribution directly to the output footer: `Basemap: © OpenStreetMap contributors | Web Mercator`. Keep the fixed 1428x772 RGBA PNG output and `Matplotlib 3.11.1` metadata.
+Add the attribution directly to the footer of the output: `Basemap: © OpenStreetMap contributors | Web Mercator`. Keep the fixed RGBA PNG output of 1428x772 and the `Matplotlib 3.11.1` metadata.
 
 - [ ] **Step 3: Extend the rendering tests**
 
-Render two files with the same fixture image and points and assert identical bytes. Assert that `web_mercator_y(60)` is used by checking the helper directly; the deterministic image test then protects the complete render contract.
+Render two files with the same fixture image and the same points. Assert that the bytes are identical. Check the helper directly to assert that the renderer uses `web_mercator_y(60)`. The deterministic image test then protects the complete render contract.
 
 - [ ] **Step 4: Run focused tests and verify GREEN**
 
@@ -201,13 +201,13 @@ git commit -m "feat: render V3 map over OSM basemap"
 
 - [ ] **Step 1: Add the pinned Pillow dependency**
 
-Add `"pillow==12.3.0"` to the dev dependency group and run:
+Add `"pillow==12.3.0"` to the dev dependency group. Then run:
 
 ~~~
 uv lock
 ~~~
 
-Expected: `uv.lock` records Pillow 12.3.0 without unrelated dependency changes.
+Expected: `uv.lock` records Pillow 12.3.0 and no unrelated dependency changes.
 
 - [ ] **Step 2: Implement pure tile functions**
 
@@ -245,7 +245,16 @@ def stitch_tiles(
 
 - [ ] **Step 3: Implement manifest-driven downloading**
 
-The CLI must accept `--manifest`, `--output`, and `--record-checksums`. In normal mode it reads the manifest, downloads each of the 16 URLs with a descriptive User-Agent, verifies every recorded tile SHA-256, stitches the tiles, verifies `mosaic_sha256`, and writes the output. In recording mode it downloads the same coordinates, writes tile hashes and the mosaic hash, and uses the fixed retrieval date supplied by `--retrieved-at YYYY-MM-DD`; the command must reject a missing date in recording mode.
+The CLI must accept `--manifest`, `--output`, and `--record-checksums`. In normal mode, it does these steps:
+
+1. It reads the manifest.
+2. It downloads each of the 16 URLs with a descriptive User-Agent.
+3. It verifies every recorded tile SHA-256.
+4. It stitches the tiles.
+5. It verifies `mosaic_sha256`.
+6. It writes the output.
+
+In recording mode, it downloads the same coordinates. It writes the tile hashes and the mosaic hash. It uses the fixed retrieval date that `--retrieved-at YYYY-MM-DD` supplies. The command must reject a missing date in recording mode.
 
 The manifest fields are exactly:
 
@@ -272,7 +281,7 @@ git add scripts/prepare_v3_osm_basemap.py tests/unit/test_prepare_v3_osm_basemap
 git commit -m "feat: add pinned OSM basemap preparation"
 ~~~
 
-Expected: all preparation tests pass and the commit contains no downloaded tiles or temporary files.
+Expected: all preparation tests pass. The commit contains no downloaded tiles and no temporary files.
 
 ### Task 4: Build the checked-in asset and wire the CLI
 
@@ -286,7 +295,7 @@ Expected: all preparation tests pass and the commit contains no downloaded tiles
 
 - [ ] **Step 1: Generate the pinned OSM mosaic in task-scoped temporary storage**
 
-Run the maintenance command with the verified source and fixed date:
+Run the maintenance command with the verified source and the fixed date:
 
 ~~~
 MPLCONFIGDIR=/private/tmp/landuse-osm-style-mpl \
@@ -300,13 +309,11 @@ uv run python scripts/prepare_v3_osm_basemap.py \
   --retrieved-at 2026-09-20
 ~~~
 
-Expected: one 1024x1024 RGBA PNG, one JSON manifest, and 16 vendored tile
-PNGs. A subsequent invocation without `--download` must rebuild and verify
-the same mosaic without network access.
+Expected: one RGBA PNG of 1024x1024, one JSON manifest, and 16 vendored tile PNG files. A later run without `--download` must rebuild and verify the same mosaic without network access.
 
 - [ ] **Step 2: Update the map CLI defaults**
 
-Replace `--boundaries` with `--basemap`, defaulting to `data/benchmark/v3/assets/osm-world-z2.png`. The CLI must load points, load the basemap, and call `render_world_map(points, basemap, output)`.
+Replace `--boundaries` with `--basemap`. Its default is `data/benchmark/v3/assets/osm-world-z2.png`. The CLI must load the points, load the basemap, and call `render_world_map(points, basemap, output)`.
 
 - [ ] **Step 3: Regenerate and test the final map**
 
@@ -318,11 +325,11 @@ uv run pytest tests/unit/test_v3_world_map_script.py -q
 file data/benchmark/v3/assets/v3-world-distribution.png
 ~~~
 
-Expected: `PNG image data, 1428 x 772, 8-bit/color RGBA` and a passing CLI test. Re-running the CLI twice must produce the same SHA-256.
+Expected: `PNG image data, 1428 x 772, 8-bit/color RGBA` and a passing CLI test. Two runs of the CLI must produce the same SHA-256.
 
 - [ ] **Step 4: Document the asset provenance**
 
-Replace Natural Earth text in `data/benchmark/v3/assets/README.md` with the OSM tile URL, z2/4x4 layout, manifest checksum contract, attribution link, ODbL link, and the explicit statement that normal map generation performs no network access.
+In `data/benchmark/v3/assets/README.md`, replace the Natural Earth text. Add these items: the OSM tile URL, the z2/4x4 layout, the manifest checksum contract, the attribution link, the ODbL link, and the explicit statement that the normal map generation does not use the network.
 
 - [ ] **Step 5: Commit the asset and CLI wiring**
 
@@ -341,11 +348,11 @@ git commit -m "build: replace V3 map background with OSM mosaic"
 
 - [ ] **Step 1: Replace all Natural Earth and country-outline claims**
 
-Describe the map as an OSM standard z2 physical basemap with Description, Website, and Wikipedia source colors. State that coordinates are benchmark metadata, that all languages retain the same coordinates, and that the map is not a population or source-density estimate.
+Describe the map as an OSM standard z2 physical basemap with the source colors Description, Website, and Wikipedia. State that the coordinates are benchmark metadata. State that all languages keep the same coordinates. State that the map is not an estimate of the population or of the source density.
 
 - [ ] **Step 2: Add reproducibility and attribution instructions**
 
-Document `uv run python scripts/build_v3_world_map.py` as the offline command; link to `scripts/prepare_v3_osm_basemap.py` for asset maintenance; link to the OSM copyright and ODbL pages; and link to the committed manifest for exact source checksums.
+Document `uv run python scripts/build_v3_world_map.py` as the offline command. Link to `scripts/prepare_v3_osm_basemap.py` for the asset maintenance. Link to the OSM copyright page and the ODbL page. Link to the committed manifest for the exact source checksums.
 
 - [ ] **Step 3: Validate documentation and commit**
 
@@ -357,12 +364,12 @@ git add data/benchmark/v3/README.md docs/v3-translations.md data/benchmark/v3/hf
 git commit -m "docs: document OSM V3 map provenance"
 ~~~
 
-Expected: the search returns no obsolete map description, MkDocs succeeds, and the diff has no whitespace errors.
+Expected: the search returns no obsolete map description. MkDocs succeeds. The diff has no whitespace errors.
 
 ### Task 6: Run the full quality gate and prepare the release
 
 **Files:**
-- Modify: none beyond the generated asset if regeneration changes bytes.
+- Modify: none, except the generated asset if the regeneration changes bytes.
 
 - [ ] **Step 1: Run focused tests, lint, types, and architecture checks**
 
@@ -376,11 +383,11 @@ uv run ty check src tests scripts
 uv run python scripts/check_architecture.py
 ~~~
 
-Expected: all focused tests pass and all static checks exit zero.
+Expected: all focused tests pass. All static checks exit with zero.
 
 - [ ] **Step 2: Verify byte-level determinism and asset contracts**
 
-Generate two temporary output files with the CLI, compare SHA-256 values, and assert the committed OSM mosaic and final map dimensions. The two generated hashes must be identical to each other; the final committed PNG must be the same hash after the second generation.
+Generate two temporary output files with the CLI. Compare their SHA-256 values. Assert the dimensions of the committed OSM mosaic and of the final map. The two generated hashes must be identical to each other. After the second generation, the final committed PNG must have the same hash.
 
 - [ ] **Step 3: Run the full project gauntlet**
 
@@ -390,16 +397,16 @@ UV_CACHE_DIR=/private/tmp/landuse-osm-style-uv \
 uv run python scripts/gauntlet.py --skip-docker
 ~~~
 
-Expected: `GAUNTLET PASSED`. The local Docker step may be separately reported as unavailable if the daemon is not running; GitHub CI must run the complete workflow.
+Expected: `GAUNTLET PASSED`. If the Docker daemon does not run, report the local Docker step separately as unavailable. GitHub CI must run the complete workflow.
 
 - [ ] **Step 4: Review, commit status, and publish**
 
-Run `git diff --check origin/main...HEAD`, inspect the complete diff, push `codex/osm-style-v3-map`, open a PR, attach it to the Codex task, and wait for GitHub CI. Merge only after CI passes.
+Run `git diff --check origin/main...HEAD`. Inspect the complete diff. Push `codex/osm-style-v3-map`. Open a PR. Attach it to the Codex task. Wait for GitHub CI. Merge only after CI passes.
 
 - [ ] **Step 5: Update and verify Hugging Face**
 
-Upload only the regenerated `README.md` and `assets/v3-world-distribution.png` to `NoeFlandre/landuse-sentence-relevance-golden-human-set`. Download both live files, compare the PNG SHA-256 to the local committed asset, verify the card contains the OSM attribution and generator link, and verify the repository still has exactly 85 language CSVs plus its existing manifest/card/map files.
+Upload only the regenerated `README.md` and `assets/v3-world-distribution.png` to `NoeFlandre/landuse-sentence-relevance-golden-human-set`. Download both live files. Compare the PNG SHA-256 with the local committed asset. Verify that the card contains the OSM attribution and the generator link. Verify that the repository still has exactly 85 language CSV files and its existing manifest, card, and map files.
 
 - [ ] **Step 6: Clean task-owned temporary storage**
 
-Remove only the task-scoped OSM tile staging directory, UV/Matplotlib caches, Hugging Face verification directory, and managed worktree after the PR is merged and the primary checkout is fast-forwarded. Confirm the primary checkout is clean and no task-specific temporary path remains.
+After the PR is merged and the primary checkout is fast-forwarded, remove only these items: the task-scoped OSM tile staging directory, the UV and Matplotlib caches, the Hugging Face verification directory, and the managed worktree. Confirm that the primary checkout is clean and that no task-specific temporary path remains.

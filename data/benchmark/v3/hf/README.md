@@ -443,77 +443,81 @@ configs:
 
 # Land-use sentence relevance golden human set
 
-This release contains the final 300-row V3 benchmark in English plus one
-parallel CSV for each of the 84 non-English project-provided `sat-3l-sm`
-language codes. There are 85 language files in total.
+This release contains the final 300-row V3 benchmark in English. It also
+contains one parallel CSV for each of the 84 non-English `sat-3l-sm` language
+codes that the project provides. There are 85 language files in total.
 
 ## Files
 
-Every file is at
-`data/translations/<iso>/v3-final-<iso>.csv`. The nine columns are:
+Each file is at
+`data/translations/<iso>/v3-final-<iso>.csv`. The files have nine columns:
 
 `sentence`, `label`, `polygon_name`, `h3_cell`, `latitude`, `longitude`,
 `source`, `region`, `source_url`.
 
-The Dataset Viewer exposes these files as 85 selectable subsets, one per ISO
-language code (`en` is the default). Each subset has a single `train` split.
-Hugging Face caps a configuration at three splits, so languages are modelled as
-configs rather than splits, per the manual dataset configuration docs.
+The Dataset Viewer shows these files as 85 subsets. You can select one subset
+for each ISO language code. `en` is the default. Each subset has one `train`
+split. Hugging Face allows a maximum of three splits for each configuration.
+For this reason, the languages are configs and not splits. This follows the
+manual dataset configuration documentation.
 
-Only `sentence` is translated. Labels are the final human-reviewed English
-decisions and all geographic/source metadata is retained in the same row order
-in every language file. `data/translations/en/v3-final-en.csv` is an exact copy
-of the final English benchmark.
+Only `sentence` is translated. The labels are the final English decisions that
+a human reviewed. All geographic and source metadata stays in the same row
+order in every language file. `data/translations/en/v3-final-en.csv` is an
+exact copy of the final English benchmark.
 
 ## Geographical distribution
 
 ![World map showing the geographical distribution of benchmark sentences](assets/v3-world-distribution.png)
 
-The map shows the coordinates of all 300 benchmark records, colored by source
-(100 Description, 100 Website, 100 Wikipedia). The same coordinates are
-retained across all language files. The background is the pinned Natural Earth
-110m land layer in an equirectangular projection; this is a coverage
-visualization, not a population or source-density estimate.
+The map shows the coordinates of all 300 benchmark records. The colors show the
+source (100 Description, 100 Website, 100 Wikipedia). All language files keep
+the same coordinates. The background is the pinned Natural Earth 110m land
+layer in an equirectangular projection. The map shows coverage. It does not
+show population or source density.
 
-This PNG is generated deterministically from the final English benchmark by
+The script
 [`scripts/build_v3_world_map.py`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/scripts/build_v3_world_map.py)
-with the pinned Matplotlib 3.11.1 Agg renderer. The generator validates the
-300 benchmark coordinates, uses the committed Natural Earth 110m land vectors,
-performs no network access, and writes this card asset at
+generates this PNG from the final English benchmark. The output is
+deterministic. The script uses the pinned Matplotlib 3.11.1 Agg renderer. It
+validates the 300 benchmark coordinates and uses the committed Natural Earth
+110m land vectors. It does not use the network. It writes this card asset at
 `assets/v3-world-distribution.png`. The basemap is
 [Natural Earth](https://www.naturalearthdata.com/about/terms-of-use/) 1:110m
-physical land, which is in the public domain ("Made with Natural Earth"); the
-exact snapshot bytes are vendored in the project repository at
-`data/benchmark/v3/assets/ne-110m-land.geojson`, with the checksum documented
-in `data/benchmark/v3/assets/ne-110m-land-manifest.json`.
+physical land. It is in the public domain ("Made with Natural Earth"). The
+project repository keeps the exact snapshot bytes at
+`data/benchmark/v3/assets/ne-110m-land.geojson`. The checksum is in
+`data/benchmark/v3/assets/ne-110m-land-manifest.json`.
 
 ## English benchmark provenance
 
-The English benchmark was built from a completed human reference. An
-independent GPT assessment was used to identify 42 disagreements, those cases
-were reassessed by a human, and the final file was rebuilt in reference order.
-Only 16 labels changed after review (13 `no` to `yes`, 3 `yes` to `no`). The
-final distribution is 160 `yes` and 140 `no`, with 100 rows per source.
+The English benchmark comes from a completed human reference. An independent
+GPT assessment found 42 disagreements. A human assessed those cases again. The
+final file was rebuilt in reference order. Only 16 labels changed after the
+review (13 `no` to `yes`, 3 `yes` to `no`). The final distribution is 160
+`yes` and 140 `no`, with 100 rows for each source.
 
 The repository documents the complete chain in
-[`docs/v3-final-benchmark.md`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/docs/v3-final-benchmark.md)
-and the multilingual release method in
+[`docs/v3-final-benchmark.md`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/docs/v3-final-benchmark.md).
+It documents the method of the multilingual release in
 [`docs/v3-translations.md`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/docs/v3-translations.md).
 
 ## Translation provenance
 
-Translation was performed by **gpt-5.6-luna-max**: the available
-`gpt-5.6-luna` model at `max` reasoning, executed through the **Codex harness**.
-The English label is deliberately not reclassified after translation. The
-translation manifest records the source hash, model/harness attribution, row
-counts, language inventory, and SHA-256 for every file.
+**gpt-5.6-luna-max** did the translation. This is the available
+`gpt-5.6-luna` model at `max` reasoning. It ran through the **Codex harness**.
+The English label is not classified again after the translation. This is
+deliberate. The translation manifest records the source hash, the model and
+harness attribution, the row counts, the language list, and the SHA-256 of
+each file.
 
 ## Licensing and attribution
 
-The project code and original benchmark curation are Apache-2.0. The included
-upstream-derived material retains its own terms: OpenStreetMap-derived fields
-are subject to the [ODbL](https://opendatacommons.org/licenses/odbl/), and
-Wikipedia-derived text is subject to [CC BY-SA
-4.0](https://creativecommons.org/licenses/by-sa/4.0/). See the repository
+The project code and the original benchmark curation use Apache-2.0. The
+upstream-derived material that this release includes keeps its own terms. The
+[ODbL](https://opendatacommons.org/licenses/odbl/) governs the fields that come
+from OpenStreetMap. [CC BY-SA
+4.0](https://creativecommons.org/licenses/by-sa/4.0/) governs the text that
+comes from Wikipedia. See the repository
 [`NOTICE`](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/NOTICE)
-and [licensing documentation](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/docs/licensing.md).
+and the [licensing documentation](https://github.com/NoeFlandre/landuse-sentence-relevance-golden-human-set/blob/main/docs/licensing.md).

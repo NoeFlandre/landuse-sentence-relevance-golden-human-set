@@ -1,10 +1,10 @@
 # Known technical debt
 
-These are deliberate limitations, not silent failures.
+These items are deliberate limitations. They are not silent failures.
 
 | Item | Why it exists | Cleanup path |
 | --- | --- | --- |
-| Hugging Face streaming smoke depends on network and pinned upstream files. | The project must validate the real streaming boundary without storing source data locally. | Keep revisions pinned; add a maintained local protocol fixture if offline CI becomes a requirement. |
-| Docker is validated in CI, not on the development Mac. | The local workflow explicitly avoids Docker and keeps storage on the Seagate drive. | Re-run the CI gate or a disposable Linux runner when the image/runtime changes. |
-| The acceptance suite emits Starlette's existing `httpx` deprecation warning. | The current test client remains compatible and the warning does not alter behavior. | Revisit the test-client dependency when the supported Starlette/httpx combination is updated. |
-| The architecture check is static AST analysis. | Importing the application during a gate would load optional models and side effects. | Add an explicit rule and test whenever a dynamic internal dependency is introduced. |
+| The Hugging Face streaming smoke test needs the network and the pinned upstream files. | The project must validate the real streaming boundary. It does not store source data locally. | Keep the revisions pinned. If offline CI becomes necessary, add a maintained local protocol fixture. |
+| CI validates Docker. The development Mac does not. | The local workflow does not use Docker on purpose. It keeps the storage on the Seagate drive. | When the image or the runtime changes, run the CI gate again or use a disposable Linux runner. |
+| The acceptance suite emits the existing `httpx` deprecation warning from Starlette. | The current test client stays compatible. The warning does not change the behavior. | When the supported Starlette and httpx combination is updated, review the test-client dependency. |
+| The architecture check is a static AST analysis. | If the gate imports the application, it loads optional models and side effects. | When you introduce a dynamic internal dependency, add an explicit rule and a test. |
