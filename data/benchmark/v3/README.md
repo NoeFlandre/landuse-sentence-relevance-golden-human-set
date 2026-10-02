@@ -2,33 +2,34 @@
 
 This directory contains the complete V3 benchmark trail in lifecycle order:
 
-- `reference/` — the original completed human benchmark.
-- `independent-review/` — the blinded input, GPT response, generated disagreement queue, and human-reviewed resolutions.
-- `final/` — the final benchmark produced from the reference plus the reviewed resolutions.
-- `assets/` — the pinned OSM physical basemap, provenance manifest, and generated world-distribution map used by the multilingual release.
-- `translations/` — one parallel CSV per project-provided `sat-3l-sm` language code.
+- `reference/`: the original completed human benchmark.
+- `independent-review/`: the blinded input, the GPT response, the generated disagreement queue, and the resolutions that a human reviewed.
+- `final/`: the final benchmark. It comes from the reference and the reviewed resolutions.
+- `assets/`: the pinned OSM physical basemap, the provenance manifest, and the generated world-distribution map. The multilingual release uses them.
+- `translations/`: one parallel CSV for each `sat-3l-sm` language code that the project provides.
 
-Use [`final/v3-final.csv`](final/v3-final.csv) as the final V3 benchmark for this annotation round. The full method, counts, and integrity record are in the [V3 final benchmark documentation](../../../docs/v3-final-benchmark.md).
+Use [`final/v3-final.csv`](final/v3-final.csv) as the final V3 benchmark for this annotation round. The [V3 final benchmark documentation](../../../docs/v3-final-benchmark.md) has the full method, the counts, and the integrity record.
 
-Do not overwrite the reference, GPT response, disagreement queue, or resolved-review file when making a later benchmark revision. Add a new versioned artifact and document its transformation.
+Do not overwrite the reference, the GPT response, the disagreement queue, or the resolved-review file when you make a later benchmark revision. Add a new versioned artifact. Document how it changes the data.
 
-The translation tree contains 85 files, including the exact English copy at
+The translation tree contains 85 files. One of them is the exact English copy at
 `translations/en/v3-final-en.csv`. Only `sentence` changes between language
-files; labels and geographic/source metadata remain aligned with the final
-English benchmark. The translation was produced by `gpt-5.6-luna-max`
-(`gpt-5.6-luna`, `max` reasoning) through the Codex harness. The full
-provenance, language inventory, validation contract, map, and Hugging Face
-layout are documented in [V3 multilingual benchmark](../../../docs/v3-translations.md).
+files. The labels and the geographic and source metadata stay aligned with the
+final English benchmark. The translation was produced by `gpt-5.6-luna-max`
+(`gpt-5.6-luna`, `max` reasoning) through the Codex harness. The
+[V3 multilingual benchmark](../../../docs/v3-translations.md) page documents the
+full provenance, the language list, the validation contract, the map, and the
+Hugging Face layout.
 
-The map is reproducible from this checkout with:
+To reproduce the map from this checkout, run:
 
 ```bash
 uv run python scripts/build_v3_world_map.py
 ```
 
-The command validates `final/v3-final.csv`, reads the committed Natural Earth
-110m land vectors at `assets/ne-110m-land.geojson`, and writes
-`assets/v3-world-distribution.png` using the pinned Matplotlib 3.11.1
-renderer. It performs no network access. The exact snapshot bytes and their
-checksum are kept under `assets/` and recorded in
+The command validates `final/v3-final.csv`. It reads the committed Natural Earth
+110m land vectors at `assets/ne-110m-land.geojson`. It writes
+`assets/v3-world-distribution.png` with the pinned Matplotlib 3.11.1
+renderer. It does not use the network. The `assets/` directory keeps the exact
+snapshot bytes and their checksum. The checksum is also in
 `assets/ne-110m-land-manifest.json`.
