@@ -24,7 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         state = build_v3_annotation_seed(settings)
     except (OSError, ValueError) as error:
         print(f"V3 annotation seed failed: {error}", file=sys.stderr)
-        return 2
+        return 1
     print(json.dumps(_summary(settings, state), sort_keys=True))
     return 0
 

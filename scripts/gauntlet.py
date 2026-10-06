@@ -77,12 +77,31 @@ def suite_steps() -> tuple[tuple[str, list[str]], ...]:
     )
 
 
+class StepFailedError(RuntimeError):
+    """Raised when a gauntlet step exits nonzero; carries that exit status."""
+
+    def __init__(self, name: str, returncode: int) -> None:
+        super().__init__(f"gauntlet step failed: {name} (exit status {returncode})")
+        self.returncode = returncode
+
+
 def run_step(name: str, command: list[str], environment: dict[str, str]) -> None:
     print(f"\n== {name} ==", flush=True)
-    subprocess.run(command, check=True, env=environment)
+    try:
+        subprocess.run(command, check=True, env=environment)
+    except subprocess.CalledProcessError as error:
+        raise StepFailedError(name, error.returncode) from error
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _run(argv)
+    except StepFailedError as error:
+        print(error, file=sys.stderr)
+        return error.returncode or 1
+
+
+def _run(argv: Sequence[str] | None) -> int:
     parser = argparse.ArgumentParser(description="Run the deterministic project QA gauntlet.")
     parser.add_argument("--skip-network", action="store_true", help="Skip the remote streaming smoke check")
     parser.add_argument("--skip-docker", action="store_true", help="Skip the Docker build check")
@@ -116,7 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     except MutationGateBusyError as error:
         print(f"\n{error}", file=sys.stderr)
-        return 2
+        return 1
     run_step(
         "package",
         ["uv", "build", "--wheel", "--sdist", "--out-dir", "state/qa-dist"],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -25,9 +26,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args(argv)
 
-    points = load_benchmark_points(args.benchmark)
-    basemap = load_land_basemap(args.basemap)
-    render_world_map(points, basemap, args.output)
+    try:
+        points = load_benchmark_points(args.benchmark)
+        basemap = load_land_basemap(args.basemap)
+        render_world_map(points, basemap, args.output)
+    except (OSError, ValueError) as error:
+        print(f"V3 world map failed: {error}", file=sys.stderr)
+        return 1
     return 0
 
 
