@@ -17,7 +17,7 @@ For the project terms, refer to the [Glossary](glossary.md).
 ./scripts/uv-seagate run landuse-annotate
 ```
 
-Open <http://127.0.0.1:8000>. The app streams the source datasets. The V2 candidate bank and the annotation logs are in `results/`. The auth files, the virtual environment, the UV cache, the temporary files, and the model cache are in `state/`. By default, both trees are on `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set`.
+Open <http://127.0.0.1:8000>. The app binds to `0.0.0.0:8000` by default. Set `ANNOTATION_HOST` and `ANNOTATION_PORT` to change the address. The app streams the source datasets. The V2 candidate bank and the annotation logs are in `results/`. The auth files, the virtual environment, the UV cache, the temporary files, and the model cache are in `state/`. By default, both trees are on `/Volumes/Seagate M3/projects/landuse-sentence-relevance-golden-human-set`.
 
 Use `scripts/uv-seagate` for local UV commands. It does not use the internal storage of the Mac. It stops when the Seagate drive is not mounted.
 

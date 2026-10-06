@@ -201,3 +201,23 @@ def test_ui_closes_the_workflow_when_the_server_lifespan_ends() -> None:
         pass
 
     assert workflow.close_calls == 1
+
+
+def test_requested_version_normalizes_and_defaults(monkeypatch) -> None:
+    from landuse_sentence_relevance.web.app import _requested_version
+
+    monkeypatch.delenv("ANNOTATION_VERSION", raising=False)
+    assert _requested_version() == "v2"
+    monkeypatch.setenv("ANNOTATION_VERSION", "  V3 ")
+    assert _requested_version() == "v3"
+
+
+def test_bind_address_defaults_and_overrides(monkeypatch) -> None:
+    from landuse_sentence_relevance.web.app import _bind_address
+
+    monkeypatch.delenv("ANNOTATION_HOST", raising=False)
+    monkeypatch.delenv("ANNOTATION_PORT", raising=False)
+    assert _bind_address() == ("0.0.0.0", 8000)
+    monkeypatch.setenv("ANNOTATION_HOST", "127.0.0.1")
+    monkeypatch.setenv("ANNOTATION_PORT", "9000")
+    assert _bind_address() == ("127.0.0.1", 9000)
