@@ -20,6 +20,8 @@ PROJECT_DATA_ROOT="/Volumes/Seagate M3/projects/landuse-v3-annotation" \
   ANNOTATION_VERSION=v3 ./scripts/uv-seagate run landuse-annotate
 ```
 
+Without the Seagate drive, use plain UV from the repository root: `uv sync --extra models` and `uv run landuse-annotate`. Set `PROJECT_DATA_ROOT` to override the data path that `scripts/uv-seagate` uses (it defaults to the Seagate drive path and must point to an existing directory).
+
 Use `scripts/uv-seagate` for local UV commands. It does not run without the Seagate project drive. It keeps these items in the Seagate `state/` directory, outside the internal storage of the Mac: the virtual environment, the UV cache, the temporary files, the Python bytecode, and the Hugging Face login.
 
 If no Hugging Face login is available, log in one time. Use the persistent project location:
