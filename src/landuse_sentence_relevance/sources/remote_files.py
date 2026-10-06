@@ -159,6 +159,7 @@ def _list_tree_with_timeout(
         raise failures[0]
     return results[0] if results else ()
 
+
 # Binding to the IPv4 wildcard address forces httpx to connect over IPv4 only.
 _FORCE_IPV4_LOCAL_ADDRESS = "0.0.0.0"
 
