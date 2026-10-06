@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,6 +21,13 @@ from landuse_sentence_relevance.domain.v3_annotation import (
 from landuse_sentence_relevance.storage.session import AnnotationStore
 from landuse_sentence_relevance.workflow import V3AnnotationWorkflow
 from tests.builders import make_candidate
+
+
+def _forbidden(version: str) -> Callable[[object], None]:
+    def fail(settings: object) -> None:
+        raise AssertionError(f"{version} must not be built")
+
+    return fail
 
 
 def _seed() -> V3AnnotationSeed:
@@ -104,7 +112,7 @@ def test_annotation_entrypoint_selects_v3_only_when_requested(
     monkeypatch.setenv("ANNOTATION_VERSION", "v3")
     monkeypatch.setenv("PROJECT_DATA_ROOT", str(tmp_path))
     monkeypatch.setattr(bootstrap, "build_v3_workflow", lambda settings: calls.append(settings))
-    monkeypatch.setattr(bootstrap, "build_workflow", lambda settings: pytest.fail("v2 must not be built"))
+    monkeypatch.setattr(bootstrap, "build_workflow", _forbidden("v2"))
 
     app.build_annotation_workflow()
 
@@ -118,7 +126,7 @@ def test_annotation_entrypoint_keeps_v2_as_the_default(
     monkeypatch.delenv("ANNOTATION_VERSION", raising=False)
     monkeypatch.setenv("PROJECT_DATA_ROOT", str(tmp_path))
     monkeypatch.setattr(bootstrap, "build_workflow", lambda settings: calls.append(settings))
-    monkeypatch.setattr(bootstrap, "build_v3_workflow", lambda settings: pytest.fail("v3 must not be built"))
+    monkeypatch.setattr(bootstrap, "build_v3_workflow", _forbidden("v3"))
 
     app.build_annotation_workflow()
 
