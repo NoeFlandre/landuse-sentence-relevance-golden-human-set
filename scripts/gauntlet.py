@@ -50,7 +50,7 @@ def quality_paths(project_root: Path = Path(".")) -> tuple[str, ...]:
     return tuple(directory for directory in QUALITY_DIRECTORIES if (project_root / directory).is_dir())
 
 
-def test_steps() -> tuple[tuple[str, list[str]], ...]:
+def suite_steps() -> tuple[tuple[str, list[str]], ...]:
     """Return the deterministic test suites in their required execution order."""
 
     coverage = ["--cov=landuse_sentence_relevance", "--cov-report=", "--cov-fail-under=0"]
@@ -103,7 +103,7 @@ def main() -> int:
     run_step("format", ["uv", "run", "ruff", "format", "--check", *paths], environment)
     run_step("ruff", ["uv", "run", "ruff", "check", *paths], environment)
     run_step("ty", ["uv", "run", "ty", "check", *paths], environment)
-    for name, command in test_steps():
+    for name, command in suite_steps():
         run_step(name, command, environment)
     run_step("coverage", ["uv", "run", "python", "scripts/check_coverage.py"], environment)
     run_step("architecture checks", ["uv", "run", "python", "scripts/check_architecture.py"], environment)

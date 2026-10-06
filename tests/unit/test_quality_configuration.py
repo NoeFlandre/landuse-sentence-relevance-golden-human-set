@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from scripts.gauntlet import test_steps as gauntlet_test_steps
+from scripts.gauntlet import suite_steps
 
 ROOT = Path(__file__).parents[2]
 
@@ -31,5 +31,5 @@ def test_quality_configuration_covers_property_tests_and_branch_thresholds() -> 
 
     assert any("hypothesis" in dependency for dependency in configuration["dependency-groups"]["dev"])
     assert "tests/property" in configuration["tool"]["mutmut"]["pytest_add_cli_args_test_selection"]
-    assert gauntlet_test_steps()[1][0] == "property tests"
+    assert suite_steps()[1][0] == "property tests"
     assert "scripts/check_coverage.py" in (ROOT / "scripts/gauntlet.py").read_text(encoding="utf-8")
