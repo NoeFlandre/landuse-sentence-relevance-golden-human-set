@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -46,11 +47,11 @@ def check(source_root: Path, coverage_path: Path) -> list[tuple[str, float]]:
     return failures
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Enforce a strict CRAP score below six.")
     parser.add_argument("--source-root", type=Path, default=Path("src/landuse_sentence_relevance"))
     parser.add_argument("--coverage", type=Path, default=Path("coverage.json"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     failures = check(args.source_root, args.coverage)
     if failures:
         print("CRAP gate failed:")

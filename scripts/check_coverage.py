@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 MIN_LINE_COVERAGE = 95.0
@@ -54,10 +54,10 @@ def _integer(values: Mapping[str, object], key: str) -> int:
     return value
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check line and branch coverage thresholds.")
     parser.add_argument("--report", type=Path, default=Path("coverage.json"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     line_percentage, branch_percentage = coverage_percentages(args.report)
     print(f"line coverage: {line_percentage:.2f}%")
     print(f"branch coverage: {branch_percentage:.2f}%")
@@ -71,4 +71,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
