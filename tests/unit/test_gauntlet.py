@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import fcntl
+import os
+import sys
 from pathlib import Path
 
 import pytest
-from scripts.gauntlet import MutationGateBusyError, mutation_lock, mutation_lock_path
+from scripts.gauntlet import (
+    MutationGateBusyError,
+    StepFailedError,
+    main,
+    mutation_lock,
+    mutation_lock_path,
+    run_step,
+)
 
 
 def test_mutation_lock_path_uses_the_project_state_root(
@@ -35,3 +44,22 @@ def test_mutation_lock_is_released_after_the_gate_finishes(tmp_path: Path) -> No
 
     with mutation_lock(lock_path):
         pass
+
+
+def test_run_step_reports_the_failing_step_and_its_exit_status() -> None:
+    with pytest.raises(StepFailedError, match=r"gauntlet step failed: boom \(exit status 7\)") as raised:
+        run_step("boom", [sys.executable, "-c", "raise SystemExit(7)"], os.environ.copy())
+
+    assert raised.value.returncode == 7
+
+
+def test_main_returns_the_failed_step_exit_status(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail(name: str, command: list[str], environment: dict[str, str]) -> None:
+        raise StepFailedError(name, 3)
+
+    monkeypatch.setattr("scripts.gauntlet.run_step", fail)
+
+    assert main([]) == 3
+    assert "gauntlet step failed: lock (exit status 3)" in capsys.readouterr().err

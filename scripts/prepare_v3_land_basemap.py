@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from datetime import date
 from hashlib import sha256
@@ -105,13 +106,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--record-checksums", action="store_true")
     parser.add_argument("--retrieved-at")
     args = parser.parse_args(argv)
-    prepare_basemap(
-        args.manifest,
-        args.output,
-        download=args.download,
-        record_checksums=args.record_checksums,
-        retrieved_at=args.retrieved_at,
-    )
+    try:
+        prepare_basemap(
+            args.manifest,
+            args.output,
+            download=args.download,
+            record_checksums=args.record_checksums,
+            retrieved_at=args.retrieved_at,
+        )
+    except (OSError, ValueError) as error:
+        print(f"V3 land basemap failed: {error}", file=sys.stderr)
+        return 1
     return 0
 
 

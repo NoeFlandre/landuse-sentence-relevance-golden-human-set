@@ -22,7 +22,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = build_v3_candidate_pool(settings)
     except (OSError, ValueError) as error:
         print(f"V3 candidate pool failed: {error}", file=sys.stderr)
-        return 2
+        return 1
     print(json.dumps(_summary(settings, result), sort_keys=True))
     return 0
 
