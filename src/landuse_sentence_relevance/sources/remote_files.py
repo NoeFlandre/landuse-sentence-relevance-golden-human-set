@@ -160,6 +160,10 @@ def _list_tree_with_timeout(
     return results[0] if results else ()
 
 
+# Binding to the IPv4 wildcard address forces httpx to connect over IPv4 only.
+_FORCE_IPV4_LOCAL_ADDRESS = "0.0.0.0"
+
+
 class _BoundedHuggingFaceClient(httpx.Client):
     """Use IPv4 and a finite timeout for Hugging Face requests."""
 
@@ -167,7 +171,7 @@ class _BoundedHuggingFaceClient(httpx.Client):
         super().__init__(
             follow_redirects=True,
             timeout=_TREE_LIST_TIMEOUT_SECONDS,
-            transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+            transport=httpx.HTTPTransport(local_address=_FORCE_IPV4_LOCAL_ADDRESS),
         )
 
     def get(self, url: httpx.URL | str, **kwargs: Any) -> httpx.Response:
