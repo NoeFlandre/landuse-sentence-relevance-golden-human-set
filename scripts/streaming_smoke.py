@@ -7,7 +7,8 @@ fails here instead of failing a run with ``ArrowInvalid``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+import argparse
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from itertools import islice
 from typing import Any
@@ -209,7 +210,8 @@ def check_v3_candidates(
     return tuple(reports)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    argparse.ArgumentParser(description="Check remote source streaming.").parse_args(argv)
     reports = (*check_v2_streams(Settings.from_env()), *check_v3_streams(V3Settings.from_env()))
     for report in reports:
         print(f"streamed {report.line()}")

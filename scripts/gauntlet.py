@@ -5,7 +5,7 @@ import fcntl
 import os
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -82,7 +82,7 @@ def run_step(name: str, command: list[str], environment: dict[str, str]) -> None
     subprocess.run(command, check=True, env=environment)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the deterministic project QA gauntlet.")
     parser.add_argument("--skip-network", action="store_true", help="Skip the remote streaming smoke check")
     parser.add_argument("--skip-docker", action="store_true", help="Skip the Docker build check")
@@ -92,7 +92,7 @@ def main() -> int:
         default=default_mutation_workers(),
         help="Mutmut worker processes; defaults to the core count",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     workers = str(args.mutation_workers)
 
     environment = os.environ.copy()
@@ -141,4 +141,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

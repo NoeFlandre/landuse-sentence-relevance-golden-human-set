@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import subprocess
-import sys
+from collections.abc import Sequence
 
 
 def has_unfinished_mutants(output: str) -> bool:
@@ -9,7 +10,8 @@ def has_unfinished_mutants(output: str) -> bool:
     return any(marker in lowered for marker in ("survived", "🙁", "timeout", "untested", "no tests"))
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    argparse.ArgumentParser(description="Fail when mutmut reports surviving mutants.").parse_args(argv)
     result = subprocess.run(
         ["mutmut", "results", "--all=true"],
         capture_output=True,
@@ -22,4 +24,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 PACKAGE_NAME = "landuse_sentence_relevance"
@@ -187,10 +187,10 @@ def _canonical_cycle(nodes: list[str]) -> tuple[str, ...]:
     return min(rotations)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check package dependency boundaries and circular imports.")
     parser.add_argument("--root", type=Path, default=Path("."), help="Project root to inspect")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     violations = architecture_violations(args.root)
     if violations:
         for violation in violations:
@@ -201,4 +201,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

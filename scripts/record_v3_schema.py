@@ -10,8 +10,10 @@ downloads or materializes a dataset.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+from collections.abc import Sequence
 from typing import Any
 
 from landuse_sentence_relevance.bootstrap import v3_stream_specs
@@ -154,7 +156,8 @@ def record(settings: V3Settings) -> dict[str, Any]:
     }
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    argparse.ArgumentParser(description="Record the V3 source schemas as JSON.").parse_args(argv)
     print(json.dumps(record(V3Settings.from_env()), indent=2, sort_keys=True))
     return 0
 
