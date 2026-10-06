@@ -103,13 +103,27 @@ def create_app(workflow: WebWorkflow) -> FastAPI:
     return app
 
 
+def _requested_version() -> str:
+    """Return the normalized annotation profile requested by the environment."""
+
+    return os.environ.get("ANNOTATION_VERSION", "v2").strip().casefold()
+
+
+def _bind_address() -> tuple[str, int]:
+    """Return the host and port for the annotation UI (default 0.0.0.0:8000)."""
+
+    host = os.environ.get("ANNOTATION_HOST", "0.0.0.0").strip() or "0.0.0.0"
+    port = int(os.environ.get("ANNOTATION_PORT", "8000").strip() or "8000")
+    return host, port
+
+
 def build_annotation_workflow() -> WebWorkflow:
     """Select the isolated annotation profile requested by the environment."""
 
     from landuse_sentence_relevance.bootstrap import build_v3_workflow, build_workflow
     from landuse_sentence_relevance.config import Settings, V3Settings
 
-    version = os.environ.get("ANNOTATION_VERSION", "v2").strip().casefold()
+    version = _requested_version()
     if version == "v3":
         return build_v3_workflow(V3Settings.from_env())
     if version == "v2":
@@ -121,8 +135,9 @@ def run() -> None:  # pragma: no cover - process entrypoint
     import uvicorn
 
     configure_logging()
-    version = os.environ.get("ANNOTATION_VERSION", "v2").strip().casefold()
+    version = _requested_version()
+    host, port = _bind_address()
     logger.info("Starting %s annotation UI", version)
     workflow = build_annotation_workflow()
-    logger.info("Candidate pool ready; starting annotation UI at http://127.0.0.1:8000")
-    uvicorn.run(create_app(workflow), host="0.0.0.0", port=8000, log_config=None)
+    logger.info("Candidate pool ready; starting annotation UI at http://%s:%d", host, port)
+    uvicorn.run(create_app(workflow), host=host, port=port, log_config=None)
