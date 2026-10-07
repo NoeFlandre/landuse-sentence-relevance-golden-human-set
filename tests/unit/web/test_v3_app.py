@@ -15,7 +15,9 @@ def _client(tmp_path: Path) -> tuple[TestClient, V3AnnotationWorkflow]:
         make_annotation_seed(),
         AnnotationStore(tmp_path / "results" / "annotations" / "sessions" / "v3.jsonl"),
     )
-    return TestClient(create_app(workflow)), workflow
+    return TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    ), workflow
 
 
 def test_v3_ui_shows_total_source_and_quota_progress_without_seeded_rows(tmp_path: Path) -> None:
