@@ -3,6 +3,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import ANY, Mock
 
+import pytest
 from tests.builders import make_annotations
 
 from landuse_sentence_relevance.domain.models import Label
@@ -95,38 +96,27 @@ def test_annotation_store_records_and_loads_using_explicit_utf8(tmp_path, monkey
     original_open = Path.open
 
     def spy_open(self, *args, **kwargs):
-        encodings.append(kwargs.get("encoding"))
+        if "b" not in (args[0] if args else kwargs.get("mode", "r")):
+            encodings.append(kwargs.get("encoding"))
         return original_open(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", spy_open)
 
     AnnotationStore(path).record(annotation)
     assert AnnotationStore(path).load() == {annotation.candidate.candidate_id: annotation}
-    assert encodings == ["utf-8", "utf-8"]
+    assert encodings == ["utf-8"]
 
 
-def test_annotation_store_load_asks_for_utf8_rather_than_the_platform_default(tmp_path, monkeypatch) -> None:
-    """Asserted at ``read_text`` rather than at ``open``.
-
-    ``Path.read_text`` passes its argument through ``io.text_encoding``, which turns ``None``
-    into ``utf-8`` wherever UTF-8 mode is on -- so a spy on ``Path.open`` sees ``utf-8`` either
-    way and cannot tell a pinned encoding from an unpinned one. On a machine with a non-UTF-8
-    locale and UTF-8 mode off, the unpinned read decodes a session written here as something
-    else, and an annotation carrying a non-ASCII sentence comes back wrong or not at all.
-    """
-
+def test_annotation_store_load_decodes_utf8_and_rejects_legacy_encoding(tmp_path) -> None:
     path = tmp_path / "annotations.jsonl"
     first = make_annotations()[0]
     annotation = replace(first, candidate=replace(first.candidate, sentence="Héllö — hills"))
-    AnnotationStore(path).record(annotation)
-    requested: list[str | None] = []
-    original_read_text = Path.read_text
-
-    def spy_read_text(self, encoding=None, errors=None):
-        requested.append(encoding)
-        return original_read_text(self, encoding=encoding, errors=errors)
-
-    monkeypatch.setattr(Path, "read_text", spy_read_text)
+    payload = json.dumps(annotation.to_dict(), ensure_ascii=False)
+    path.write_bytes(payload.encode("utf-8") + b"\n")
 
     assert AnnotationStore(path).load() == {annotation.candidate.candidate_id: annotation}
-    assert requested == ["utf-8"]
+
+    path.write_bytes(payload.encode("cp1252") + b"\n")
+    with pytest.raises(UnicodeDecodeError):
+        AnnotationStore(path).load()
+    assert path.read_bytes() == payload.encode("cp1252") + b"\n"

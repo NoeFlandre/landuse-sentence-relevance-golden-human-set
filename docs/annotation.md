@@ -31,3 +31,13 @@ These are the V2 paths:
 - The failed pre-optimization checkpoint is `results/candidates/v2/archive/failures/20260829.json`. The project keeps it.
 
 The complete artifact inventory is in [Results](results.md). The V1 files stay separate. The app does not write raw streamed rows to the local disk.
+
+## Crash recovery
+
+Each annotation append flushes and syncs the file before returning. File replacement syncs a sibling temporary file before the rename, then syncs the containing directory. Newly created parent directory entries are also synced. A retry syncs the deepest existing directory entry before continuing, covering a crash between creating a directory and syncing its parent. Sync failures propagate to the caller; a failure after a rename can leave the new file visible even though its durability is uncertain. These guarantees rely on a filesystem that supports file and directory `fsync`.
+
+Loading a session validates every newline-terminated record. A final fragment without a newline is recoverable only when it begins a JSON object and the parser identifies an unfinished object, string, literal, or number. Literal recovery accepts only exact unfinished prefixes of `null`, `true`, or `false`. Number recovery accepts a lone minus sign or a missing decimal/exponent digit only when completing that token produces a valid JSON number. Whitespace after an unfinished token, repeated decimal points or exponents, and other malformed lookalikes remain errors. An incomplete UTF-8 sequence at the very end is recoverable only where a complete non-ASCII character can continue an unfinished JSON string. A multibyte character in an escape position remains an error. Invalid UTF-8 elsewhere, incomplete Unicode escape sequences, and valid JSON with invalid annotation fields still raise an error. A complete corrupt record is never skipped.
+
+Before recovering, the store writes and syncs an exact copy of the original file to a unique sibling named `.annotations.jsonl.<random>.recovery`, using the actual annotation filename. It syncs that directory entry before atomically restoring the validated prefix. The warning names both files and does not include sentence text. Recovery files remain on disk for manual inspection; the store never overwrites or removes them. If recovery fails before replacement, the original session stays unchanged. Recovery can be retried after a crash.
+
+Valid final records without a newline remain valid. The next append inserts a newline separator. Appending also checks for a torn tail first, so restarting and continuing a recovered session cannot concatenate a new annotation onto damaged bytes. The existing single-writer session contract remains in effect; this does not add multi-process write coordination.
