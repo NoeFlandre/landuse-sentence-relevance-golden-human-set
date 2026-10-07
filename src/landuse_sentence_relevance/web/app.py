@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from pathlib import Path
@@ -17,13 +17,21 @@ from landuse_sentence_relevance.observability import configure_logging
 from landuse_sentence_relevance.web.security import RequestSecurityMiddleware, trusted_hosts_from_env
 from landuse_sentence_relevance.workflow import (
     UnknownAnnotationError,
+    UnknownCandidateError,
     V3WorkflowState,
+    WorkflowClosedError,
+    WorkflowCompleteError,
     WorkflowState,
 )
 
 logger = logging.getLogger(__name__)
 
 TEMPLATE_DIRECTORY = Path(__file__).parent / "templates"
+_PORT_ERROR = "ANNOTATION_PORT must be an integer in 1-65535"
+
+
+class InvalidLabelError(ValueError):
+    """Raised when a submitted form value is not a known annotation label."""
 
 
 class WebWorkflow(Protocol):
@@ -64,42 +72,45 @@ def create_app(workflow: WebWorkflow) -> FastAPI:
             context={"state": state, "candidate": state.current_candidate},
         )
 
+    def _apply(action: Callable[[], object], *, unknown_annotation_is_noop: bool = False) -> Response:
+        """Run one UI mutation, schedule publication, and redirect back to the candidate page."""
+
+        try:
+            action()
+            workflow.schedule_publish()
+        except UnknownAnnotationError as error:
+            if unknown_annotation_is_noop:
+                return RedirectResponse(url="/", status_code=303)
+            return PlainTextResponse(str(error), status_code=400)
+        except (InvalidLabelError, UnknownCandidateError, WorkflowCompleteError) as error:
+            return PlainTextResponse(str(error), status_code=400)
+        except WorkflowClosedError:
+            logger.warning("Annotation request rejected because the workflow is closed")
+            return PlainTextResponse("the annotation workflow is closed", status_code=503)
+        return RedirectResponse(url="/", status_code=303)
+
     @app.post("/annotate", response_model=None)
     def annotate(
         candidate_id: str = Form(...),
         label: str = Form(...),
     ) -> Response:
-        try:
-            workflow.annotate(candidate_id, Label(label))
-        except (ValueError, KeyError) as error:
-            return PlainTextResponse(str(error), status_code=400)
-        workflow.schedule_publish()
-        return RedirectResponse(url="/", status_code=303)
+        return _apply(lambda: workflow.annotate(candidate_id, _parse_label(label)))
 
     @app.post("/annotation/update", response_model=None)
     def update_annotation(
         candidate_id: str = Form(...),
         label: str = Form(...),
     ) -> Response:
-        try:
-            workflow.change_label(candidate_id, Label(label))
-        except (ValueError, KeyError) as error:
-            return PlainTextResponse(str(error), status_code=400)
-        workflow.schedule_publish()
-        return RedirectResponse(url="/", status_code=303)
+        return _apply(lambda: workflow.change_label(candidate_id, _parse_label(label)))
 
     @app.post("/annotation/remove", response_model=None)
     def remove_annotation(
         candidate_id: str = Form(...),
     ) -> Response:
-        try:
-            workflow.remove_annotation(candidate_id)
-        except UnknownAnnotationError:
-            return RedirectResponse(url="/", status_code=303)
-        except (ValueError, KeyError) as error:
-            return PlainTextResponse(str(error), status_code=400)
-        workflow.schedule_publish()
-        return RedirectResponse(url="/", status_code=303)
+        return _apply(
+            lambda: workflow.remove_annotation(candidate_id),
+            unknown_annotation_is_noop=True,
+        )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -114,11 +125,31 @@ def _requested_version() -> str:
     return os.environ.get("ANNOTATION_VERSION", "v2").strip().casefold()
 
 
+def _port_from_env(raw: str) -> int:
+    """Return a TCP port from ANNOTATION_PORT, rejecting anything outside 1-65535."""
+
+    text = raw.strip() or "8000"
+    try:
+        port = int(text)
+    except ValueError:
+        raise ValueError(_PORT_ERROR) from None
+    if not 1 <= port <= 65535:
+        raise ValueError(_PORT_ERROR)
+    return port
+
+
+def _parse_label(raw: str) -> Label:
+    try:
+        return Label(raw)
+    except ValueError as error:
+        raise InvalidLabelError(str(error)) from error
+
+
 def _bind_address() -> tuple[str, int]:
     """Return the host and port for the annotation UI (default 127.0.0.1:8000)."""
 
     host = os.environ.get("ANNOTATION_HOST", "127.0.0.1").strip() or "127.0.0.1"
-    port = int(os.environ.get("ANNOTATION_PORT", "8000").strip() or "8000")
+    port = _port_from_env(os.environ.get("ANNOTATION_PORT", "8000"))
     if not _is_loopback_host(host):
         logger.warning(
             "Annotation UI has no authentication; binding to %s exposes labels and publication "
