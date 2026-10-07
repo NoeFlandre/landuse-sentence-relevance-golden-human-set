@@ -2,16 +2,26 @@ import subprocess
 
 import pytest
 from scripts import check_mutants
-from scripts.check_mutants import UNFINISHED_MARKERS, has_unfinished_mutants
+from scripts.check_mutants import has_unfinished_mutants
 from scripts.gauntlet import quality_paths
 
+# Independent of production: removing a marker from check_mutants must make these fail.
+UNFINISHED_STATUSES = ("survived", "🙁", "timeout", "untested", "no tests")
 
-@pytest.mark.parametrize("marker", UNFINISHED_MARKERS)
+
+@pytest.mark.parametrize("marker", UNFINISHED_STATUSES)
 def test_mutation_checker_rejects_every_unfinished_status(marker: str) -> None:
     assert has_unfinished_mutants(f"storage.x_save__mutmut_1: {marker}") is True
 
 
-@pytest.mark.parametrize("marker", UNFINISHED_MARKERS)
+@pytest.mark.parametrize("marker", UNFINISHED_STATUSES)
+def test_main_rejects_every_unfinished_status_through_public_path(monkeypatch, marker: str) -> None:
+    _fake_run(monkeypatch, stdout=f"storage.x_save__mutmut_1: {marker}\n")
+
+    assert check_mutants.main([]) == 1
+
+
+@pytest.mark.parametrize("marker", UNFINISHED_STATUSES)
 def test_mutation_checker_is_case_insensitive(marker: str) -> None:
     assert has_unfinished_mutants(f"storage.x_save__mutmut_1: {marker.upper()}") is True
 
@@ -70,6 +80,20 @@ def test_main_fails_on_unfinished_status_in_stderr(monkeypatch) -> None:
 
 def test_main_fails_on_nonzero_returncode_even_when_output_is_clean(monkeypatch) -> None:
     _fake_run(monkeypatch, stdout="a.x_f__mutmut_1: killed\n", returncode=2)
+
+    assert check_mutants.main([]) == 1
+
+
+@pytest.mark.parametrize("stdout", ["", "   \n\t\n"])
+def test_main_fails_when_mutmut_reports_no_mutant_records(monkeypatch, capsys, stdout: str) -> None:
+    _fake_run(monkeypatch, stdout=stdout)
+
+    assert check_mutants.main([]) == 1
+    assert "no mutation results" in capsys.readouterr().err
+
+
+def test_main_fails_on_malformed_records_without_a_status(monkeypatch) -> None:
+    _fake_run(monkeypatch, stdout="a.x_f__mutmut_1\nnoise line without status\n")
 
     assert check_mutants.main([]) == 1
 
