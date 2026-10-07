@@ -4,8 +4,12 @@ from threading import Event, Lock, Thread
 import pytest
 from tests.builders import make_annotations
 
-from landuse_sentence_relevance.storage.cache import ManagedCache
-from landuse_sentence_relevance.storage.publisher import DatasetPublisher, DatasetUploader
+from landuse_sentence_relevance.storage.cache import CacheOwnershipError, ManagedCache
+from landuse_sentence_relevance.storage.publisher import (
+    DatasetPublicationError,
+    DatasetPublisher,
+    DatasetUploader,
+)
 
 
 def test_dataset_publisher_uses_explicit_uploader_contract() -> None:
@@ -122,6 +126,60 @@ def test_publisher_prepares_the_cache_before_reuploading_after_cleanup(
         "Public upload complete for dataset",
         "Removing disposable runtime cache after successful upload",
     ]
+
+
+def test_publisher_preserves_success_when_cache_ownership_blocks_cleanup(
+    tmp_path, block_default_hub_upload, caplog
+) -> None:
+    cache = ManagedCache(tmp_path / "unowned-cache")
+    cache.root.mkdir()
+    sentinel = cache.root / "unrelated.bin"
+    sentinel.write_bytes(b"keep these bytes")
+    uploads = []
+    publisher = DatasetPublisher(
+        dataset_id="dataset",
+        uploader=lambda **kwargs: uploads.append(kwargs),
+        cleanup=cache.cleanup,
+    )
+
+    assert publisher.publish_if_ready(make_annotations()) is True
+
+    assert len(uploads[0]["records"]) == 100
+    assert uploads[0]["private"] is False
+    assert sentinel.read_bytes() == b"keep these bytes"
+    warning = caplog.records[-1]
+    assert warning.levelno == logging.WARNING
+    assert warning.message == "Public upload succeeded for dataset, but runtime cache cleanup failed"
+    assert warning.exc_info is not None
+    assert isinstance(warning.exc_info[1], CacheOwnershipError)
+
+
+@pytest.mark.parametrize("stage", ["prepare", "upload"])
+def test_publisher_preserves_publication_errors_and_skips_cleanup(stage, block_default_hub_upload) -> None:
+    events = []
+    failure = OSError(f"{stage} failed")
+
+    def prepare() -> None:
+        events.append("prepare")
+        if stage == "prepare":
+            raise failure
+
+    def upload(**kwargs) -> None:
+        events.append("upload")
+        raise failure
+
+    publisher = DatasetPublisher(
+        dataset_id="dataset",
+        prepare=prepare,
+        uploader=upload,
+        cleanup=lambda: events.append("cleanup"),
+    )
+
+    with pytest.raises(DatasetPublicationError, match=f"{stage} failed") as caught:
+        publisher.publish_if_ready(make_annotations())
+
+    assert caught.value.__cause__ is failure
+    assert events == (["prepare"] if stage == "prepare" else ["prepare", "upload"])
 
 
 def test_publisher_keeps_the_application_cache_when_upload_fails(tmp_path, block_default_hub_upload) -> None:

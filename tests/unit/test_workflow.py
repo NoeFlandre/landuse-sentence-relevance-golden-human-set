@@ -346,3 +346,51 @@ def test_workflow_publishes_automatically_when_the_final_contract_is_met(tmp_pat
     assert len(calls) == 1
     with pytest.raises(WorkflowCompleteError):
         workflow.annotate(rows[0].candidate.candidate_id, rows[0].label)
+
+
+@pytest.mark.parametrize("defer_publish", [False, True])
+def test_workflow_reports_uploaded_after_cache_cleanup_fails(tmp_path, caplog, defer_publish) -> None:
+    rows = make_annotations()
+    store = AnnotationStore(tmp_path / "annotations.jsonl")
+    store.save(rows[:-1])
+    uploads = []
+    failure = OSError("cache removal failed")
+
+    def cleanup() -> None:
+        raise failure
+
+    workflow = AnnotationWorkflow(
+        pool=FinalizedCandidatePool(
+            tuple(row.candidate for row in rows),
+            tuple(row.candidate.h3_cell for row in rows),
+        ),
+        store=store,
+        publisher=DatasetPublisher(
+            "dataset", uploader=lambda **kwargs: uploads.append(kwargs), cleanup=cleanup
+        ),
+        defer_publish=defer_publish,
+    )
+
+    try:
+        workflow.annotate(rows[-1].candidate.candidate_id, rows[-1].label)
+        if defer_publish:
+            workflow.schedule_publish()
+    finally:
+        workflow.close()
+
+    state = workflow.state()
+    assert state.published is True
+    assert state.final_ready is True
+    assert (state.labeled_count, state.yes_count, state.no_count) == (100, 50, 50)
+    assert len(store.load()) == 100
+    assert len(uploads) == 1
+    assert len(uploads[0]["records"]) == 100
+    assert uploads[0]["private"] is False
+    warning = caplog.records[-1]
+    assert warning.levelno == logging.WARNING
+    assert warning.message == "Public upload succeeded for dataset, but runtime cache cleanup failed"
+    assert warning.exc_info is not None
+    assert warning.exc_info[1] is failure
+    assert "Dataset upload failed" not in caplog.text
+    with pytest.raises(WorkflowCompleteError):
+        workflow.annotate(rows[-1].candidate.candidate_id, rows[-1].label)
