@@ -49,7 +49,15 @@ def atomic_write(path: Path, writer: Callable[[TextWriter], object]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
         sync_directory(path.parent)
-    except BaseException:
+    except BaseException as error:
         if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+            _discard_temporary(temporary_path, error)
         raise
+
+
+def _discard_temporary(path: Path, error: BaseException) -> None:
+    """Best-effort removal of a temporary file; a cleanup failure is noted on the original error."""
+    try:
+        path.unlink(missing_ok=True)
+    except Exception as cleanup_error:
+        error.add_note(f"could not remove temporary file {path}: {cleanup_error!r}")
