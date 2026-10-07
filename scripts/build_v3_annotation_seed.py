@@ -10,6 +10,7 @@ from collections.abc import Iterable, Sequence
 
 from landuse_sentence_relevance.bootstrap import build_v3_annotation_seed
 from landuse_sentence_relevance.config import V3Settings
+from landuse_sentence_relevance.domain.models import Source
 from landuse_sentence_relevance.domain.profile import QuotaKey
 from landuse_sentence_relevance.domain.v3_annotation import V3AnnotationSeed, V3SeedRow
 
@@ -53,7 +54,7 @@ def _summary(settings: V3Settings, state: V3AnnotationSeed) -> dict[str, object]
     }
 
 
-def _source_counts(rows: Iterable[V3SeedRow], sources: Sequence) -> dict[str, int]:
+def _source_counts(rows: Iterable[V3SeedRow], sources: Sequence[Source]) -> dict[str, int]:
     counts = Counter(row.candidate.source for row in rows)
     return {source.value: counts[source] for source in sources}
 
