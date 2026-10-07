@@ -119,6 +119,12 @@ def test_docker_image_uses_locked_uv_dependencies_without_source_data() -> None:
     assert "COPY data" not in dockerfile
 
 
+def test_docker_command_starts_the_app_without_resyncing_the_dev_group() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert 'CMD ["uv", "run", "--no-sync", "landuse-annotate"]' in dockerfile
+
+
 def test_public_attribution_files_use_apache_code_license() -> None:
     citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
     license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
