@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from tests.builders import make_candidate
 from tests.web_builders import FakeWorkflow
@@ -100,6 +101,51 @@ def test_ui_returns_a_bad_request_for_an_invalid_annotation() -> None:
     assert response.status_code == 400
 
 
+def test_ui_returns_a_bad_request_for_an_unknown_label() -> None:
+    workflow = FakeWorkflow(make_candidate(), [])
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
+
+    response = client.post("/annotate", data={"candidate_id": "c-1", "label": "maybe"})
+
+    assert response.status_code == 400
+    assert workflow.calls == []
+    assert workflow.schedule_calls == 0
+
+
+def test_ui_returns_a_bad_request_when_changing_an_unknown_annotation() -> None:
+    workflow = FakeWorkflow(make_candidate(), [])
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
+
+    response = client.post(
+        "/annotation/update",
+        data={"candidate_id": "missing", "label": "no"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert workflow.schedule_calls == 0
+
+
+def test_ui_reports_a_closed_workflow_as_unavailable() -> None:
+    workflow = FakeWorkflow(make_candidate(), [], closed=True)
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
+
+    response = client.post(
+        "/annotate",
+        data={"candidate_id": "c-1", "label": "yes"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 503
+    assert workflow.schedule_calls == 0
+
+
 def test_ui_changes_a_saved_label_and_redirects() -> None:
     annotated = Annotation(make_candidate("saved"), Label.YES)
     workflow = FakeWorkflow(make_candidate(), [], [annotated])
@@ -187,3 +233,12 @@ def test_bind_address_defaults_and_overrides(monkeypatch) -> None:
     monkeypatch.setenv("ANNOTATION_HOST", "127.0.0.1")
     monkeypatch.setenv("ANNOTATION_PORT", "9000")
     assert _bind_address() == ("127.0.0.1", 9000)
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-1", "65536", "80.5"])
+def test_bind_address_rejects_ports_outside_the_tcp_range(monkeypatch, value: str) -> None:
+    from landuse_sentence_relevance.web.app import _bind_address
+
+    monkeypatch.setenv("ANNOTATION_PORT", value)
+    with pytest.raises(ValueError, match="ANNOTATION_PORT must be an integer in 1-65535"):
+        _bind_address()

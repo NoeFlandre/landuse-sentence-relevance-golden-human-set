@@ -35,6 +35,10 @@ class WorkflowCompleteError(ValueError):
     """Raised when an annotation is submitted after the final upload."""
 
 
+class WorkflowClosedError(RuntimeError):
+    """Raised when a UI action reaches a workflow that has been closed."""
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowState:
     current_candidate: Candidate | None
@@ -208,7 +212,7 @@ class AnnotationWorkflow:
     def schedule_publish(self) -> None:
         with self._lock:
             if self._closed:
-                raise RuntimeError("workflow is closed")
+                raise WorkflowClosedError("workflow is closed")
             self._publish_requested = True
             if self._publish_future is None or self._publish_future.done():
                 self._publish_future = self._publish_executor.submit(self._drain_publish_requests)
@@ -348,4 +352,4 @@ class V3AnnotationWorkflow:
 
     def _require_open(self) -> None:
         if self._closed:
-            raise RuntimeError("workflow is closed")
+            raise WorkflowClosedError("workflow is closed")
