@@ -4,10 +4,19 @@ import argparse
 import subprocess
 from collections.abc import Sequence
 
+UNFINISHED_MARKERS = ("survived", "🙁", "timeout", "untested", "no tests")
+
+
+def _line_status(line: str) -> str:
+    """Return the status part of a ``<mutant name>: <status>`` line, lowercased."""
+
+    return line.rpartition(":")[2].lower()
+
 
 def has_unfinished_mutants(output: str) -> bool:
-    lowered = output.lower()
-    return any(marker in lowered for marker in ("survived", "🙁", "timeout", "untested", "no tests"))
+    """Return True when any line's status marks a mutant as not killed."""
+
+    return any(marker in _line_status(line) for line in output.splitlines() for marker in UNFINISHED_MARKERS)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
