@@ -76,12 +76,19 @@ class DatasetPublisher:
                 private=False,
                 split=self._split,
             )
-            logger.info("Public upload complete for %s", self._dataset_id)
-            if self._cleanup is not None:
-                logger.info("Removing disposable runtime cache after successful upload")
-                self._cleanup()
         except Exception as error:
             raise DatasetPublicationError(str(error)) from error
+        logger.info("Public upload complete for %s", self._dataset_id)
+        if self._cleanup is not None:
+            try:
+                logger.info("Removing disposable runtime cache after successful upload")
+                self._cleanup()
+            except Exception:
+                logger.warning(
+                    "Public upload succeeded for %s, but runtime cache cleanup failed",
+                    self._dataset_id,
+                    exc_info=True,
+                )
 
     def _upload_to_hub(
         self,
