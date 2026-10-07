@@ -15,7 +15,9 @@ def encoded(annotation) -> bytes:
     return (json.dumps(annotation.to_dict(), ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
 
 
-@pytest.mark.parametrize("tail", [b'{"label":', b'{"sentence":"caf\xc3', b'{"label":"ye'])
+@pytest.mark.parametrize(
+    "tail", [b'{"label":', b'{"sentence":"caf\xc3', b'{"label":"ye', b' \t{"sentence":"caf\xc3']
+)
 def test_recovery_preserves_original_bytes_and_supports_append_reload(tmp_path, caplog, tail) -> None:
     path = tmp_path / "annotations.jsonl"
     first, second = make_annotations()[:2]
@@ -516,3 +518,135 @@ def test_failed_recovery_file_wrapper_closes_the_owned_descriptor(tmp_path, monk
     assert len(descriptors) == 1
     with pytest.raises(OSError, match="Bad file descriptor"):
         os.fstat(descriptors[0])
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        b'{"place_name": n',
+        b'{"place_name": nu',
+        b'{"place_name": nul',
+        b'{"flag": t',
+        b'{"flag": tr',
+        b'{"flag": tru',
+        b'{"flag": f',
+        b'{"flag": fa',
+        b'{"flag": fal',
+        b'{"flag": fals',
+        b'{"latitude": -',
+        b'{"latitude": 45.',
+        b'{"latitude": -0.',
+        b'{"latitude": -45.',
+        b'{"longitude": 2e',
+        b'{"longitude": 2E',
+        b'{"longitude": 2e+',
+        b'{"longitude": 2e-',
+        b'{"longitude": 2E+',
+        b'{"longitude": 2E-',
+        b'{"longitude": -0.25e-',
+    ],
+)
+def test_crash_inside_a_literal_or_number_preserves_bytes_and_can_resume(tmp_path, tail) -> None:
+    path = tmp_path / "annotations.jsonl"
+    first, second = make_annotations()[:2]
+    original = encoded(first) + tail
+    path.write_bytes(original)
+
+    assert AnnotationStore(path).load() == {first.candidate.candidate_id: first}
+    assert path.read_bytes() == encoded(first)
+    assert next(tmp_path.glob(".annotations.jsonl.*.recovery")).read_bytes() == original
+
+    AnnotationStore(path).record(second)
+
+    assert path.read_bytes() == encoded(first) + encoded(second)
+    assert AnnotationStore(path).load() == {
+        first.candidate.candidate_id: first,
+        second.candidate.candidate_id: second,
+    }
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        b'{"place_name": nul ',
+        b'{"flag": tru\t',
+        b'{"flag": fals\r',
+        b'{"latitude": - ',
+        b'{"latitude": 45. ',
+        b'{"longitude": 2e+ ',
+        b'{"longitude": 2 e',
+        b'{"longitude": 2.5.',
+        b'{"longitude": 2e3.',
+        b'{"longitude": 2e3e',
+        b'{"longitude": 2e3E-',
+        b'{"longitude": 2E3e',
+        b'{"longitude": 2E3E-',
+        b'{"longitude": 2E3.',
+        b'{"longitude": 01.',
+        b'{"longitude": 2e++',
+        b'{"longitude": .',
+        b'{"longitude": -.',
+        b'{"longitude": "2".',
+        b'{"longitude": truee',
+        b'{"longitude": [2].',
+        b'{"longitude": 2.}',
+        b'{"place_name": nul}',
+        b'{"place_name": nu\n',
+        b'{"longitude": 2e+\n',
+        b'{"longitude": 2.E',
+        b'{"flag": nope',
+    ],
+)
+def test_malformed_token_lookalikes_are_never_recovered(tmp_path, tail) -> None:
+    path = tmp_path / "annotations.jsonl"
+    original = encoded(make_annotations()[0]) + tail
+    path.write_bytes(original)
+
+    with pytest.raises(json.JSONDecodeError):
+        AnnotationStore(path).record(make_annotations()[1])
+
+    assert path.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {path}
+
+
+@pytest.mark.parametrize("tail", [b'{"x":\xc3', b'{"x": n\xc3', b'{"x": 1.\xc3', b"{}\xe2\x82"])
+def test_incomplete_utf8_outside_strings_is_not_a_valid_json_prefix(tmp_path, tail) -> None:
+    path = tmp_path / "annotations.jsonl"
+    original = encoded(make_annotations()[0]) + tail
+    path.write_bytes(original)
+
+    with pytest.raises(UnicodeDecodeError):
+        AnnotationStore(path).load()
+
+    assert path.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {path}
+
+
+@pytest.mark.parametrize("backslashes", [1, 3, 5])
+def test_truncated_utf8_cannot_complete_a_json_escape(tmp_path, backslashes) -> None:
+    path = tmp_path / "annotations.jsonl"
+    original = encoded(make_annotations()[0]) + b'{"x":"' + b"\\" * backslashes + b"\xc3"
+    path.write_bytes(original)
+
+    with pytest.raises(UnicodeDecodeError):
+        AnnotationStore(path).load()
+
+    assert path.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {path}
+
+
+@pytest.mark.parametrize("backslashes", [0, 2, 4])
+def test_truncated_utf8_after_escaped_backslashes_can_resume(tmp_path, backslashes) -> None:
+    path = tmp_path / "annotations.jsonl"
+    first, second = make_annotations()[:2]
+    original = encoded(first) + b'{"x":"' + b"\\" * backslashes + b"\xf0\x9f"
+    path.write_bytes(original)
+
+    AnnotationStore(path).record(second)
+
+    assert AnnotationStore(path).load() == {
+        first.candidate.candidate_id: first,
+        second.candidate.candidate_id: second,
+    }
+    assert path.read_bytes() == encoded(first) + encoded(second)
+    assert next(tmp_path.glob(".annotations.jsonl.*.recovery")).read_bytes() == original

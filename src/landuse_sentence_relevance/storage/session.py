@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from tempfile import mkstemp
@@ -19,24 +20,61 @@ def _add_annotation(annotations: dict[str, Annotation], line: bytes) -> None:
         annotations[annotation.candidate.candidate_id] = annotation
 
 
-def _tail_text(tail: bytes) -> str:
-    try:
-        return tail.decode()
-    except UnicodeDecodeError as error:
-        if error.reason != "unexpected end of data":
-            raise
-        return tail[: error.start].decode()
+def _tail_text(tail: bytes, error: UnicodeDecodeError) -> str:
+    if error.reason != "unexpected end of data":
+        raise error
+    prefix = tail[: error.start].decode()
+    if _is_unfinished_string(prefix):
+        return prefix
+    raise error
 
 
-def _is_torn_object(tail: bytes) -> bool:
-    text = _tail_text(tail)
-    if not text.lstrip().startswith("{"):
-        return False
+def _is_unfinished_string(text: str) -> bool:
+    """Check whether a non-ASCII code point can continue the open string."""
     try:
         json.loads(text)
     except json.JSONDecodeError as error:
-        return error.pos == len(text) or error.msg == "Unterminated string starting at"
+        if error.msg != "Unterminated string starting at":
+            return False
+        try:
+            json.loads(text[error.pos :] + '�"')
+        except json.JSONDecodeError:
+            return False
+        return True
     return False
+
+
+def _has_number_completion(prefix: str, suffix: str) -> bool:
+    number = re.search(r"[-+0-9.eE]+$", prefix)
+    if number is None:
+        return False
+    try:
+        json.loads(number.group() + suffix + "0")
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+def _is_torn_token(text: str, error: json.JSONDecodeError) -> bool:
+    token = text[error.pos :]
+    if error.msg == "Expecting value":
+        return token in {"n", "nu", "nul", "t", "tr", "tru", "f", "fa", "fal", "fals", "-"}
+    return (
+        error.msg == "Expecting ',' delimiter"
+        and token in {".", "e", "E", "e+", "e-", "E+", "E-"}
+        and _has_number_completion(text[: error.pos], token)
+    )
+
+
+def _is_torn_object(tail: bytes, error: json.JSONDecodeError | UnicodeDecodeError) -> bool:
+    if isinstance(error, UnicodeDecodeError):
+        return _tail_text(tail, error).lstrip().startswith("{")
+    text = error.doc
+    return text.lstrip().startswith("{") and (
+        error.pos == len(text)
+        or error.msg == "Unterminated string starting at"
+        or _is_torn_token(text, error)
+    )
 
 
 class AnnotationStore:
@@ -87,8 +125,8 @@ class AnnotationStore:
             _add_annotation(annotations, line)
         try:
             _add_annotation(annotations, tail)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            if not _is_torn_object(tail):
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            if not _is_torn_object(tail, error):
                 raise
             self._recover(data, prefix)
             return self._load()
