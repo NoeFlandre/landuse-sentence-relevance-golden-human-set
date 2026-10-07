@@ -79,6 +79,9 @@ class DatasetPublisher:
         except Exception as error:
             raise DatasetPublicationError(str(error)) from error
         logger.info("Public upload complete for %s", self._dataset_id)
+        self._cleanup_after_upload()
+
+    def _cleanup_after_upload(self) -> None:
         if self._cleanup is not None:
             try:
                 logger.info("Removing disposable runtime cache after successful upload")
