@@ -1,68 +1,16 @@
-from dataclasses import dataclass, field
-
 from fastapi.testclient import TestClient
 from tests.builders import make_candidate
+from tests.web_builders import FakeWorkflow
 
-from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label
+from landuse_sentence_relevance.domain.models import Annotation, Label
 from landuse_sentence_relevance.web.app import create_app
-from landuse_sentence_relevance.workflow import UnknownAnnotationError, WorkflowState
-
-
-@dataclass
-class FakeWorkflow:
-    candidate: Candidate
-    calls: list[tuple[str, Label]]
-    annotations: list[Annotation] = field(default_factory=list)
-    schedule_calls: int = 0
-    close_calls: int = 0
-
-    def current_candidate(self) -> Candidate:
-        return self.candidate
-
-    def state(self) -> WorkflowState:
-        return WorkflowState(
-            current_candidate=self.candidate,
-            labeled_count=len(self.annotations),
-            yes_count=sum(annotation.label is Label.YES for annotation in self.annotations),
-            no_count=sum(annotation.label is Label.NO for annotation in self.annotations),
-            final_ready=False,
-            published=False,
-            annotations=tuple(self.annotations),
-        )
-
-    def annotate(self, candidate_id: str, label: Label) -> WorkflowState:
-        if candidate_id != self.candidate.candidate_id:
-            raise ValueError("unknown candidate")
-        self.calls.append((candidate_id, label))
-        self.annotations.append(Annotation(candidate=self.candidate, label=label))
-        return self.state()
-
-    def change_label(self, candidate_id: str, label: Label) -> WorkflowState:
-        for index, annotation in enumerate(self.annotations):
-            if annotation.candidate.candidate_id == candidate_id:
-                self.annotations[index] = Annotation(annotation.candidate, label)
-                return self.state()
-        raise ValueError("unknown annotation")
-
-    def remove_annotation(self, candidate_id: str) -> WorkflowState:
-        remaining = [
-            annotation for annotation in self.annotations if annotation.candidate.candidate_id != candidate_id
-        ]
-        if len(remaining) == len(self.annotations):
-            raise UnknownAnnotationError("the annotation is unknown")
-        self.annotations = remaining
-        return self.state()
-
-    def schedule_publish(self) -> None:
-        self.schedule_calls += 1
-
-    def close(self) -> None:
-        self.close_calls += 1
 
 
 def test_ui_shows_sentence_minimal_metadata_and_two_actions() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.get("/")
 
@@ -78,7 +26,9 @@ def test_ui_shows_sentence_minimal_metadata_and_two_actions() -> None:
 def test_ui_shows_saved_annotations_and_live_metrics() -> None:
     annotated = Annotation(make_candidate("saved"), Label.YES)
     workflow = FakeWorkflow(make_candidate(), [], [annotated])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.get("/")
 
@@ -93,7 +43,9 @@ def test_ui_shows_saved_annotations_and_live_metrics() -> None:
 
 def test_ui_uses_a_compact_annotation_layout() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.get("/")
 
@@ -107,7 +59,9 @@ def test_ui_uses_a_compact_annotation_layout() -> None:
 
 def test_ui_places_continuation_before_saved_annotations() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.get("/")
 
@@ -117,7 +71,9 @@ def test_ui_places_continuation_before_saved_annotations() -> None:
 
 def test_ui_posts_the_selected_label_and_redirects_to_next_candidate() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.post(
         "/annotate",
@@ -132,7 +88,9 @@ def test_ui_posts_the_selected_label_and_redirects_to_next_candidate() -> None:
 
 def test_ui_returns_a_bad_request_for_an_invalid_annotation() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.post(
         "/annotate",
@@ -145,7 +103,9 @@ def test_ui_returns_a_bad_request_for_an_invalid_annotation() -> None:
 def test_ui_changes_a_saved_label_and_redirects() -> None:
     annotated = Annotation(make_candidate("saved"), Label.YES)
     workflow = FakeWorkflow(make_candidate(), [], [annotated])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.post(
         "/annotation/update",
@@ -161,7 +121,9 @@ def test_ui_changes_a_saved_label_and_redirects() -> None:
 def test_ui_removes_a_saved_annotation_and_redirects() -> None:
     annotated = Annotation(make_candidate("saved"), Label.YES)
     workflow = FakeWorkflow(make_candidate(), [], [annotated])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.post(
         "/annotation/remove",
@@ -176,7 +138,9 @@ def test_ui_removes_a_saved_annotation_and_redirects() -> None:
 
 def test_ui_refreshes_when_removing_an_already_removed_annotation() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
-    client = TestClient(create_app(workflow))
+    client = TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    )
 
     response = client.post(
         "/annotation/remove",
@@ -189,7 +153,7 @@ def test_ui_refreshes_when_removing_an_already_removed_annotation() -> None:
 
 
 def test_health_endpoint_is_available() -> None:
-    client = TestClient(create_app(FakeWorkflow(make_candidate(), [])))
+    client = TestClient(create_app(FakeWorkflow(make_candidate(), [])), base_url="http://127.0.0.1")
 
     assert client.get("/health").json() == {"status": "ok"}
 
@@ -197,7 +161,9 @@ def test_health_endpoint_is_available() -> None:
 def test_ui_closes_the_workflow_when_the_server_lifespan_ends() -> None:
     workflow = FakeWorkflow(make_candidate(), [])
 
-    with TestClient(create_app(workflow)):
+    with TestClient(
+        create_app(workflow), base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}
+    ):
         pass
 
     assert workflow.close_calls == 1
@@ -217,7 +183,7 @@ def test_bind_address_defaults_and_overrides(monkeypatch) -> None:
 
     monkeypatch.delenv("ANNOTATION_HOST", raising=False)
     monkeypatch.delenv("ANNOTATION_PORT", raising=False)
-    assert _bind_address() == ("0.0.0.0", 8000)
+    assert _bind_address() == ("127.0.0.1", 8000)
     monkeypatch.setenv("ANNOTATION_HOST", "127.0.0.1")
     monkeypatch.setenv("ANNOTATION_PORT", "9000")
     assert _bind_address() == ("127.0.0.1", 9000)

@@ -4,6 +4,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Protocol
 
@@ -13,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from landuse_sentence_relevance.domain.models import Label
 from landuse_sentence_relevance.observability import configure_logging
+from landuse_sentence_relevance.web.security import RequestSecurityMiddleware, trusted_hosts_from_env
 from landuse_sentence_relevance.workflow import (
     UnknownAnnotationError,
     V3WorkflowState,
@@ -39,6 +41,7 @@ class WebWorkflow(Protocol):
 
 
 def create_app(workflow: WebWorkflow) -> FastAPI:
+    trusted_hosts = trusted_hosts_from_env()
     templates = Jinja2Templates(directory=str(TEMPLATE_DIRECTORY))
 
     @asynccontextmanager
@@ -49,6 +52,8 @@ def create_app(workflow: WebWorkflow) -> FastAPI:
             workflow.close()
 
     app = FastAPI(title="Land-use sentence relevance annotation", lifespan=lifespan)
+
+    app.add_middleware(RequestSecurityMiddleware, trusted_hosts=trusted_hosts)
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
@@ -110,11 +115,26 @@ def _requested_version() -> str:
 
 
 def _bind_address() -> tuple[str, int]:
-    """Return the host and port for the annotation UI (default 0.0.0.0:8000)."""
+    """Return the host and port for the annotation UI (default 127.0.0.1:8000)."""
 
-    host = os.environ.get("ANNOTATION_HOST", "0.0.0.0").strip() or "0.0.0.0"
+    host = os.environ.get("ANNOTATION_HOST", "127.0.0.1").strip() or "127.0.0.1"
     port = int(os.environ.get("ANNOTATION_PORT", "8000").strip() or "8000")
+    if not _is_loopback_host(host):
+        logger.warning(
+            "Annotation UI has no authentication; binding to %s exposes labels and publication "
+            "to reachable clients. Restrict network access and configure ANNOTATION_TRUSTED_HOSTS.",
+            host,
+        )
     return host, port
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.casefold() == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def build_annotation_workflow() -> WebWorkflow:
@@ -140,4 +160,4 @@ def run() -> None:  # pragma: no cover - process entrypoint
     logger.info("Starting %s annotation UI", version)
     workflow = build_annotation_workflow()
     logger.info("Candidate pool ready; starting annotation UI at http://%s:%d", host, port)
-    uvicorn.run(create_app(workflow), host=host, port=port, log_config=None)
+    uvicorn.run(create_app(workflow), host=host, port=port, log_config=None, proxy_headers=False)
