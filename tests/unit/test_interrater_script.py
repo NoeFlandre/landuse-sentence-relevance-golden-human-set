@@ -11,6 +11,7 @@ from scripts.interrater_agreement import (
     DEFAULT_REVIEW_CSV,
     DEFAULT_SOURCES,
     RaterSource,
+    _parse_arguments,
     build_adjudication,
     build_report,
     build_review_rows,
@@ -364,3 +365,113 @@ def test_main_reports_an_adjudication_failure(
     assert exit_code == 1
     assert not directory.exists()
     assert "adjudication failed" in capsys.readouterr().err
+
+
+ROOT = Path(__file__).resolve().parents[2]
+COMMITTED_DATA_ROOT = ROOT / "data"
+REBUILD_ROOT = ROOT / "results" / "interrater-rebuild"
+# The fresh-clone command in docs/interrater-agreement.md. tests/unit/test_public_project_files.py checks
+# that the doc still gives these arguments. This file must not read the doc: the mutation copy has no docs/.
+FRESH_CLONE_ARGUMENTS = [
+    "--human",
+    "data/provenance/round-01/human.csv",
+    "--gpt",
+    "data/provenance/round-01/outputs/gpt.csv",
+    "--claude",
+    "data/provenance/round-01/outputs/claude.csv",
+    "--adjudication",
+    "data/interrater/adjudication.csv",
+    "--output-directory",
+    "results/interrater-rebuild/round-01",
+    "--review-csv",
+    "results/interrater-rebuild/round-01/disagreements.csv",
+    "--benchmark-csv",
+    "results/interrater-rebuild/round-01/v2-adjudicated.csv",
+]
+RECIPE_INPUTS = {
+    "human": HUMAN_CSV,
+    "gpt": GPT_CSV,
+    "claude": CLAUDE_CSV,
+    "adjudication": ADJUDICATION_CSV,
+}
+RECIPE_OUTPUTS = ("output_directory", "review_csv", "benchmark_csv")
+
+
+def _recipe_violations(arguments: list[str]) -> list[str]:
+    """Return every way the recipe breaks the read and write contract.
+
+    Inputs must be files under data/, which git commits and the mutation gate copies. The check does not
+    call git: the mutation copy sits in the git-ignored mutants/ directory, where git lists no tracked files.
+    """
+
+    parsed = _parse_arguments(arguments)
+    violations = []
+    for name in RECIPE_INPUTS:
+        path = getattr(parsed, name)
+        source = (ROOT / path).resolve()
+        if not (source.is_file() and source.is_relative_to(COMMITTED_DATA_ROOT)):
+            violations.append(f"--{name} must name a committed file under data/, not {path}")
+    for name in RECIPE_OUTPUTS:
+        flag = name.replace("_", "-")
+        destination = (ROOT / getattr(parsed, name)).resolve()
+        if not destination.is_relative_to(REBUILD_ROOT):
+            violations.append(f"--{flag} must write under results/interrater-rebuild/, not {destination}")
+    return violations
+
+
+def _data_files(root: Path) -> dict[Path, bytes]:
+    return {path: path.read_bytes() for path in (root / "data").rglob("*") if path.is_file()}
+
+
+def test_fresh_clone_recipe_obeys_the_read_and_write_contract() -> None:
+    assert _recipe_violations(FRESH_CLONE_ARGUMENTS) == []
+
+
+@pytest.mark.parametrize(
+    ("flag", "mutant", "violation"),
+    [
+        (
+            "--human",
+            "results/evaluations/round-01/human.csv",
+            "--human must name a committed file under data/, not results/evaluations/round-01/human.csv",
+        ),
+        (
+            "--output-directory",
+            "results/evaluations/round-01/analysis",
+            "--output-directory must write under results/interrater-rebuild/",
+        ),
+        (
+            "--benchmark-csv",
+            "data/benchmark/v2-adjudicated.csv",
+            "--benchmark-csv must write under results/interrater-rebuild/",
+        ),
+    ],
+)
+def test_contract_check_rejects_each_mutated_recipe(flag: str, mutant: str, violation: str) -> None:
+    arguments = list(FRESH_CLONE_ARGUMENTS)
+    arguments[arguments.index(flag) + 1] = mutant
+
+    assert any(violation in found for found in _recipe_violations(arguments))
+
+
+def test_fresh_clone_recipe_reads_committed_inputs_and_writes_outside_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    arguments = list(FRESH_CLONE_ARGUMENTS)
+    assert _recipe_violations(arguments) == []
+    parsed = _parse_arguments(arguments)
+
+    clone = tmp_path / "clone"
+    for name, content in RECIPE_INPUTS.items():
+        path = clone / getattr(parsed, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    committed = _data_files(clone)
+    monkeypatch.chdir(clone)
+
+    assert main(arguments) == 0
+    assert "final rows: 2" in capsys.readouterr().out
+    assert _data_files(clone) == committed
+    assert (clone / parsed.output_directory / "agreement.json").is_file()
+    assert (clone / parsed.review_csv).is_file()
+    assert (clone / parsed.benchmark_csv).is_file()

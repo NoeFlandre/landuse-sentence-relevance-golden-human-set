@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from ipaddress import ip_address
 from urllib.parse import SplitResult, urlsplit
 
 from fastapi import Request
@@ -58,10 +59,21 @@ def parse_origin(value: str, *, referer: bool = False) -> Origin | None:
 def trusted_hosts_from_env() -> frozenset[str]:
     """Add explicitly configured hosts to the local-only default. Wildcards are forbidden."""
 
+    trusted = LOCAL_HOSTS | _loopback_bind_host()
     configured = os.environ.get("ANNOTATION_TRUSTED_HOSTS", "").strip()
     if not configured:
-        return LOCAL_HOSTS
-    return LOCAL_HOSTS | frozenset(_trusted_host(value.strip()) for value in configured.split(","))
+        return trusted
+    return trusted | frozenset(_trusted_host(value.strip()) for value in configured.split(","))
+
+
+def _loopback_bind_host() -> frozenset[str]:
+    """Trust the configured bind address only when it is an explicit loopback IP literal."""
+
+    try:
+        address = ip_address(os.environ.get("ANNOTATION_HOST", "").strip())
+    except ValueError:
+        return frozenset()
+    return frozenset({str(address)}) if address.is_loopback else frozenset()
 
 
 def _trusted_host(value: str) -> str:

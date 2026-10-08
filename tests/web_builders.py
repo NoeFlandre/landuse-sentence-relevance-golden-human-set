@@ -3,7 +3,12 @@
 from dataclasses import dataclass, field
 
 from landuse_sentence_relevance.domain.models import Annotation, Candidate, Label
-from landuse_sentence_relevance.workflow import UnknownAnnotationError, WorkflowState
+from landuse_sentence_relevance.workflow import (
+    UnknownAnnotationError,
+    UnknownCandidateError,
+    WorkflowClosedError,
+    WorkflowState,
+)
 
 
 @dataclass
@@ -13,6 +18,7 @@ class FakeWorkflow:
     annotations: list[Annotation] = field(default_factory=list)
     schedule_calls: int = 0
     close_calls: int = 0
+    closed: bool = False
 
     def current_candidate(self) -> Candidate:
         return self.candidate
@@ -30,7 +36,7 @@ class FakeWorkflow:
 
     def annotate(self, candidate_id: str, label: Label) -> WorkflowState:
         if candidate_id != self.candidate.candidate_id:
-            raise ValueError("unknown candidate")
+            raise UnknownCandidateError("unknown candidate")
         self.calls.append((candidate_id, label))
         self.annotations.append(Annotation(candidate=self.candidate, label=label))
         return self.state()
@@ -40,7 +46,7 @@ class FakeWorkflow:
             if annotation.candidate.candidate_id == candidate_id:
                 self.annotations[index] = Annotation(annotation.candidate, label)
                 return self.state()
-        raise ValueError("unknown annotation")
+        raise UnknownAnnotationError("the annotation is unknown")
 
     def remove_annotation(self, candidate_id: str) -> WorkflowState:
         remaining = [
@@ -52,6 +58,8 @@ class FakeWorkflow:
         return self.state()
 
     def schedule_publish(self) -> None:
+        if self.closed:
+            raise WorkflowClosedError("workflow is closed")
         self.schedule_calls += 1
 
     def close(self) -> None:

@@ -25,4 +25,4 @@ USER app
 
 EXPOSE 8000
 VOLUME ["/app/state", "/cache"]
-CMD ["uv", "run", "landuse-annotate"]
+CMD ["uv", "run", "--no-sync", "landuse-annotate"]
