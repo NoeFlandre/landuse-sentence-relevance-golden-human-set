@@ -77,9 +77,10 @@ def test_atomic_write_reraises_a_tempfile_error(tmp_path: Path, monkeypatch: pyt
 
     monkeypatch.setattr(atomic_module, "NamedTemporaryFile", fail)
 
-    with pytest.raises(OSError, match="cannot create temporary file"):
+    with pytest.raises(OSError, match="cannot create temporary file") as error:
         atomic_write(path, lambda _handle: None)
 
+    assert not hasattr(error.value, "__notes__")
     assert path.read_bytes() == b"old"
     assert set(tmp_path.iterdir()) == {path}
 
@@ -107,6 +108,7 @@ def test_atomic_write_cleans_up_after_replace_failure(
         atomic_write(path, lambda handle: handle.write("new"))
 
     assert error.value is failure
+    assert not hasattr(failure, "__notes__")
     assert path.read_bytes() == b"old"
     assert set(tmp_path.iterdir()) == {path}
 
@@ -164,8 +166,9 @@ def test_atomic_write_reports_directory_sync_failure_after_visible_replace(
     monkeypatch.setattr(atomic_module.os, "replace", replace)
     monkeypatch.setattr(atomic_module, "sync_directory", sync)
 
-    with pytest.raises(OSError, match="directory sync failed"):
+    with pytest.raises(OSError, match="directory sync failed") as error:
         atomic_write(path, lambda handle: handle.write("new"))
 
+    assert not hasattr(error.value, "__notes__")
     assert path.read_bytes() == b"new"
     assert set(tmp_path.iterdir()) == {path}
