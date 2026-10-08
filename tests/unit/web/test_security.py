@@ -346,10 +346,48 @@ def test_referer_rejects_control_characters_and_backslashes(referer: str) -> Non
 def test_trusted_hosts_default_is_exact_and_blank_is_safe(monkeypatch) -> None:
     from landuse_sentence_relevance.web.security import trusted_hosts_from_env
 
+    monkeypatch.delenv("ANNOTATION_HOST", raising=False)
     monkeypatch.delenv("ANNOTATION_TRUSTED_HOSTS", raising=False)
     assert trusted_hosts_from_env() == frozenset({"127.0.0.1", "localhost", "::1"})
     monkeypatch.setenv("ANNOTATION_TRUSTED_HOSTS", " ")
     assert trusted_hosts_from_env() == frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def test_configured_loopback_bind_address_is_trusted_without_override(monkeypatch) -> None:
+    monkeypatch.setenv("ANNOTATION_HOST", "127.0.0.2")
+    monkeypatch.delenv("ANNOTATION_TRUSTED_HOSTS", raising=False)
+    client, workflow = make_client("http://127.0.0.2:8000")
+
+    assert client.get("/health").status_code == 200
+    response = client.post(
+        "/annotate",
+        headers={"Origin": "http://127.0.0.2:8000"},
+        data={"candidate_id": "c-1", "label": "no"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert workflow.schedule_calls == 1
+
+
+@pytest.mark.parametrize("bind_host", ["0.0.0.0", "::", "annotator.example", "127.0.0.2.example"])
+def test_non_loopback_bind_address_is_not_trusted_without_override(bind_host: str, monkeypatch) -> None:
+    monkeypatch.setenv("ANNOTATION_HOST", bind_host)
+    monkeypatch.delenv("ANNOTATION_TRUSTED_HOSTS", raising=False)
+    client, _ = make_client("http://127.0.0.1:8000")
+
+    response = client.get("/health", headers={"Host": f"{bind_host}:8000"})
+
+    assert response.status_code == 400
+
+
+def test_explicit_override_trusts_loopback_bind_address_for_remote_host_header(monkeypatch) -> None:
+    monkeypatch.setenv("ANNOTATION_HOST", "127.0.0.2")
+    monkeypatch.setenv("ANNOTATION_TRUSTED_HOSTS", "annotator.example")
+    client, _ = make_client("http://127.0.0.2:8000")
+
+    assert client.get("/health", headers={"Host": "127.0.0.2:8000"}).status_code == 200
+    assert client.get("/health", headers={"Host": "annotator.example:8000"}).status_code == 200
+    assert client.get("/health", headers={"Host": "127.0.0.3:8000"}).status_code == 400
 
 
 def test_explicit_ipv6_and_mixed_case_hostnames_are_supported(monkeypatch) -> None:
