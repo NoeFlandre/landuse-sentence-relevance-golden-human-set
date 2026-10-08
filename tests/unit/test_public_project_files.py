@@ -1,10 +1,13 @@
 import csv
 import os
+import re
+import shlex
 import tomllib
 from collections import Counter
 from pathlib import Path
 
 from landuse_sentence_relevance.config import V3Settings
+from tests.unit.test_interrater_script import FRESH_CLONE_ARGUMENTS
 
 ROOT = Path(__file__).parents[2]
 
@@ -257,3 +260,14 @@ def test_mutation_gate_copies_the_committed_data_the_guards_read() -> None:
         configuration = tomllib.load(project_file)
 
     assert "data" in configuration["tool"]["mutmut"]["also_copy"]
+
+
+def test_interrater_doc_fresh_clone_command_gives_the_arguments_the_unit_tests_check() -> None:
+    doc = (ROOT / "docs" / "interrater-agreement.md").read_text(encoding="utf-8")
+    section = re.split(r"\n#{2,3} ", doc.split("### Fresh clone", 1)[1], maxsplit=1)[0]
+    blocks = re.findall(r"```bash\n(.*?)```", section, re.DOTALL)
+    assert len(blocks) == 1, "the fresh-clone recipe must be exactly one bash block"
+    command = shlex.split(blocks[0].replace("\\\n", " "))
+
+    assert "uv-seagate" not in command, "a fresh clone must not need the Seagate drive"
+    assert command[command.index("scripts/interrater_agreement.py") + 1 :] == FRESH_CLONE_ARGUMENTS

@@ -22,7 +22,7 @@ All three raters agree on 133/154 rows (86.4%). Fleiss' kappa is 0.81. A human a
 
 The canonical report uses the final benchmark of 154 rows as its reference. The GPT file and the Claude file are the historical outputs of 158 rows. The human adjudication removed four of their rows. The canonical comparison excludes these rows. The original human labels of 158 rows are in `data/provenance/round-01/human.csv`.
 
-The table lists the sources of the canonical 154-row report. Only `benchmark.csv` has 154 rows. The GPT and Claude files have 158 rows each, and the canonical report uses 154 of them. The script's defaults do not read these paths. They read `results/evaluations/round-01/`, which git ignores (`scripts/interrater_agreement.py:36-41`, `.gitignore:18`). For the 158-row rebuild, the human input is `data/provenance/round-01/human.csv`, not `benchmark.csv`. The [fresh-clone recipe](#fresh-clone) shows the flags.
+The table lists the sources of the canonical 154-row report. Of these three sources, only `data/provenance/round-01/benchmark.csv` has 154 rows. The GPT and Claude files have 158 rows each, and the canonical report uses 154 of them. The script's defaults do not read these paths. They read `results/evaluations/round-01/`, which git ignores (`scripts/interrater_agreement.py:36-41`, `.gitignore:18`). For the 158-row rebuild, the human input is `data/provenance/round-01/human.csv`, not `benchmark.csv`. The [fresh-clone recipe](#fresh-clone) shows the flags.
 
 ## Method
 

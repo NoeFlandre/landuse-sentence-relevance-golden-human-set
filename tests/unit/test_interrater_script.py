@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
-import shlex
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -371,9 +368,26 @@ def test_main_reports_an_adjudication_failure(
 
 
 ROOT = Path(__file__).parents[2]
-INTERRATER_DOC = ROOT / "docs" / "interrater-agreement.md"
-FRESH_CLONE_HEADING = "### Fresh clone"
+COMMITTED_DATA_ROOT = ROOT / "data"
 REBUILD_ROOT = ROOT / "results" / "interrater-rebuild"
+# The fresh-clone command in docs/interrater-agreement.md. tests/unit/test_public_project_files.py checks
+# that the doc still gives these arguments. This file must not read the doc: the mutation copy has no docs/.
+FRESH_CLONE_ARGUMENTS = [
+    "--human",
+    "data/provenance/round-01/human.csv",
+    "--gpt",
+    "data/provenance/round-01/outputs/gpt.csv",
+    "--claude",
+    "data/provenance/round-01/outputs/claude.csv",
+    "--adjudication",
+    "data/interrater/adjudication.csv",
+    "--output-directory",
+    "results/interrater-rebuild/round-01",
+    "--review-csv",
+    "results/interrater-rebuild/round-01/disagreements.csv",
+    "--benchmark-csv",
+    "results/interrater-rebuild/round-01/v2-adjudicated.csv",
+]
 RECIPE_INPUTS = {
     "human": HUMAN_CSV,
     "gpt": GPT_CSV,
@@ -383,34 +397,20 @@ RECIPE_INPUTS = {
 RECIPE_OUTPUTS = ("output_directory", "review_csv", "benchmark_csv")
 
 
-def _recipe_arguments(doc: str) -> list[str]:
-    """Return the arguments of the single fresh-clone bash command in the interrater doc text."""
-
-    assert FRESH_CLONE_HEADING in doc, "the interrater doc has no fresh-clone rebuild recipe"
-    section = re.split(r"\n#{2,3} ", doc.split(FRESH_CLONE_HEADING, 1)[1], maxsplit=1)[0]
-    blocks = re.findall(r"```bash\n(.*?)```", section, re.DOTALL)
-    assert len(blocks) == 1, "the fresh-clone recipe must be exactly one bash block"
-    command = blocks[0].replace("\\\n", " ")
-    assert "uv-seagate" not in command, "a fresh clone must not need the Seagate drive"
-    tokens = shlex.split(command)
-    return tokens[tokens.index("scripts/interrater_agreement.py") + 1 :]
-
-
-def _tracked_files() -> set[str]:
-    listing = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True)
-    return set(listing.stdout.splitlines())
-
-
 def _recipe_violations(arguments: list[str]) -> list[str]:
-    """Return every way the recipe breaks the read and write contract."""
+    """Return every way the recipe breaks the read and write contract.
+
+    Inputs must be files under data/, which git commits and the mutation gate copies. The check does not
+    call git: the mutation copy sits in the git-ignored mutants/ directory, where git lists no tracked files.
+    """
 
     parsed = _parse_arguments(arguments)
-    tracked = _tracked_files()
     violations = []
     for name in RECIPE_INPUTS:
-        path = Path(getattr(parsed, name)).as_posix()
-        if path not in tracked:
-            violations.append(f"--{name} must name a tracked file, not {path}")
+        path = getattr(parsed, name)
+        source = (ROOT / path).resolve()
+        if not (source.is_file() and source.is_relative_to(COMMITTED_DATA_ROOT)):
+            violations.append(f"--{name} must name a committed file under data/, not {path}")
     for name in RECIPE_OUTPUTS:
         flag = name.replace("_", "-")
         destination = (ROOT / getattr(parsed, name)).resolve()
@@ -424,43 +424,40 @@ def _data_files(root: Path) -> dict[Path, bytes]:
 
 
 def test_fresh_clone_recipe_obeys_the_read_and_write_contract() -> None:
-    assert _recipe_violations(_recipe_arguments(INTERRATER_DOC.read_text(encoding="utf-8"))) == []
+    assert _recipe_violations(FRESH_CLONE_ARGUMENTS) == []
 
 
 @pytest.mark.parametrize(
-    ("original", "mutant", "violation"),
+    ("flag", "mutant", "violation"),
     [
         (
-            "--human data/provenance/round-01/human.csv",
-            "--human results/evaluations/round-01/human.csv",
-            "--human must name a tracked file, not results/evaluations/round-01/human.csv",
+            "--human",
+            "results/evaluations/round-01/human.csv",
+            "--human must name a committed file under data/, not results/evaluations/round-01/human.csv",
         ),
         (
-            "--output-directory results/interrater-rebuild/round-01",
-            "--output-directory results/evaluations/round-01/analysis",
+            "--output-directory",
+            "results/evaluations/round-01/analysis",
             "--output-directory must write under results/interrater-rebuild/",
         ),
         (
-            "--benchmark-csv results/interrater-rebuild/round-01/v2-adjudicated.csv",
-            "--benchmark-csv data/benchmark/v2-adjudicated.csv",
+            "--benchmark-csv",
+            "data/benchmark/v2-adjudicated.csv",
             "--benchmark-csv must write under results/interrater-rebuild/",
         ),
     ],
 )
-def test_contract_check_rejects_each_mutated_recipe(original: str, mutant: str, violation: str) -> None:
-    doc = INTERRATER_DOC.read_text(encoding="utf-8")
-    mutated = doc.replace(original, mutant)
-    assert mutated != doc, f"the mutant did not apply: {original}"
+def test_contract_check_rejects_each_mutated_recipe(flag: str, mutant: str, violation: str) -> None:
+    arguments = list(FRESH_CLONE_ARGUMENTS)
+    arguments[arguments.index(flag) + 1] = mutant
 
-    violations = _recipe_violations(_recipe_arguments(mutated))
-
-    assert any(violation in found for found in violations), violations
+    assert any(violation in found for found in _recipe_violations(arguments))
 
 
 def test_fresh_clone_recipe_reads_committed_inputs_and_writes_outside_data(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    arguments = _recipe_arguments(INTERRATER_DOC.read_text(encoding="utf-8"))
+    arguments = list(FRESH_CLONE_ARGUMENTS)
     assert _recipe_violations(arguments) == []
     parsed = _parse_arguments(arguments)
 
