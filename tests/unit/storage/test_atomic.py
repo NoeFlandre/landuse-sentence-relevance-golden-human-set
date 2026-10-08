@@ -77,9 +77,10 @@ def test_atomic_write_reraises_a_tempfile_error(tmp_path: Path, monkeypatch: pyt
 
     monkeypatch.setattr(atomic_module, "NamedTemporaryFile", fail)
 
-    with pytest.raises(OSError, match="cannot create temporary file"):
+    with pytest.raises(OSError, match="cannot create temporary file") as error:
         atomic_write(path, lambda _handle: None)
 
+    assert not hasattr(error.value, "__notes__")
     assert path.read_bytes() == b"old"
     assert set(tmp_path.iterdir()) == {path}
 
@@ -107,5 +108,67 @@ def test_atomic_write_cleans_up_after_replace_failure(
         atomic_write(path, lambda handle: handle.write("new"))
 
     assert error.value is failure
+    assert not hasattr(failure, "__notes__")
     assert path.read_bytes() == b"old"
+    assert set(tmp_path.iterdir()) == {path}
+
+
+@pytest.mark.parametrize("writer_failure", [RuntimeError("write failed"), KeyboardInterrupt()])
+def test_atomic_write_keeps_the_original_error_when_tempfile_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer_failure: BaseException
+) -> None:
+    path = tmp_path / "state.json"
+    path.write_bytes(b"old")
+    original_unlink = Path.unlink
+    cleanup_failure = PermissionError("read-only directory")
+
+    def unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name.startswith(f".{path.name}."):
+            raise cleanup_failure
+        original_unlink(self, missing_ok=missing_ok)
+
+    def fail_after_writing(handle: TextWriter) -> None:
+        handle.write("new")
+        raise writer_failure
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+
+    with pytest.raises(type(writer_failure)) as error:
+        atomic_write(path, fail_after_writing)
+
+    assert error.value is writer_failure
+    assert any("read-only directory" in note for note in error.value.__notes__)
+    assert path.read_bytes() == b"old"
+    leftovers = [child for child in tmp_path.iterdir() if child != path]
+    assert len(leftovers) == 1
+    assert leftovers[0].name.startswith(f".{path.name}.")
+
+
+def test_atomic_write_reports_directory_sync_failure_after_visible_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "state.json"
+    path.write_bytes(b"old")
+    original_replace = atomic_module.os.replace
+    original_sync = atomic_module.sync_directory
+    replaced = False
+
+    def replace(source: Path, destination: Path) -> None:
+        nonlocal replaced
+        original_replace(source, destination)
+        replaced = True
+
+    def sync(directory: Path) -> None:
+        if replaced:
+            raise OSError("directory sync failed")
+        original_sync(directory)
+
+    monkeypatch.setattr(atomic_module.os, "replace", replace)
+    monkeypatch.setattr(atomic_module, "sync_directory", sync)
+
+    with pytest.raises(OSError, match="directory sync failed") as error:
+        atomic_write(path, lambda handle: handle.write("new"))
+
+    assert not hasattr(error.value, "__notes__")
+    assert path.read_bytes() == b"new"
     assert set(tmp_path.iterdir()) == {path}
