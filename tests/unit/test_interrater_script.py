@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import shlex
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from scripts.interrater_agreement import (
     DEFAULT_REVIEW_CSV,
     DEFAULT_SOURCES,
     RaterSource,
+    _parse_arguments,
     build_adjudication,
     build_report,
     build_review_rows,
@@ -364,3 +367,60 @@ def test_main_reports_an_adjudication_failure(
     assert exit_code == 1
     assert not directory.exists()
     assert "adjudication failed" in capsys.readouterr().err
+
+
+ROOT = Path(__file__).parents[2]
+INTERRATER_DOC = ROOT / "docs" / "interrater-agreement.md"
+FRESH_CLONE_HEADING = "### Fresh clone"
+FRESH_CLONE_INPUTS = {
+    "human": HUMAN_CSV,
+    "gpt": GPT_CSV,
+    "claude": CLAUDE_CSV,
+    "adjudication": ADJUDICATION_CSV,
+}
+FRESH_CLONE_OUTPUTS = ("output_directory", "review_csv", "benchmark_csv")
+
+
+def _fresh_clone_command() -> str:
+    """Return the single bash command of the fresh-clone rebuild recipe in the interrater doc."""
+
+    text = INTERRATER_DOC.read_text(encoding="utf-8")
+    assert FRESH_CLONE_HEADING in text, "the interrater doc has no fresh-clone rebuild recipe"
+    section = re.split(r"\n#{2,3} ", text.split(FRESH_CLONE_HEADING, 1)[1], maxsplit=1)[0]
+    blocks = re.findall(r"```bash\n(.*?)```", section, re.DOTALL)
+    assert len(blocks) == 1, "the fresh-clone recipe must be exactly one bash block"
+    return blocks[0].replace("\\\n", " ")
+
+
+def _data_files(root: Path) -> dict[Path, bytes]:
+    return {path: path.read_bytes() for path in (root / "data").rglob("*") if path.is_file()}
+
+
+def test_fresh_clone_recipe_reads_committed_inputs_and_writes_outside_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    command = _fresh_clone_command()
+    assert "uv-seagate" not in command, "a fresh clone must not need the Seagate drive"
+    tokens = shlex.split(command)
+    arguments = tokens[tokens.index("scripts/interrater_agreement.py") + 1 :]
+    parsed = _parse_arguments(arguments)
+
+    for name in FRESH_CLONE_OUTPUTS:
+        destination = (ROOT / getattr(parsed, name)).resolve()
+        flag = name.replace("_", "-")
+        assert not destination.is_relative_to(ROOT / "data"), f"--{flag} writes into data/: {destination}"
+
+    clone = tmp_path / "clone"
+    for name, content in FRESH_CLONE_INPUTS.items():
+        path = clone / getattr(parsed, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    committed = _data_files(clone)
+    monkeypatch.chdir(clone)
+
+    assert main(arguments) == 0
+    assert "final rows: 2" in capsys.readouterr().out
+    assert _data_files(clone) == committed
+    assert (clone / parsed.output_directory / "agreement.json").is_file()
+    assert (clone / parsed.review_csv).is_file()
+    assert (clone / parsed.benchmark_csv).is_file()
