@@ -277,7 +277,11 @@ def test_interrater_doc_fresh_clone_command_gives_the_arguments_the_unit_tests_c
 def test_interrater_fresh_clone_inputs_are_committed_and_have_the_158_row_round_one_counts() -> None:
     tracked = set(
         subprocess.run(
-            ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+            ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.splitlines()
     )
     inputs = {
