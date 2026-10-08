@@ -1,10 +1,14 @@
 import csv
 import os
+import re
+import shlex
+import subprocess
 import tomllib
 from collections import Counter
 from pathlib import Path
 
 from landuse_sentence_relevance.config import V3Settings
+from tests.unit.test_interrater_script import FRESH_CLONE_ARGUMENTS
 
 ROOT = Path(__file__).parents[2]
 
@@ -257,3 +261,35 @@ def test_mutation_gate_copies_the_committed_data_the_guards_read() -> None:
         configuration = tomllib.load(project_file)
 
     assert "data" in configuration["tool"]["mutmut"]["also_copy"]
+
+
+def test_interrater_doc_fresh_clone_command_gives_the_arguments_the_unit_tests_check() -> None:
+    doc = (ROOT / "docs" / "interrater-agreement.md").read_text(encoding="utf-8")
+    section = re.split(r"\n#{2,3} ", doc.split("### Fresh clone", 1)[1], maxsplit=1)[0]
+    blocks = re.findall(r"```bash\n(.*?)```", section, re.DOTALL)
+    assert len(blocks) == 1, "the fresh-clone recipe must be exactly one bash block"
+
+    assert "uv-seagate" not in blocks[0], "a fresh clone must not need the Seagate drive"
+    command = shlex.split(blocks[0].replace("\\\n", " "))
+    assert command[command.index("scripts/interrater_agreement.py") + 1 :] == FRESH_CLONE_ARGUMENTS
+
+
+def test_interrater_fresh_clone_inputs_are_committed_and_have_the_158_row_round_one_counts() -> None:
+    tracked = set(
+        subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+    )
+    inputs = {
+        flag: ROOT / FRESH_CLONE_ARGUMENTS[FRESH_CLONE_ARGUMENTS.index(flag) + 1]
+        for flag in ("--human", "--gpt", "--claude", "--adjudication")
+    }
+
+    assert [flag for flag, path in inputs.items() if path.relative_to(ROOT).as_posix() not in tracked] == []
+    for flag in ("--human", "--gpt", "--claude"):
+        with inputs[flag].open(newline="", encoding="utf-8") as handle:
+            assert len(list(csv.DictReader(handle))) == 158, flag
