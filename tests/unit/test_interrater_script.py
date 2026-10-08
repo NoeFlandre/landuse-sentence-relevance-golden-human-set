@@ -367,7 +367,7 @@ def test_main_reports_an_adjudication_failure(
     assert "adjudication failed" in capsys.readouterr().err
 
 
-ROOT = Path(__file__).parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 COMMITTED_DATA_ROOT = ROOT / "data"
 REBUILD_ROOT = ROOT / "results" / "interrater-rebuild"
 # The fresh-clone command in docs/interrater-agreement.md. tests/unit/test_public_project_files.py checks
